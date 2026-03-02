@@ -281,6 +281,7 @@ dependencies = [
 name = "photon-core"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "bytes",
  "chrono",
  "dashmap",
