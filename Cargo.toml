@@ -15,6 +15,7 @@ repository = "https://github.com/tensaur/photon"
 photon-core = { path = "crates/core" }
 photon-proto = { path = "crates/proto" }
 
+tokio = { version = "1", features = ["full"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 uuid = { version = "1", features = ["v7", "serde"] }
@@ -22,3 +23,6 @@ chrono = { version = "0.4", features = ["serde"] }
 dashmap = "6"
 bytes = { version = "1", features = ["serde"] }
 anyhow = "1"
+crossbeam-channel = "0.5"
+crc32fast = "1.5"
+tracing = "0.1"

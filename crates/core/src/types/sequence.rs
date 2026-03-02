@@ -11,6 +11,16 @@ impl SequenceNumber {
     pub fn next(self) -> Self {
         Self(self.0 + 1)
     }
+
+    pub fn prev_or_zero(self) -> Self {
+        let raw = u64::from(self);
+
+        if raw == 0 {
+            Self::ZERO
+        } else {
+            Self::from(raw - 1)
+        }
+    }
 }
 
 impl From<u64> for SequenceNumber {
