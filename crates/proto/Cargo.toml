@@ -6,3 +6,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+photon-core = { path = "../core" }
+
+bytes.workspace = true
+prost.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+tonic-prost-build.workspace = true
