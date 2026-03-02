@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use dashmap::DashMap;
 
 use crate::ports::metadata_store::{MetadataStore, MetadataStoreError};
 use crate::types::id::RunId;
@@ -6,7 +6,7 @@ use crate::types::sequence::SequenceNumber;
 
 pub struct DeduplicationTracker<D: MetadataStore> {
     metadata: D,
-    watermarks: HashMap<RunId, SequenceNumber>,
+    watermarks: DashMap<RunId, SequenceNumber>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,13 +25,13 @@ impl<D: MetadataStore> DeduplicationTracker<D> {
     pub fn new(metadata: D) -> Self {
         Self {
             metadata,
-            watermarks: HashMap::new(),
+            watermarks: DashMap::new(),
         }
     }
 
     /// Check whether a batch should be processed or skipped.
     pub async fn check(
-        &mut self,
+        &self,
         run_id: &RunId,
         sequence: SequenceNumber,
     ) -> Result<DeduplicationVerdict, DeduplicationError> {
@@ -45,7 +45,7 @@ impl<D: MetadataStore> DeduplicationTracker<D> {
     }
 
     pub async fn advance(
-        &mut self,
+        &self,
         run_id: &RunId,
         sequence: SequenceNumber,
     ) -> Result<(), DeduplicationError> {
@@ -55,11 +55,11 @@ impl<D: MetadataStore> DeduplicationTracker<D> {
     }
 
     async fn get_watermark(
-        &mut self,
+        &self,
         run_id: &RunId,
     ) -> Result<SequenceNumber, DeduplicationError> {
-        if let Some(&watermark) = self.watermarks.get(run_id) {
-            return Ok(watermark);
+        if let Some(watermark) = self.watermarks.get(run_id) {
+            return Ok(*watermark.value());
         }
 
         let watermark = self

@@ -66,7 +66,7 @@ where
     /// 4. Decode into MetricBatch.
     /// 5. Write to metric store.
     /// 6. Advance watermark.
-    pub async fn ingest(&mut self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
+    pub async fn ingest(&self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;
 
         let verdict = self.dedup.check(&batch.run_id, seq).await?;

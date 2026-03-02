@@ -2,7 +2,7 @@ use bytes::BytesMut;
 
 use crate::types::metric::MetricBatch;
 
-pub trait BatchCodec: Send + 'static {
+pub trait BatchCodec: Send + Sync + 'static {
     fn encode(&self, batch: &MetricBatch, output: &mut BytesMut) -> Result<(), CodecError>;
 
     fn decode(&self, input: &[u8]) -> Result<MetricBatch, CodecError>;
