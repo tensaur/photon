@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core",
+    "crates/proto",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/tensaur/photon"
+
+[workspace.dependencies]
+photon-core = { path = "crates/core" }
+photon-proto = { path = "crates/proto" }
+
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+dashmap = "6"
+bytes = { version = "1", features = ["serde"] }
