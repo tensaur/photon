@@ -27,9 +27,10 @@ impl Metric {
             return Err(MetricError::TooLong(key.len()));
         }
 
-        if let Some(c) = key.chars().find(
-            |c| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/'))
-        ) {
+        if let Some(c) = key
+            .chars()
+            .find(|c| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/')))
+        {
             return Err(MetricError::InvalidChar(c));
         }
 
@@ -65,4 +66,3 @@ impl MetricBatch {
         self.points.is_empty()
     }
 }
-

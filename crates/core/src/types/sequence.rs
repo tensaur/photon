@@ -83,4 +83,3 @@ impl fmt::Display for SegmentIndex {
         write!(f, "{:06}", self.0)
     }
 }
-

@@ -93,7 +93,7 @@ pub struct WalConfig {
 impl Default for WalConfig {
     fn default() -> Self {
         Self {
-            segment_size: 64 * 1024 * 1024, // 64MB
+            segment_size: 64 * 1024 * 1024,               // 64MB
             max_total_size: Some(2 * 1024 * 1024 * 1024), // 2GB
             sync_policy: WalSyncPolicy::default(),
         }
@@ -122,4 +122,3 @@ impl Default for ShutdownConfig {
         }
     }
 }
-

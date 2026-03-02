@@ -1,5 +1,5 @@
 use crate::ports::transport::{BatchTransport, TransportError};
-use crate::ports::wal::{WalStorage, WalError};
+use crate::ports::wal::{WalError, WalStorage};
 use crate::types::id::RunId;
 use crate::types::sequence::SequenceNumber;
 
@@ -44,10 +44,7 @@ impl<W: WalStorage> RecoveryManager<W> {
         let effective = std::cmp::max(local, server);
 
         let batches = self.wal.read_from(effective)?;
-        let bytes_to_replay = batches
-            .iter()
-            .map(|b| b.compressed_size() as u64)
-            .sum();
+        let bytes_to_replay = batches.iter().map(|b| b.compressed_size() as u64).sum();
 
         tracing::info!(
             run_id = %self.run_id,
@@ -82,4 +79,3 @@ impl<W: WalStorage> RecoveryManager<W> {
         self.wal.delete_all()
     }
 }
-

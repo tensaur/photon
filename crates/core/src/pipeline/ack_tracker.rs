@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::ports::wal::{WalStorage, WalError};
+use crate::ports::wal::{WalError, WalStorage};
 use crate::types::sequence::SequenceNumber;
 
 pub struct AckTracker<W: WalStorage> {
@@ -92,4 +92,3 @@ impl<W: WalStorage> AckTracker<W> {
         self.flush_meta()
     }
 }
-

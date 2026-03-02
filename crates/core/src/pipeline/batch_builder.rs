@@ -5,9 +5,9 @@ use bytes::BytesMut;
 use crossbeam_channel::{Receiver, select, tick};
 
 use crate::ports::codec::{BatchCodec, CodecError};
-use crate::ports::compress::{Compressor, CompressionError};
+use crate::ports::compress::{CompressionError, Compressor};
 use crate::ports::resolver::PointResolver;
-use crate::ports::wal::{WalStorage, WalError};
+use crate::ports::wal::{WalError, WalStorage};
 use crate::types::batch::AssembledBatch;
 use crate::types::config::BatchConfig;
 use crate::types::id::RunId;

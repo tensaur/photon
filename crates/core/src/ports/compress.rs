@@ -1,17 +1,9 @@
 use bytes::BytesMut;
 
 pub trait Compressor: Send + Sync + 'static {
-    fn compress(
-        &self,
-        input: &[u8],
-        output: &mut BytesMut,
-    ) -> Result<(), CompressionError>;
+    fn compress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError>;
 
-    fn decompress(
-        &self,
-        input: &[u8],
-        output: &mut BytesMut,
-    ) -> Result<(), CompressionError>;
+    fn decompress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError>;
 
     /// Stable identifier written to WAL record headers.
     /// Must not change across versions for a given algorithm.
@@ -21,15 +13,10 @@ pub trait Compressor: Send + Sync + 'static {
 #[derive(Debug, thiserror::Error)]
 pub enum CompressionError {
     #[error("output buffer too small (needed {needed}, available {available})")]
-    BufferTooSmall {
-        needed: usize,
-        available: usize,
-    },
+    BufferTooSmall { needed: usize, available: usize },
 
     #[error("corrupt payload for compressor {compressor_name:?}")]
-    CorruptPayload {
-        compressor_name: String,
-    },
+    CorruptPayload { compressor_name: String },
 
     #[error(transparent)]
     Unknown(#[from] anyhow::Error),

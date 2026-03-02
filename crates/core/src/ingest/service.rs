@@ -1,8 +1,8 @@
 use crate::ingest::dedup::{DeduplicationError, DeduplicationTracker, DeduplicationVerdict};
-use crate::ports::compress::{Compressor, CompressionError};
 use crate::ports::codec::{BatchCodec, CodecError};
-use crate::ports::metric_store::{MetricStore, MetricStoreError};
+use crate::ports::compress::{CompressionError, Compressor};
 use crate::ports::metadata_store::MetadataStore;
+use crate::ports::metric_store::{MetricStore, MetricStoreError};
 use crate::ports::transport::AckStatus;
 use crate::types::batch::AssembledBatch;
 use crate::types::sequence::SequenceNumber;
@@ -66,10 +66,7 @@ where
     /// 4. Decode into MetricBatch.
     /// 5. Write to metric store.
     /// 6. Advance watermark.
-    pub async fn ingest(
-        &mut self,
-        batch: &AssembledBatch,
-    ) -> Result<IngestResult, IngestError> {
+    pub async fn ingest(&mut self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;
 
         let verdict = self.dedup.check(&batch.run_id, seq).await?;
@@ -95,7 +92,8 @@ where
         }
 
         let mut decompress_buf = BytesMut::new();
-        self.compressor.decompress(&batch.compressed_payload, &mut decompress_buf)?;
+        self.compressor
+            .decompress(&batch.compressed_payload, &mut decompress_buf)?;
 
         let metric_batch = self.codec.decode(&decompress_buf)?;
 

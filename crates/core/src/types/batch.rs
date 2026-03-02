@@ -1,5 +1,5 @@
-use std::time::SystemTime;
 use bytes::Bytes;
+use std::time::SystemTime;
 
 use crate::types::{id::RunId, sequence::SequenceNumber};
 

@@ -1,4 +1,4 @@
-use crossbeam_channel::{bounded, Sender, Receiver, TrySendError};
+use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 
 pub struct Accumulator<P: Copy + Send> {
     tx: Sender<P>,
@@ -99,4 +99,3 @@ impl<P: Copy> SpillRing<P> {
         }
     }
 }
-

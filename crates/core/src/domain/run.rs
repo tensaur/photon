@@ -15,7 +15,6 @@ pub struct Run {
     pub updated_at: DateTime<Utc>,
 }
 
-
 impl Run {
     pub fn start(&mut self) -> Result<(), RunStatusError> {
         match self.status {
@@ -81,4 +80,3 @@ pub enum RunStatusError {
     #[error("cannot transition from {from:?} to {to:?}")]
     InvalidTransition { from: RunStatus, to: RunStatus },
 }
-

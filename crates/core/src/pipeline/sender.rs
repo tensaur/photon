@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
 use crate::ports::transport::{AckResult, AckStatus, BatchTransport, TransportError};
-use crate::ports::wal::{WalStorage, WalError};
+use crate::ports::wal::{WalError, WalStorage};
 use crate::types::config::{RetryConfig, SenderConfig};
 use crate::types::sequence::SequenceNumber;
 
@@ -63,12 +63,7 @@ where
     T: BatchTransport,
     W: WalStorage,
 {
-    pub fn new(
-        transport: T,
-        wal: W,
-        config: SenderConfig,
-        start_after: SequenceNumber,
-    ) -> Self {
+    pub fn new(transport: T, wal: W, config: SenderConfig, start_after: SequenceNumber) -> Self {
         Self {
             transport,
             wal,
@@ -182,14 +177,8 @@ where
         }
     }
 
-    async fn try_recv_ack(
-        &mut self,
-    ) -> Result<Option<SequenceNumber>, TransportError> {
-        let ack = tokio::time::timeout(
-            Duration::from_millis(10),
-            self.transport.recv_ack(),
-        )
-        .await;
+    async fn try_recv_ack(&mut self) -> Result<Option<SequenceNumber>, TransportError> {
+        let ack = tokio::time::timeout(Duration::from_millis(10), self.transport.recv_ack()).await;
 
         match ack {
             Err(_) => Ok(None),

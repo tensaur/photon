@@ -13,10 +13,7 @@ pub trait MetricStore: Send + Sync + Clone + 'static {
 #[derive(Debug, thiserror::Error)]
 pub enum MetricStoreError {
     #[error("invalid batch for run {run_id}: {reason}")]
-    InvalidBatch {
-        run_id: RunId,
-        reason: String,
-    },
+    InvalidBatch { run_id: RunId, reason: String },
 
     #[error(transparent)]
     Unknown(#[from] anyhow::Error),
