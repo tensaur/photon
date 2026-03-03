@@ -6,3 +6,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+photon-core = { path = "../core" }
+photon-proto = { path = "../proto" }
+
+dashmap.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+bytes.workspace = true
+tonic.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true

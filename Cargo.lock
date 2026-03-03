@@ -637,6 +637,17 @@ dependencies = [
 [[package]]
 name = "photon"
 version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "dashmap",
+ "photon-core",
+ "photon-proto",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
 
 [[package]]
 name = "photon-core"
