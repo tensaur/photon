@@ -5,7 +5,7 @@ use prost::Message;
 
 use photon_core::ports::codec::{BatchCodec, CodecError};
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{MetricBatch, Metric, MetricPoint};
+use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
 
 use crate::{MetricBatchContent, MetricPointProto};
 
@@ -42,12 +42,9 @@ impl BatchCodec for ProtobufCodec {
             reason: e.to_string(),
         })?;
 
-        let run_id: uuid::Uuid = proto
-            .run_id
-            .parse()
-            .map_err(|_| CodecError::DecodeFailed {
-                reason: format!("invalid run_id: {}", proto.run_id),
-            })?;
+        let run_id: uuid::Uuid = proto.run_id.parse().map_err(|_| CodecError::DecodeFailed {
+            reason: format!("invalid run_id: {}", proto.run_id),
+        })?;
 
         let points = proto
             .points
@@ -81,4 +78,3 @@ fn system_time_to_epoch_ms(time: SystemTime) -> u64 {
 fn epoch_ms_to_system_time(ms: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_millis(ms)
 }
-

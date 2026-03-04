@@ -7,7 +7,9 @@ use photon_core::types::batch::AssembledBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
-use crate::{MetricBatchAck, MetricBatchRequest, ProtoAckStatus, WatermarkRequest, WatermarkResponse};
+use crate::{
+    MetricBatchAck, MetricBatchRequest, ProtoAckStatus, WatermarkRequest, WatermarkResponse,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProtoConversionError {
@@ -143,4 +145,3 @@ fn system_time_to_epoch_ms(time: SystemTime) -> u64 {
 fn epoch_ms_to_system_time(ms: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_millis(ms)
 }
-

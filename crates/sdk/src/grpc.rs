@@ -9,9 +9,7 @@ use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
 use photon_proto::conversions::ProtoConversionError;
-use photon_proto::{
-    IngestServiceClient, MetricBatchAck, MetricBatchRequest, WatermarkRequest,
-};
+use photon_proto::{IngestServiceClient, MetricBatchAck, MetricBatchRequest, WatermarkRequest};
 
 #[derive(Clone)]
 pub struct GrpcTransport {
@@ -35,12 +33,11 @@ impl GrpcTransport {
         let (request_tx, request_rx) = mpsc::channel(request_buffer);
         let request_stream = tokio_stream::wrappers::ReceiverStream::new(request_rx);
 
-        let response = client
-            .log_metrics(request_stream)
-            .await
-            .map_err(|e| TransportError::ConnectionLost {
+        let response = client.log_metrics(request_stream).await.map_err(|e| {
+            TransportError::ConnectionLost {
                 reason: e.to_string(),
-            })?;
+            }
+        })?;
 
         let ack_rx = response.into_inner();
 
@@ -77,9 +74,8 @@ impl BatchTransport for GrpcTransport {
                 reason: "ack stream ended".to_owned(),
             })?;
 
-        AckResult::try_from(proto).map_err(|e: ProtoConversionError| {
-            TransportError::Unknown(e.into())
-        })
+        AckResult::try_from(proto)
+            .map_err(|e: ProtoConversionError| TransportError::Unknown(e.into()))
     }
 
     async fn get_watermark(&self, run_id: &RunId) -> Result<SequenceNumber, TransportError> {
@@ -87,12 +83,13 @@ impl BatchTransport for GrpcTransport {
 
         let mut client = self.client.lock().await;
 
-        let response = client
-            .get_watermark(request)
-            .await
-            .map_err(|e| TransportError::ConnectionLost {
-                reason: e.to_string(),
-            })?;
+        let response =
+            client
+                .get_watermark(request)
+                .await
+                .map_err(|e| TransportError::ConnectionLost {
+                    reason: e.to_string(),
+                })?;
 
         Ok(SequenceNumber::from(response.into_inner()))
     }

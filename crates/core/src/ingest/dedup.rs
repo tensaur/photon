@@ -54,10 +54,7 @@ impl<D: MetadataStore> DeduplicationTracker<D> {
         Ok(())
     }
 
-    async fn get_watermark(
-        &self,
-        run_id: &RunId,
-    ) -> Result<SequenceNumber, DeduplicationError> {
+    async fn get_watermark(&self, run_id: &RunId) -> Result<SequenceNumber, DeduplicationError> {
         if let Some(watermark) = self.watermarks.get(run_id) {
             return Ok(*watermark.value());
         }

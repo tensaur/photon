@@ -1,5 +1,5 @@
-pub mod conversions;
 pub mod codec;
+pub mod conversions;
 
 pub mod ingest {
     pub mod v1 {
@@ -8,13 +8,8 @@ pub mod ingest {
 }
 
 pub use ingest::v1::{
+    AckStatus as ProtoAckStatus, MetricBatchAck, MetricBatchContent, MetricBatchRequest,
+    MetricPointProto, WatermarkRequest, WatermarkResponse,
     ingest_service_client::IngestServiceClient,
     ingest_service_server::{IngestService, IngestServiceServer},
-    AckStatus as ProtoAckStatus,
-    MetricBatchAck,
-    MetricBatchContent,
-    MetricBatchRequest,
-    MetricPointProto,
-    WatermarkRequest,
-    WatermarkResponse,
 };
