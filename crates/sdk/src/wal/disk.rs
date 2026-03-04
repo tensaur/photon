@@ -279,9 +279,18 @@ fn record_to_batch(run_id: RunId, r: WalRecord) -> AssembledBatch {
     }
 }
 
-
 #[derive(Clone)]
 pub struct SharedDiskWal(Arc<RwLock<DiskWalStorage>>);
+
+impl SharedDiskWal {
+    pub fn open(
+        dir: Option<&Path>,
+        run_id: RunId,
+        config: DiskWalConfig,
+    ) -> Result<Self, WalError> {
+        DiskWalStorage::open(dir, run_id, config).map(|d| d.into_shared())
+    }
+}
 
 impl WalStorage for SharedDiskWal {
     fn append(&mut self, batch: &AssembledBatch) -> Result<(), WalError> {

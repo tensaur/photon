@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[[example]]
+name = "rust_api"
+path = "examples/rust_api.rs"
+
 [dependencies]
 photon-core = { path = "../core" }
 photon-proto = { path = "../proto" }
