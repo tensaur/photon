@@ -666,6 +666,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "photon-ingest"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "crc32fast",
+ "dashmap",
+ "photon-core",
+ "photon-protocol",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "photon-protocol"
 version = "0.0.0"
 dependencies = [
@@ -678,20 +692,6 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "uuid",
-]
-
-[[package]]
-name = "photon-server"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "bytes",
- "crc32fast",
- "dashmap",
- "photon-core",
- "photon-protocol",
- "thiserror",
- "tracing",
 ]
 
 [[package]]

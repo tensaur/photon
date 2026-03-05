@@ -34,7 +34,10 @@ pub enum IngestError {
 }
 
 pub trait IngestService: Clone + Send + Sync + 'static {
-    fn ingest(&self, batch: &AssembledBatch) -> impl Future<Output = Result<IngestResult, IngestError>> + Send;
+    fn ingest(
+        &self,
+        batch: &AssembledBatch,
+    ) -> impl Future<Output = Result<IngestResult, IngestError>> + Send;
 }
 
 #[derive(Clone)]
@@ -48,7 +51,7 @@ where
     store: M,
     dedup: DeduplicationTracker<D>,
     compressor: C,
-    codec: K
+    codec: K,
 }
 
 impl<M, D, C, K> Service<M, D, C, K>

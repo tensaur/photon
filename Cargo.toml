@@ -4,7 +4,7 @@ members = [
     "crates/core",
     "crates/protocol",
     "crates/sdk",
-    "crates/server",
+    "crates/ingest",
 ]
 
 [workspace.package]
@@ -14,9 +14,6 @@ license = "Apache-2.0"
 repository = "https://github.com/tensaur/photon"
 
 [workspace.dependencies]
-photon-core = { path = "crates/core" }
-photon-protocol = { path = "crates/protocol" }
-
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
