@@ -1,13 +1,9 @@
 [package]
-name = "photon"
+name = "photon-server"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-
-[[example]]
-name = "rust_api"
-path = "examples/rust_api.rs"
 
 [dependencies]
 photon-core = { path = "../core" }
@@ -17,11 +13,5 @@ dashmap.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 bytes.workspace = true
-crossbeam-channel.workspace = true
-tonic.workspace = true
-tokio.workspace = true
-tokio-stream.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-crc32fast.workspace = true
 tracing.workspace = true
+crc32fast.workspace = true

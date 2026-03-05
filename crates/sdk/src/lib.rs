@@ -1,11 +1,7 @@
-pub mod compressor;
-pub mod error;
-pub mod grpc;
-pub mod run;
-pub mod wal;
+pub mod domain;
+pub mod inbound;
+pub mod outbound;
 
-pub(crate) mod interner;
-
-pub use error::SdkError as PhotonSdkError;
+pub use inbound::error::SdkError as PhotonSdkError;
+pub use inbound::run::{Run, RunBuilder, RunStats};
 pub use photon_core::types::id::RunId;
-pub use run::{Run, RunBuilder, RunStats};

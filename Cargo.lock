@@ -641,9 +641,10 @@ dependencies = [
  "anyhow",
  "bytes",
  "crc32fast",
+ "crossbeam-channel",
  "dashmap",
  "photon-core",
- "photon-proto",
+ "photon-protocol",
  "serde",
  "serde_json",
  "thiserror",
@@ -657,23 +658,18 @@ dependencies = [
 name = "photon-core"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "bytes",
  "chrono",
- "crc32fast",
- "crossbeam-channel",
- "dashmap",
  "serde",
  "thiserror",
- "tokio",
- "tracing",
  "uuid",
 ]
 
 [[package]]
-name = "photon-proto"
+name = "photon-protocol"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "bytes",
  "photon-core",
  "prost",
@@ -682,6 +678,20 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "uuid",
+]
+
+[[package]]
+name = "photon-server"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "crc32fast",
+ "dashmap",
+ "photon-core",
+ "photon-protocol",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
