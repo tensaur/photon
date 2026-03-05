@@ -1,1 +1,1 @@
-pub mod dedup;
+pub(crate) mod dedup;

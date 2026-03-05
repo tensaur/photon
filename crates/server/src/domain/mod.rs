@@ -1,4 +1,4 @@
-mod ingest;
-mod ports;
-
+pub mod ports;
 pub mod service;
+
+mod ingest;
