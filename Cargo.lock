@@ -695,6 +695,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "photon-store"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "photon-core",
+ "thiserror",
+]
+
+[[package]]
 name = "pin-project"
 version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
