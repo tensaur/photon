@@ -1,3 +1,5 @@
+use crate::IngestHook;
+
 pub struct NoOpHook;
 
-impl crate::ports::hook::PipelineHook for NoOpHook {}
+impl IngestHook for NoOpHook {}

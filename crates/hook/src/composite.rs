@@ -1,49 +1,39 @@
 use std::sync::Arc;
 
-use crate::ports::hook::{PipelineHook, RunManifest, TriggerEvent};
-use crate::{MetricBatch, RunId, RunStatus};
+use photon_core::domain::run::RunStatus;
+use photon_core::types::bucket::Bucket;
+use photon_core::types::id::RunId;
+use photon_core::types::metric::{Metric, MetricBatch};
+
+use crate::IngestHook;
 
 /// Fans out pipeline events to multiple hooks.
 pub struct CompositeHook {
-    hooks: Vec<Arc<dyn PipelineHook>>,
+    hooks: Vec<Arc<dyn IngestHook>>,
 }
 
 impl CompositeHook {
-    pub fn new(hooks: Vec<Arc<dyn PipelineHook>>) -> Self {
+    pub fn new(hooks: Vec<Arc<dyn IngestHook>>) -> Self {
         Self { hooks }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.hooks.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.hooks.len()
     }
 }
 
-impl PipelineHook for CompositeHook {
-    fn on_metrics_written(&self, run_id: RunId, batch: Arc<MetricBatch>) {
+impl IngestHook for CompositeHook {
+    fn on_batch_decoded(&self, run_id: RunId, batch: &MetricBatch) {
         for hook in &self.hooks {
-            hook.on_metrics_written(run_id, Arc::clone(&batch));
+            hook.on_batch_decoded(run_id, batch);
         }
     }
 
-    fn on_trigger(&self, event: Arc<TriggerEvent>) {
+    fn on_buckets_closed(&self, run_id: RunId, key: &Metric, tier: u64, bucket: &Bucket) {
         for hook in &self.hooks {
-            hook.on_trigger(Arc::clone(&event));
+            hook.on_buckets_closed(run_id, key, tier, bucket);
         }
     }
 
     fn on_run_status_change(&self, run_id: RunId, old: RunStatus, new: RunStatus) {
         for hook in &self.hooks {
             hook.on_run_status_change(run_id, old.clone(), new.clone());
-        }
-    }
-
-    fn on_manifest_update(&self, manifest: Arc<RunManifest>) {
-        for hook in &self.hooks {
-            hook.on_manifest_update(Arc::clone(&manifest));
         }
     }
 }
