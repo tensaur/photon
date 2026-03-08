@@ -688,8 +688,14 @@ dependencies = [
  "crc32fast",
  "dashmap",
  "photon-core",
+ "photon-downsample",
+ "photon-hook",
  "photon-protocol",
+ "photon-store",
  "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tonic",
  "tracing",
 ]
 

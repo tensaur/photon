@@ -39,6 +39,16 @@ impl From<&AssembledBatch> for MetricBatchRequest {
     }
 }
 
+impl From<AckStatus> for ProtoAckStatus {
+    fn from(status: AckStatus) -> Self {
+        match status {
+            AckStatus::Ok => ProtoAckStatus::Ok,
+            AckStatus::Duplicate => ProtoAckStatus::Duplicate,
+            AckStatus::Rejected => ProtoAckStatus::Rejected,
+        }
+    }
+}
+
 // wire to server, TryFrom as network data can be malformed
 impl TryFrom<MetricBatchRequest> for AssembledBatch {
     type Error = ProtoConversionError;

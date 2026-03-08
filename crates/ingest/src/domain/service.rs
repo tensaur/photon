@@ -1,16 +1,22 @@
-use photon_core::types::ack::AckStatus;
-use photon_core::types::batch::AssembledBatch;
-use photon_core::types::sequence::SequenceNumber;
-use photon_protocol::ports::codec::{BatchCodec, CodecError};
-use photon_protocol::ports::compress::{CompressionError, Compressor};
-
-use crate::domain::ingest::dedup::{
-    DeduplicationError, DeduplicationTracker, DeduplicationVerdict,
-};
-use crate::domain::ports::metadata_store::MetadataStore;
-use crate::domain::ports::metric_store::{MetricStore, MetricStoreError};
+use std::collections::HashMap;
+use std::future::Future;
 
 use bytes::BytesMut;
+
+use photon_core::types::ack::AckStatus;
+use photon_core::types::batch::AssembledBatch;
+use photon_core::types::id::RunId;
+use photon_core::types::sequence::SequenceNumber;
+use photon_downsample::ports::aggregator::Aggregator;
+use photon_downsample::reducer::BatchReducer;
+use photon_hook::IngestHook;
+use photon_protocol::ports::codec::BatchCodec;
+use photon_protocol::ports::compress::Compressor;
+use photon_store::ports::bucket::BucketWriter;
+use photon_store::ports::metric::MetricWriter;
+use photon_store::ports::watermark::WatermarkStore;
+
+use crate::domain::dedup::{DeduplicationError, DeduplicationTracker, Verdict};
 
 #[derive(Clone, Debug)]
 pub struct IngestResult {
@@ -20,103 +26,156 @@ pub struct IngestResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum IngestError {
-    #[error("deduplication check failed")]
+    #[error("deduplication failed")]
     Dedup(#[from] DeduplicationError),
 
     #[error("decompression failed")]
-    Decompress(#[from] CompressionError),
+    Decompress(#[source] photon_protocol::ports::compress::CompressionError),
 
     #[error("batch decoding failed")]
-    Decode(#[from] CodecError),
+    Decode(#[source] photon_protocol::ports::codec::CodecError),
 
     #[error("metric store write failed")]
-    Store(#[from] MetricStoreError),
+    MetricWrite(#[source] photon_store::ports::WriteError),
+
+    #[error("bucket store write failed")]
+    BucketWrite(#[source] photon_store::ports::WriteError),
 }
 
-pub trait IngestService: Clone + Send + Sync + 'static {
+pub trait IngestService {
     fn ingest(
-        &self,
+        &mut self,
         batch: &AssembledBatch,
     ) -> impl Future<Output = Result<IngestResult, IngestError>> + Send;
+
+    fn watermark(
+        &self,
+        run_id: &RunId,
+    ) -> impl Future<Output = Result<SequenceNumber, IngestError>> + Send;
+
+    fn evict_run(&mut self, run_id: &RunId);
 }
 
-#[derive(Clone)]
-pub struct Service<M, D, C, K>
+pub struct Service<A, W, M, B, H, C, K>
 where
-    M: MetricStore,
-    D: MetadataStore,
+    A: Aggregator,
+    W: WatermarkStore,
+    M: MetricWriter,
+    B: BucketWriter,
+    H: IngestHook,
     C: Compressor,
     K: BatchCodec,
 {
-    store: M,
-    dedup: DeduplicationTracker<D>,
+    dedup: DeduplicationTracker<W>,
+    aggregator: A,
+    tier_widths: Vec<u64>,
+    reducers: HashMap<RunId, BatchReducer<A>>,
+    metric_store: M,
+    bucket_store: B,
+    hook: H,
     compressor: C,
     codec: K,
 }
 
-impl<M, D, C, K> Service<M, D, C, K>
+impl<A, W, M, B, H, C, K> Service<A, W, M, B, H, C, K>
 where
-    M: MetricStore,
-    D: MetadataStore,
+    A: Aggregator,
+    W: WatermarkStore,
+    M: MetricWriter,
+    B: BucketWriter,
+    H: IngestHook,
     C: Compressor,
     K: BatchCodec,
 {
-    pub fn new(store: M, metadata: D, compressor: C, codec: K) -> Self {
+    pub fn new(
+        aggregator: A,
+        tier_widths: Vec<u64>,
+        watermark_store: W,
+        metric_store: M,
+        bucket_store: B,
+        hook: H,
+        compressor: C,
+        codec: K,
+    ) -> Self {
         Self {
-            store,
-            dedup: DeduplicationTracker::new(metadata),
+            dedup: DeduplicationTracker::new(watermark_store),
+            aggregator,
+            tier_widths,
+            reducers: HashMap::new(),
+            metric_store,
+            bucket_store,
+            hook,
             compressor,
             codec,
         }
     }
 }
 
-impl<M, D, C, K> IngestService for Service<M, D, C, K>
+impl<A, W, M, B, H, C, K> IngestService for Service<A, W, M, B, H, C, K>
 where
-    M: MetricStore,
-    D: MetadataStore,
+    A: Aggregator,
+    W: WatermarkStore,
+    M: MetricWriter,
+    B: BucketWriter,
+    H: IngestHook,
     C: Compressor,
     K: BatchCodec,
 {
-    /// Process a single assembled batch received from the SDK.
-    /// 1. Dedup check — skip if already committed.
-    /// 2. Verify CRC32.
-    /// 3. Decompress payload.
-    /// 4. Decode into MetricBatch.
-    /// 5. Write to metric store.
-    /// 6. Advance watermark.
-    async fn ingest(&self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
+    async fn ingest(&mut self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;
 
-        let verdict = self.dedup.check(&batch.run_id, seq).await?;
-        if verdict == DeduplicationVerdict::Duplicate {
+        // 1. Dedup
+        if self.dedup.check(&batch.run_id, seq).await? == Verdict::Duplicate {
             return Ok(IngestResult {
                 sequence_number: seq,
                 status: AckStatus::Duplicate,
             });
         }
 
+        // 2. CRC verify
         let actual_crc = crc32fast::hash(&batch.compressed_payload);
         if actual_crc != batch.crc32 {
-            tracing::warn!(
-                sequence = u64::from(seq),
-                expected_crc = batch.crc32,
-                actual_crc,
-                "CRC mismatch, rejecting batch"
-            );
             return Ok(IngestResult {
                 sequence_number: seq,
                 status: AckStatus::Rejected,
             });
         }
 
-        let mut decompress_buf = BytesMut::new();
+        // 3. Decompress + decode
+        let mut buf = BytesMut::new();
         self.compressor
-            .decompress(&batch.compressed_payload, &mut decompress_buf)?;
+            .decompress(&batch.compressed_payload, &mut buf)
+            .map_err(IngestError::Decompress)?;
+        let metric_batch = self.codec.decode(&buf).map_err(IngestError::Decode)?;
 
-        let metric_batch = self.codec.decode(&decompress_buf)?;
+        // 4. Write raw points
+        self.metric_store
+            .write_batch(&metric_batch)
+            .await
+            .map_err(IngestError::MetricWrite)?;
 
-        self.store.write_batch(&metric_batch).await?;
+        // 5. Downsample
+        let reducer = self.reducers.entry(batch.run_id).or_insert_with(|| {
+            BatchReducer::new(self.aggregator.clone(), self.tier_widths.clone())
+        });
+        let entries = reducer.ingest(&metric_batch);
+
+        // 6. Write closed buckets
+        if !entries.is_empty() {
+            self.bucket_store
+                .write_buckets(&batch.run_id, &entries)
+                .await
+                .map_err(IngestError::BucketWrite)?;
+        }
+
+        // 7. Notify hooks
+        self.hook.on_batch_decoded(batch.run_id, &metric_batch);
+        for entry in &entries {
+            self.hook
+                .on_buckets_closed(batch.run_id, &entry.key, entry.tier, &entry.bucket);
+        }
+
+        // 8. Advance watermark
         self.dedup.advance(&batch.run_id, seq).await?;
 
         Ok(IngestResult {
@@ -124,4 +183,17 @@ where
             status: AckStatus::Ok,
         })
     }
+
+    async fn watermark(
+        &self,
+        run_id: &RunId,
+    ) -> Result<SequenceNumber, IngestError> {
+        Ok(self.dedup.watermark(run_id).await?)
+    }
+
+    fn evict_run(&mut self, run_id: &RunId) {
+        self.reducers.remove(run_id);
+        self.dedup.evict(run_id);
+    }
 }
+
