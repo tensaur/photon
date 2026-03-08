@@ -713,8 +713,10 @@ name = "photon-store"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "dashmap",
  "photon-core",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

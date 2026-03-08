@@ -1,0 +1,67 @@
+use std::ops::Range;
+use std::sync::Arc;
+
+use dashmap::DashMap;
+
+use photon_core::types::bucket::{Bucket, BucketEntry};
+use photon_core::types::id::RunId;
+use photon_core::types::metric::Metric;
+
+use crate::ports::bucket::{BucketReader, BucketWriter};
+use crate::ports::{ReadError, WriteError};
+
+#[derive(Clone)]
+pub struct InMemoryBucketStore {
+    data: Arc<DashMap<(RunId, Metric, u64), Vec<Bucket>>>,
+}
+
+impl InMemoryBucketStore {
+    pub fn new() -> Self {
+        Self {
+            data: Arc::new(DashMap::new()),
+        }
+    }
+}
+
+impl Default for InMemoryBucketStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BucketWriter for InMemoryBucketStore {
+    async fn write_buckets(
+        &self,
+        run_id: &RunId,
+        entries: &[BucketEntry],
+    ) -> Result<(), WriteError> {
+        for entry in entries {
+            self.data
+                .entry((*run_id, entry.key.clone(), entry.tier))
+                .or_default()
+                .push(entry.bucket.clone());
+        }
+
+        Ok(())
+    }
+}
+
+impl BucketReader for InMemoryBucketStore {
+    async fn read_buckets(
+        &self,
+        run_id: &RunId,
+        key: &Metric,
+        tier: u64,
+        step_range: Range<u64>,
+    ) -> Result<Vec<Bucket>, ReadError> {
+        let Some(buckets) = self.data.get(&(*run_id, key.clone(), tier)) else {
+            return Ok(Vec::new());
+        };
+
+        Ok(buckets
+            .iter()
+            .filter(|b| b.step >= step_range.start && b.step < step_range.end)
+            .cloned()
+            .collect())
+    }
+}

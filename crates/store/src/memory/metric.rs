@@ -1,43 +1,73 @@
-use std::future::Future;
+use std::ops::Range;
+use std::sync::Arc;
+
+use dashmap::DashMap;
 
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
+use photon_core::types::metric::{Metric, MetricBatch};
 
-pub trait MetricWriter: Clone + Send + Sync + 'static {
-    fn write_batch(
-        &self,
-        batch: &MetricBatch,
-    ) -> impl Future<Output = Result<(), MetricWriteError>> + Send;
+use crate::ports::metric::{MetricReader, MetricWriter};
+use crate::ports::{ReadError, WriteError};
+
+/// In-memory raw metric storage. Useful for testing.
+#[derive(Clone)]
+pub struct InMemoryMetricStore {
+    data: Arc<DashMap<RunId, DashMap<Metric, Vec<(u64, f64)>>>>,
 }
 
-pub trait MetricReader: Clone + Send + Sync + 'static {
-    /// Return all points for a run, ordered by step ascending.
-    fn read_metrics(
+impl InMemoryMetricStore {
+    pub fn new() -> Self {
+        Self {
+            data: Arc::new(DashMap::new()),
+        }
+    }
+}
+
+impl Default for InMemoryMetricStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MetricWriter for InMemoryMetricStore {
+    async fn write_batch(&self, batch: &MetricBatch) -> Result<(), WriteError> {
+        let run = self.data.entry(batch.run_id).or_default();
+        for point in &batch.points {
+            run.entry(point.key.clone())
+                .or_default()
+                .push((point.step, point.value));
+        }
+        Ok(())
+    }
+}
+
+impl MetricReader for InMemoryMetricStore {
+    async fn read_points(
         &self,
         run_id: &RunId,
-    ) -> impl Future<Output = Result<Vec<MetricPoint>, MetricReadError>> + Send;
+        key: &Metric,
+        step_range: Range<u64>,
+    ) -> Result<Vec<(u64, f64)>, ReadError> {
+        let Some(run) = self.data.get(run_id) else {
+            return Ok(Vec::new());
+        };
+        let Some(points) = run.get(key) else {
+            return Ok(Vec::new());
+        };
 
-    /// Return the distinct metric keys recorded for a run.
-    fn list_metric_keys(
-        &self,
-        run_id: &RunId,
-    ) -> impl Future<Output = Result<Vec<Metric>, MetricReadError>> + Send;
+        Ok(points
+            .iter()
+            .filter(|(step, _)| *step >= step_range.start && *step < step_range.end)
+            .copied()
+            .collect())
+    }
+
+    async fn list_metrics(&self, run_id: &RunId) -> Result<Vec<Metric>, ReadError> {
+        let Some(run) = self.data.get(run_id) else {
+            return Ok(Vec::new());
+        };
+
+        Ok(run.iter().map(|item| item.key().clone()).collect())
+    }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum MetricWriteError {
-    #[error("invalid batch for run {run_id}: {reason}")]
-    InvalidBatch { run_id: RunId, reason: String },
-
-    #[error(transparent)]
-    Unknown(#[from] anyhow::Error),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum MetricReadError {
-    #[error("run {0} not found")]
-    RunNotFound(RunId),
-
-    #[error(transparent)]
-    Unknown(#[from] anyhow::Error),
-}
