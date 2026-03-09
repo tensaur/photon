@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use photon_core::types::config::BatchConfig;
+use photon_core::types::config::{BatchConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_protocol::codec::protobuf::codec::ProtobufCodec;
 use photon_protocol::compressor::noop::NoopCompressor;
@@ -34,6 +34,8 @@ pub struct RunStats {
     pub batches: u64,
     pub bytes_compressed: u64,
     pub bytes_uncompressed: u64,
+    pub batches_sent: u64,
+    pub batches_acked: u64,
 }
 
 impl From<PipelineStats> for RunStats {
@@ -44,6 +46,8 @@ impl From<PipelineStats> for RunStats {
             batches: s.batches_flushed,
             bytes_compressed: s.bytes_compressed,
             bytes_uncompressed: s.bytes_uncompressed,
+            batches_sent: s.batches_sent,
+            batches_acked: s.batches_acked,
         }
     }
 }
@@ -61,6 +65,7 @@ pub struct RunBuilder {
     channel_capacity: usize,
     spill_capacity: usize,
     batch: BatchConfig,
+    endpoint: Option<String>,
 }
 
 impl Run<Service> {
@@ -102,6 +107,7 @@ impl Default for RunBuilder {
             channel_capacity: 65_536,
             spill_capacity: 16_384,
             batch: BatchConfig::default(),
+            endpoint: None,
         }
     }
 }
@@ -140,6 +146,12 @@ impl RunBuilder {
         self
     }
 
+    /// Connect to a remote photon server for metric ingestion.
+    pub fn endpoint(mut self, url: impl Into<String>) -> Self {
+        self.endpoint = Some(url.into());
+        self
+    }
+
     /// Pick adapters and start the pipeline.
     pub fn start(self) -> Result<Run<Service>, SdkError> {
         let run_id = self.run_id.unwrap_or_default();
@@ -150,6 +162,8 @@ impl RunBuilder {
             channel_capacity: self.channel_capacity,
             spill_capacity: self.spill_capacity,
             batch: self.batch,
+            endpoint: self.endpoint,
+            sender: SenderConfig::default(),
         };
 
         let service = if self.in_memory_wal {

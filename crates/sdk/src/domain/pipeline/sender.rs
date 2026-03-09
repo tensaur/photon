@@ -3,6 +3,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
+use tokio::sync::oneshot;
+
 use photon_core::types::ack::{AckResult, AckStatus};
 use photon_core::types::config::{RetryConfig, SenderConfig};
 use photon_core::types::sequence::SequenceNumber;
@@ -22,13 +24,13 @@ where
     in_flight: BTreeMap<SequenceNumber, InFlightEntry>,
     last_sent: SequenceNumber,
     stats: SenderStats,
+    shutdown_rx: oneshot::Receiver<()>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SenderState {
     Connected,
     Reconnecting { attempt: u32, next_at: Instant },
-    Draining,
     Shutdown,
 }
 
@@ -46,6 +48,8 @@ pub struct SenderStats {
     pub batches_retried: u64,
     pub duplicates_received: u64,
     pub rejections_received: u64,
+    pub watermark_advances: u64,
+    pub segments_truncated: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -65,7 +69,13 @@ where
     T: BatchTransport,
     W: WalStorage,
 {
-    pub fn new(transport: T, wal: W, config: SenderConfig, start_after: SequenceNumber) -> Self {
+    pub fn new(
+        transport: T,
+        wal: W,
+        config: SenderConfig,
+        start_after: SequenceNumber,
+        shutdown_rx: oneshot::Receiver<()>,
+    ) -> Self {
         Self {
             transport,
             wal,
@@ -74,6 +84,7 @@ where
             in_flight: BTreeMap::new(),
             last_sent: start_after,
             stats: SenderStats::default(),
+            shutdown_rx,
         }
     }
 
@@ -87,10 +98,6 @@ where
 
     pub fn in_flight_count(&self) -> usize {
         self.in_flight.len()
-    }
-
-    pub fn drain(&mut self) {
-        self.state = SenderState::Draining;
     }
 
     pub async fn run(
@@ -109,32 +116,35 @@ where
                 }
 
                 SenderState::Connected => {
-                    self.send_next().await?;
-                    self.recv_and_handle_ack(&mut ack_callback).await?;
-                }
+                    let sent = self.send_next().await?;
+                    let acked = self.recv_and_handle_ack(&mut ack_callback).await?;
 
-                SenderState::Draining => {
-                    self.send_next().await?;
-                    self.recv_and_handle_ack(&mut ack_callback).await?;
+                    if !sent && !acked {
+                        let alive = matches!(
+                            self.shutdown_rx.try_recv(),
+                            Err(oneshot::error::TryRecvError::Empty)
+                        );
 
-                    let wal_empty = self.wal.read_from(self.last_sent)?.is_empty();
-                    if wal_empty && self.in_flight.is_empty() {
-                        self.state = SenderState::Shutdown;
+                        if !alive && self.in_flight.is_empty() {
+                            self.state = SenderState::Shutdown;
+                        } else {
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
                     }
                 }
             }
         }
     }
 
-    async fn send_next(&mut self) -> Result<(), SenderError> {
+    async fn send_next(&mut self) -> Result<bool, SenderError> {
         if self.in_flight.len() >= self.config.max_in_flight {
-            return Ok(());
+            return Ok(false);
         }
 
         let batches = self.wal.read_from(self.last_sent)?;
         let batch = match batches.first() {
             Some(b) => b,
-            None => return Ok(()),
+            None => return Ok(false),
         };
 
         match self.transport.send(batch).await {
@@ -151,11 +161,11 @@ where
                 self.last_sent = batch.sequence_number;
                 self.stats.batches_sent += 1;
 
-                Ok(())
+                Ok(true)
             }
             Err(TransportError::ConnectionLost { .. }) => {
                 self.enter_reconnecting();
-                Ok(())
+                Ok(false)
             }
             Err(e) => Err(e.into()),
         }
@@ -164,16 +174,16 @@ where
     async fn recv_and_handle_ack(
         &mut self,
         ack_callback: &mut impl FnMut(SequenceNumber),
-    ) -> Result<(), SenderError> {
+    ) -> Result<bool, SenderError> {
         match self.try_recv_ack().await {
             Ok(Some(seq)) => {
                 ack_callback(seq);
-                Ok(())
+                Ok(true)
             }
-            Ok(None) => Ok(()),
+            Ok(None) => Ok(false),
             Err(TransportError::ConnectionLost { .. }) => {
                 self.enter_reconnecting();
-                Ok(())
+                Ok(false)
             }
             Err(e) => Err(e.into()),
         }

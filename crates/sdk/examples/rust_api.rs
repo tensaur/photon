@@ -31,6 +31,8 @@ fn main() {
     println!("Batches:      {}", stats.batches);
     println!("Bytes (raw):  {}", stats.bytes_uncompressed);
     println!("Bytes (wire): {}", stats.bytes_compressed);
+    println!("Sent:         {}", stats.batches_sent);
+    println!("Acked:        {}", stats.batches_acked);
 
     assert!(stats.batches > 0);
     assert_eq!(stats.points, 420); // 200 * 2 + 20 lr logs

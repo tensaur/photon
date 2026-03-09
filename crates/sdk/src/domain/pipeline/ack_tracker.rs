@@ -32,18 +32,6 @@ impl<W: WalStorage> AckTracker<W> {
         }
     }
 
-    pub fn committed(&self) -> SequenceNumber {
-        self.committed
-    }
-
-    pub fn pending_count(&self) -> usize {
-        self.pending.len()
-    }
-
-    pub fn stats(&self) -> &AckTrackerStats {
-        &self.stats
-    }
-
     /// Record an acked sequence number. Advances the watermark through
     /// any contiguous run, then truncates the WAL.
     ///
@@ -89,7 +77,8 @@ impl<W: WalStorage> AckTracker<W> {
         self.wal.sync()
     }
 
-    pub fn shutdown(&self) -> Result<(), WalError> {
-        self.flush_meta()
+    pub fn shutdown(self) -> Result<AckTrackerStats, WalError> {
+        self.flush_meta()?;
+        Ok(self.stats)
     }
 }
