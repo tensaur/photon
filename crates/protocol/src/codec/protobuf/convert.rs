@@ -306,7 +306,8 @@ impl From<ProtoDataPoint> for DataPoint {
 impl From<&RangePoint> for ProtoRangePoint {
     fn from(p: &RangePoint) -> Self {
         Self {
-            step: p.step,
+            step_start: p.step_start,
+            step_end: p.step_end,
             min: p.min,
             max: p.max,
         }
@@ -316,7 +317,8 @@ impl From<&RangePoint> for ProtoRangePoint {
 impl From<ProtoRangePoint> for RangePoint {
     fn from(proto: ProtoRangePoint) -> Self {
         Self {
-            step: proto.step,
+            step_start: proto.step_start,
+            step_end: proto.step_end,
             min: proto.min,
             max: proto.max,
         }

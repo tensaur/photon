@@ -7,6 +7,7 @@ use photon_core::types::query::{
 };
 use photon_downsample::ports::selector::Selector;
 use photon_store::ports::bucket::BucketReader;
+use photon_store::ports::compaction::CompactionCursor;
 use photon_store::ports::metric::MetricReader;
 
 use crate::domain::tier::{Resolution, TierSelector};
@@ -34,47 +35,58 @@ pub trait QueryService {
     ) -> impl Future<Output = Result<Vec<Metric>, QueryError>> + Send;
 }
 
-pub struct Service<S, B, M>
+pub struct Service<S, B, M, C>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
+    C: CompactionCursor,
 {
     selector: S,
     bucket_reader: B,
     metric_reader: M,
+    compaction_cursor: C,
     tier_selector: TierSelector,
 }
 
-impl<S, B, M> Service<S, B, M>
+impl<S, B, M, C> Service<S, B, M, C>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
+    C: CompactionCursor,
 {
     pub fn new(
         selector: S,
         bucket_reader: B,
         metric_reader: M,
+        compaction_cursor: C,
         tier_selector: TierSelector,
     ) -> Self {
         Self {
             selector,
             bucket_reader,
             metric_reader,
+            compaction_cursor,
             tier_selector,
         }
     }
 }
 
-impl<S, B, M> QueryService for Service<S, B, M>
+impl<S, B, M, C> QueryService for Service<S, B, M, C>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
+    C: CompactionCursor,
 {
     async fn query(&self, q: &MetricQuery) -> Result<MetricSeries, QueryError> {
-        let plan = self.tier_selector.pick(&q.step_range, q.target_points);
+        let point_count = self
+            .metric_reader
+            .count_points(&q.run_id, &q.key, q.step_range.clone())
+            .await?;
+
+        let plan = self.tier_selector.pick(point_count, q.target_points);
 
         let data = match plan.line {
             Resolution::Raw => {
@@ -96,44 +108,83 @@ where
                         .collect(),
                 }
             }
-            Resolution::Bucketed(line_width) => {
-                let line_buckets = self
-                    .bucket_reader
-                    .read_buckets(&q.run_id, &q.key, line_width, q.step_range.clone())
-                    .await?;
+            Resolution::Bucketed(tier_index) => {
+                let compacted_through = self
+                    .compaction_cursor
+                    .get(&q.run_id, &q.key, tier_index)
+                    .await?
+                    .unwrap_or(0);
 
-                let candidates: Vec<(u64, f64)> =
-                    line_buckets.iter().map(|b| (b.step, b.value)).collect();
+                let bucket_end = compacted_through.min(q.step_range.end);
+                let raw_start = compacted_through.max(q.step_range.start);
 
-                let selected = if candidates.len() <= q.target_points {
-                    candidates
+                // Bucketed history
+                let buckets = if q.step_range.start < bucket_end {
+                    self.bucket_reader
+                        .read_buckets(
+                            &q.run_id,
+                            &q.key,
+                            tier_index,
+                            q.step_range.start..bucket_end,
+                        )
+                        .await?
                 } else {
-                    self.selector.select(&candidates, q.target_points)
+                    Vec::new()
                 };
 
-                let envelope = match plan.envelope {
-                    Resolution::Bucketed(env_width) if env_width != line_width => {
+                // Raw tail
+                let raw_tail = if raw_start < q.step_range.end {
+                    self.metric_reader
+                        .read_points(&q.run_id, &q.key, raw_start..q.step_range.end)
+                        .await?
+                } else {
+                    Vec::new()
+                };
+
+                // Envelope
+                let envelope: Vec<RangePoint> = match plan.envelope {
+                    Resolution::Bucketed(env_tier) if env_tier != tier_index => {
                         let env_buckets = self
                             .bucket_reader
-                            .read_buckets(&q.run_id, &q.key, env_width, q.step_range.clone())
+                            .read_buckets(
+                                &q.run_id,
+                                &q.key,
+                                env_tier,
+                                q.step_range.start..bucket_end,
+                            )
                             .await?;
                         env_buckets
                             .iter()
                             .map(|b| RangePoint {
-                                step: b.step,
+                                step_start: b.step_start,
+                                step_end: b.step_end,
                                 min: b.min,
                                 max: b.max,
                             })
                             .collect()
                     }
-                    _ => line_buckets
+                    _ => buckets
                         .iter()
                         .map(|b| RangePoint {
-                            step: b.step,
+                            step_start: b.step_start,
+                            step_end: b.step_end,
                             min: b.min,
                             max: b.max,
                         })
                         .collect(),
+                };
+
+                // Combine bucket values with raw tail
+                let combined: Vec<(u64, f64)> = buckets
+                    .iter()
+                    .map(|b| (b.step_start, b.value))
+                    .chain(raw_tail.into_iter())
+                    .collect();
+
+                let selected = if combined.len() <= q.target_points {
+                    combined
+                } else {
+                    self.selector.select(&combined, q.target_points)
                 };
 
                 SeriesData::Aggregated {

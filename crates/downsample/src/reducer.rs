@@ -1,47 +1,81 @@
-use std::collections::HashMap;
-
-use photon_core::types::bucket::BucketEntry;
-use photon_core::types::metric::{Metric, MetricBatch};
+use photon_core::types::bucket::Bucket;
 
 use crate::ports::aggregator::Aggregator;
-use crate::pyramid::Pyramid;
 
-/// Routes metric batches across per-key pyramids.
-/// Holds one [`Pyramid`] per metric key.
-pub struct BatchReducer<A: Aggregator> {
+pub struct Reducer<A: Aggregator> {
     aggregator: A,
-    tier_widths: Vec<u64>,
-    keys: HashMap<Metric, Pyramid<A>>,
+    tiers: Vec<Tier<A>>,
 }
 
-impl<A: Aggregator> BatchReducer<A> {
-    pub fn new(aggregator: A, tier_widths: Vec<u64>) -> Self {
-        Self {
-            aggregator,
-            tier_widths,
-            keys: HashMap::new(),
-        }
+struct Tier<A: Aggregator> {
+    divisor: usize,
+    count: usize,
+    open: Option<A::Bucket>,
+    first_step: u64,
+    last_step: u64,
+}
+
+impl<A: Aggregator> Reducer<A> {
+    pub fn new(aggregator: A, divisors: Vec<usize>) -> Self {
+        let tiers = divisors
+            .into_iter()
+            .map(|divisor| Tier {
+                divisor,
+                count: 0,
+                open: None,
+                first_step: 0,
+                last_step: 0,
+            })
+            .collect();
+
+        Self { aggregator, tiers }
     }
 
-    /// Process a batch. Returns all closed buckets across all keys and tiers.
-    pub fn ingest(&mut self, batch: &MetricBatch) -> Vec<BucketEntry> {
-        let mut entries = Vec::new();
+    pub fn push(&mut self, step: u64, value: f64) -> Vec<(usize, Bucket)> {
+        let mut closed = Vec::new();
 
-        for point in &batch.points {
-            let pyramid = self
-                .keys
-                .entry(point.key.clone())
-                .or_insert_with(|| Pyramid::new(self.aggregator.clone(), self.tier_widths.clone()));
+        for (i, tier) in self.tiers.iter_mut().enumerate() {
+            match &mut tier.open {
+                Some(bucket) => {
+                    self.aggregator.push(bucket, step, value);
+                }
+                None => {
+                    tier.open = Some(self.aggregator.new_bucket(step, value));
+                    tier.first_step = step;
+                }
+            }
 
-            for (tier, bucket) in pyramid.push(point.step, point.value) {
-                entries.push(BucketEntry {
-                    key: point.key.clone(),
-                    tier,
-                    bucket,
-                });
+            tier.last_step = step;
+            tier.count += 1;
+
+            if tier.count >= tier.divisor {
+                let bucket = tier.open.take().unwrap();
+                closed.push((
+                    i,
+                    self.aggregator.close(&bucket, tier.first_step, tier.last_step),
+                ));
+                tier.count = 0;
             }
         }
 
-        entries
+        closed
+    }
+
+    /// Flush any partially-filled buckets. Call when a run finishes.
+    pub fn flush(&mut self) -> Vec<(usize, Bucket)> {
+        let mut closed = Vec::new();
+
+        for (i, tier) in self.tiers.iter_mut().enumerate() {
+            if let Some(bucket) = tier.open.take() {
+                closed.push((
+                    i,
+                    self.aggregator.close(&bucket, tier.first_step, tier.last_step),
+                ));
+                tier.count = 0;
+            }
+        }
+
+        closed
     }
 }
+

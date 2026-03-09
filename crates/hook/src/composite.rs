@@ -25,7 +25,7 @@ impl IngestHook for CompositeHook {
         }
     }
 
-    fn on_buckets_closed(&self, run_id: RunId, key: &Metric, tier: u64, bucket: &Bucket) {
+    fn on_buckets_closed(&self, run_id: RunId, key: &Metric, tier: usize, bucket: &Bucket) {
         for hook in &self.hooks {
             hook.on_buckets_closed(run_id, key, tier, bucket);
         }

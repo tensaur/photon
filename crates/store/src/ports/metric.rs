@@ -27,4 +27,11 @@ pub trait MetricReader: Send + Sync + Clone + 'static {
         &self,
         run_id: &RunId,
     ) -> impl Future<Output = Result<Vec<Metric>, ReadError>> + Send;
+
+    fn count_points(
+        &self,
+        run_id: &RunId,
+        key: &Metric,
+        step_range: Range<u64>,
+    ) -> impl Future<Output = Result<usize, ReadError>> + Send;
 }

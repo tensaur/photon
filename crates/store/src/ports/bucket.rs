@@ -22,7 +22,7 @@ pub trait BucketReader: Send + Sync + Clone + 'static {
         &self,
         run_id: &RunId,
         key: &Metric,
-        tier: u64,
+        tier: usize,
         step_range: Range<u64>,
     ) -> impl Future<Output = Result<Vec<Bucket>, ReadError>> + Send;
 }

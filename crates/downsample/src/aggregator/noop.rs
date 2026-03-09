@@ -25,9 +25,10 @@ impl Aggregator for NoOpAggregator {
         NoOpBucket { value: b.value }
     }
 
-    fn close(&self, bucket: &NoOpBucket, step: u64) -> Bucket {
+    fn close(&self, bucket: &NoOpBucket, step_start: u64, step_end: u64) -> Bucket {
         Bucket {
-            step,
+            step_start,
+            step_end,
             value: bucket.value,
             min: bucket.value,
             max: bucket.value,

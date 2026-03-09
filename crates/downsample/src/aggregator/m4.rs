@@ -48,9 +48,10 @@ impl Aggregator for M4Aggregator {
         }
     }
 
-    fn close(&self, bucket: &M4Bucket, step: u64) -> Bucket {
+    fn close(&self, bucket: &M4Bucket, step_start: u64, step_end: u64) -> Bucket {
         Bucket {
-            step,
+            step_start,
+            step_end,
             value: bucket.last_value,
             min: bucket.min_value,
             max: bucket.max_value,

@@ -12,7 +12,7 @@ use crate::ports::{ReadError, WriteError};
 
 #[derive(Clone)]
 pub struct InMemoryBucketStore {
-    data: Arc<DashMap<(RunId, Metric, u64), Vec<Bucket>>>,
+    data: Arc<DashMap<(RunId, Metric, usize), Vec<Bucket>>>,
 }
 
 impl InMemoryBucketStore {
@@ -51,7 +51,7 @@ impl BucketReader for InMemoryBucketStore {
         &self,
         run_id: &RunId,
         key: &Metric,
-        tier: u64,
+        tier: usize,
         step_range: Range<u64>,
     ) -> Result<Vec<Bucket>, ReadError> {
         let Some(buckets) = self.data.get(&(*run_id, key.clone(), tier)) else {
@@ -60,7 +60,7 @@ impl BucketReader for InMemoryBucketStore {
 
         Ok(buckets
             .iter()
-            .filter(|b| b.step >= step_range.start && b.step < step_range.end)
+            .filter(|b| b.step_start < step_range.end && b.step_end >= step_range.start)
             .cloned()
             .collect())
     }

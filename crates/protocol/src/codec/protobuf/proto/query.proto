@@ -41,7 +41,8 @@ message DataPoint {
 }
 
 message RangePoint {
-  uint64 step = 1;
-  double min = 2;
-  double max = 3;
+  uint64 step_start = 1;
+  uint64 step_end = 2;
+  double min = 3;
+  double max = 4;
 }

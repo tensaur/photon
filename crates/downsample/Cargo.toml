@@ -7,4 +7,9 @@ repository.workspace = true
 
 [dependencies]
 photon-core = { path = "../core" }
+photon-store = { path = "../store" }
+
+tokio.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
 

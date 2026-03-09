@@ -20,5 +20,5 @@ pub trait Aggregator: Send + Sync + Clone + 'static {
     fn merge(&self, a: &Self::Bucket, b: &Self::Bucket) -> Self::Bucket;
 
     /// Extract the final summary. Called once when a bucket closes.
-    fn close(&self, bucket: &Self::Bucket, step: u64) -> Bucket;
+    fn close(&self, bucket: &Self::Bucket, step_start: u64, step_end: u64) -> Bucket;
 }
