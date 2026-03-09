@@ -15,6 +15,7 @@ use photon_protocol::ports::compress::Compressor;
 use crate::domain::pipeline::ack_tracker::AckTracker;
 use crate::domain::pipeline::accumulator::Accumulator;
 use crate::domain::pipeline::batch_builder::{BatchBuilder, BatchBuilderError, BuilderStats};
+use crate::domain::pipeline::recovery::RecoveryManager;
 use crate::domain::pipeline::sender::{Sender, SenderStats};
 use crate::domain::pipeline::interner::{InternResolver, MetricKeyInterner, RawPoint};
 use crate::outbound::grpc::GrpcTransport;
@@ -83,6 +84,7 @@ impl Service {
         let sender_ctx = config.endpoint.map(|endpoint| {
             let sender_wal = wal.clone();
             let ack_wal = wal.clone();
+            let recovery_wal = wal.clone();
             let sender_config = config.sender.clone();
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -99,16 +101,41 @@ impl Service {
                             .await
                             .map_err(|e| anyhow::anyhow!("sender connection failed: {e}"))?;
 
+                        let recovery = RecoveryManager::new(recovery_wal, run_id);
+
+                        let watermark = if recovery.is_clean()
+                            .map_err(|e| anyhow::anyhow!("WAL check failed: {e}"))?
+                        {
+                            tracing::debug!(run_id = %run_id, "clean WAL, skipping recovery");
+                            SequenceNumber::ZERO
+                        } else {
+                            let result = recovery
+                                .recover(&transport)
+                                .await
+                                .map_err(|e| anyhow::anyhow!("recovery failed: {e}"))?;
+
+                            if result.batches_to_replay > 0 {
+                                tracing::info!(
+                                    run_id = %run_id,
+                                    batches = result.batches_to_replay,
+                                    bytes = result.bytes_to_replay,
+                                    "replaying uncommitted batches from WAL"
+                                );
+                            }
+
+                            result.effective_watermark
+                        };
+
                         let mut sender = Sender::new(
                             transport,
                             sender_wal,
                             sender_config,
-                            SequenceNumber::ZERO,
+                            watermark,
                             shutdown_rx,
                         );
 
                         let mut ack_tracker =
-                            AckTracker::new(ack_wal, SequenceNumber::ZERO, 10);
+                            AckTracker::new(ack_wal, watermark, 10);
 
                         let mut result = sender
                             .run(|seq| {

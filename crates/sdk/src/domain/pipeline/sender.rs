@@ -25,6 +25,7 @@ where
     last_sent: SequenceNumber,
     stats: SenderStats,
     shutdown_rx: oneshot::Receiver<()>,
+    draining_since: Option<Instant>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,6 +86,7 @@ where
             last_sent: start_after,
             stats: SenderStats::default(),
             shutdown_rx,
+            draining_since: None,
         }
     }
 
@@ -106,7 +108,18 @@ where
     ) -> Result<SenderStats, SenderError> {
         loop {
             match &self.state {
-                SenderState::Shutdown => return Ok(self.stats.clone()),
+                SenderState::Shutdown => {
+                    tracing::info!(
+                        state = ?self.state(),
+                        sent = self.stats().batches_sent,
+                        acked = self.stats().batches_acked,
+                        retried = self.stats().batches_retried,
+                        in_flight = self.in_flight_count(),
+                        "sender shutting down"
+                    );
+
+                    return Ok(self.stats.clone());
+                }
 
                 SenderState::Reconnecting { attempt, next_at } => {
                     let attempt = *attempt;
@@ -125,10 +138,20 @@ where
                             Err(oneshot::error::TryRecvError::Empty)
                         );
 
-                        if !alive && self.in_flight.is_empty() {
+                        if alive {
+                            self.draining_since = None;
+
+                            tokio::time::sleep(self.config.idle_poll_interval).await;
+                        } else if self.in_flight.is_empty() {
                             self.state = SenderState::Shutdown;
                         } else {
-                            tokio::time::sleep(Duration::from_millis(50)).await;
+                            let since = *self.draining_since.get_or_insert(Instant::now());
+
+                            if since.elapsed() > self.config.shutdown_timeout {
+                                return Err(SenderError::ShutdownTimeout(since.elapsed()));
+                            }
+
+                            tokio::time::sleep(self.config.drain_poll_interval).await;
                         }
                     }
                 }
@@ -186,6 +209,29 @@ where
                 Ok(false)
             }
             Err(e) => Err(e.into()),
+        }
+    }
+
+    fn check_in_flight_timeouts(&mut self) {
+        if self.in_flight.is_empty() {
+            return;
+        }
+
+        // BTreeMap ordered by sequence so first entry is oldest
+        let oldest = self.in_flight.values().next().unwrap();
+        let elapsed = oldest.sent_at.elapsed();
+
+        if elapsed > self.config.in_flight_timeout {
+            tracing::warn!(
+                seq = u64::from(oldest.sequence_number),
+                attempt = oldest.attempt,
+                elapsed_ms = elapsed.as_millis(),
+                in_flight = self.in_flight.len(),
+                "in-flight batch timed out, reconnecting"
+            );
+
+            self.stats.batches_retried += self.in_flight.len() as u64;
+            self.enter_reconnecting();
         }
     }
 

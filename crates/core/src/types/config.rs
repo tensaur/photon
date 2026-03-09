@@ -26,6 +26,10 @@ pub struct SenderConfig {
     pub max_in_flight: usize,
     pub max_streams: usize,
     pub retry: RetryConfig,
+    pub in_flight_timeout: Duration,
+    pub shutdown_timeout: Duration,
+    pub idle_poll_interval: Duration,
+    pub drain_poll_interval: Duration,
 }
 
 impl Default for SenderConfig {
@@ -34,6 +38,10 @@ impl Default for SenderConfig {
             max_in_flight: 64,
             max_streams: 2,
             retry: RetryConfig::default(),
+            in_flight_timeout: Duration::from_secs(30),
+            shutdown_timeout: Duration::from_secs(60),
+            idle_poll_interval: Duration::from_millis(50),
+            drain_poll_interval: Duration::from_millis(10),
         }
     }
 }

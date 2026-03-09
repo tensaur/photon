@@ -70,13 +70,4 @@ impl<W: WalStorage> RecoveryManager<W> {
         let batches = self.wal.read_from(meta.committed_sequence)?;
         Ok(batches.is_empty())
     }
-
-    pub fn discard(&mut self) -> Result<(), WalError> {
-        tracing::warn!(
-            run_id = %self.run_id,
-            "discarding WAL data for run"
-        );
-
-        self.wal.delete_all()
-    }
 }
