@@ -68,7 +68,7 @@ impl<A: Aggregator> Pyramid<A> {
     /// For width 100: true at step 99, 199, 299, ...
     fn at_boundary(&self, tier_index: usize, step: u64) -> bool {
         let width = self.tiers[tier_index].width;
-        (step + 1) % width == 0
+        (step + 1).is_multiple_of(width)
     }
 
     /// The first step of the bucket that contains `step`.

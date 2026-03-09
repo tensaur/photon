@@ -132,6 +132,8 @@ where
                     let sent = self.send_next().await?;
                     let acked = self.recv_and_handle_ack(&mut ack_callback).await?;
 
+                    self.check_in_flight_timeouts();
+
                     if !sent && !acked {
                         let alive = matches!(
                             self.shutdown_rx.try_recv(),

@@ -113,7 +113,7 @@ where
     ) -> Result<(), BatchBuilderError> {
         let points = self.resolver.resolve(pending);
         let batch = MetricBatch {
-            run_id: self.run_id.clone(),
+            run_id: self.run_id,
             points,
         };
         let point_count = batch.len();
@@ -129,7 +129,7 @@ where
         let crc = crc32fast::hash(&self.compress_buf);
 
         let assembled = AssembledBatch {
-            run_id: self.run_id.clone(),
+            run_id: self.run_id,
             sequence_number: self.next_sequence,
             point_count,
             uncompressed_size,

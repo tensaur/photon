@@ -34,8 +34,8 @@ impl<W: WalStorage> RecoveryManager<W> {
     /// Compares two watermarks:
     /// - Local: persisted in WAL metadata.
     /// - Server: what the server actually commited. Can be ahead of
-    /// local if the SDK crashed after the server acked but before
-    /// the ack tracker flushed.
+    ///   local if the SDK crashed after the server acked but before
+    ///   the ack tracker flushed.
     pub async fn recover<T: BatchTransport>(
         &self,
         transport: &T,
