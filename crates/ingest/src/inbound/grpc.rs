@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
@@ -17,13 +17,13 @@ use crate::domain::service::IngestService;
 
 /// gRPC handler. Thin adapter between proto wire format and domain service.
 pub struct Handler<S: IngestService> {
-    service: Arc<Mutex<S>>,
+    service: Arc<S>,
 }
 
 impl<S: IngestService> Handler<S> {
     pub fn new(service: S) -> Self {
         Self {
-            service: Arc::new(Mutex::new(service)),
+            service: Arc::new(service),
         }
     }
 
@@ -36,7 +36,7 @@ impl<S: IngestService> Handler<S> {
 }
 
 #[tonic::async_trait]
-impl<S: IngestService + Send + 'static> GrpcIngestService for Handler<S> {
+impl<S: IngestService + Send + Sync + 'static> GrpcIngestService for Handler<S> {
     type LogMetricsStream = ReceiverStream<Result<MetricBatchAck, Status>>;
 
     async fn log_metrics(
@@ -73,7 +73,7 @@ impl<S: IngestService + Send + 'static> GrpcIngestService for Handler<S> {
                     }
                 };
 
-                let ack = match service.lock().await.ingest(&batch).await {
+                let ack = match service.ingest(&batch).await {
                     Ok(result) => MetricBatchAck {
                         sequence_number: u64::from(result.sequence_number),
                         status: ProtoAckStatus::from(result.status).into(),
@@ -109,8 +109,6 @@ impl<S: IngestService + Send + 'static> GrpcIngestService for Handler<S> {
 
         let seq = self
             .service
-            .lock()
-            .await
             .watermark(&run_id)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;

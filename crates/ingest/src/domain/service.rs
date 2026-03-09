@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::future::Future;
 
 use bytes::BytesMut;
+use dashmap::DashMap;
 
 use photon_core::types::ack::AckStatus;
 use photon_core::types::batch::AssembledBatch;
@@ -45,7 +45,7 @@ pub enum IngestError {
 
 pub trait IngestService {
     fn ingest(
-        &mut self,
+        &self,
         batch: &AssembledBatch,
     ) -> impl Future<Output = Result<IngestResult, IngestError>> + Send;
 
@@ -54,7 +54,7 @@ pub trait IngestService {
         run_id: &RunId,
     ) -> impl Future<Output = Result<SequenceNumber, IngestError>> + Send;
 
-    fn evict_run(&mut self, run_id: &RunId);
+    fn evict_run(&self, run_id: &RunId);
 }
 
 pub struct Service<A, W, M, B, H, C, K>
@@ -70,7 +70,7 @@ where
     dedup: DeduplicationTracker<W>,
     aggregator: A,
     tier_widths: Vec<u64>,
-    reducers: HashMap<RunId, BatchReducer<A>>,
+    reducers: DashMap<RunId, BatchReducer<A>>,
     metric_store: M,
     bucket_store: B,
     hook: H,
@@ -102,7 +102,7 @@ where
             dedup: DeduplicationTracker::new(watermark_store),
             aggregator,
             tier_widths,
-            reducers: HashMap::new(),
+            reducers: DashMap::new(),
             metric_store,
             bucket_store,
             hook,
@@ -122,7 +122,7 @@ where
     C: Compressor,
     K: Codec<MetricBatch>,
 {
-    async fn ingest(&mut self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
+    async fn ingest(&self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;
 
         // 1. Dedup
@@ -156,7 +156,7 @@ where
             .map_err(IngestError::MetricWrite)?;
 
         // 5. Downsample
-        let reducer = self.reducers.entry(batch.run_id).or_insert_with(|| {
+        let mut reducer = self.reducers.entry(batch.run_id).or_insert_with(|| {
             BatchReducer::new(self.aggregator.clone(), self.tier_widths.clone())
         });
         let entries = reducer.ingest(&metric_batch);
@@ -189,7 +189,7 @@ where
         Ok(self.dedup.watermark(run_id).await?)
     }
 
-    fn evict_run(&mut self, run_id: &RunId) {
+    fn evict_run(&self, run_id: &RunId) {
         self.reducers.remove(run_id);
         self.dedup.evict(run_id);
     }
