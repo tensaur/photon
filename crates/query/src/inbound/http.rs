@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
-use axum::Router;
 use bytes::BytesMut;
 
 use photon_core::types::id::RunId;
@@ -54,10 +54,7 @@ where
     }
 }
 
-async fn query<S, C>(
-    State(state): State<Arc<AppState<S, C>>>,
-    body: Bytes,
-) -> impl IntoResponse
+async fn query<S, C>(State(state): State<Arc<AppState<S, C>>>, body: Bytes) -> impl IntoResponse
 where
     S: QueryService + Send + Sync + 'static,
     C: Codec<MetricQuery> + Codec<MetricSeries> + 'static,

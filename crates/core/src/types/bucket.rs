@@ -14,4 +14,3 @@ pub struct BucketEntry {
     pub tier: u64,
     pub bucket: Bucket,
 }
-

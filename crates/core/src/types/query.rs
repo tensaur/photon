@@ -20,7 +20,9 @@ pub struct MetricSeries {
 
 #[derive(Clone, Debug)]
 pub enum SeriesData {
-    Raw { points: Vec<DataPoint> },
+    Raw {
+        points: Vec<DataPoint>,
+    },
     Aggregated {
         points: Vec<DataPoint>,
         envelope: Vec<RangePoint>,

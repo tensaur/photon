@@ -208,7 +208,11 @@ impl TryFrom<ProtoMetricQuery> for MetricQuery {
 impl From<&QueryResponse> for ProtoQueryResponse {
     fn from(response: &QueryResponse) -> Self {
         Self {
-            series: response.series.iter().map(ProtoMetricSeries::from).collect(),
+            series: response
+                .series
+                .iter()
+                .map(ProtoMetricSeries::from)
+                .collect(),
         }
     }
 }

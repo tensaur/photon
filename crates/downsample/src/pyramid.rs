@@ -78,4 +78,3 @@ impl<A: Aggregator> Pyramid<A> {
         step - (step % width)
     }
 }
-

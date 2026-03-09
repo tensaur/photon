@@ -63,10 +63,7 @@ impl<W: WatermarkStore> DeduplicationTracker<W> {
         Ok(())
     }
 
-    pub async fn watermark(
-        &self,
-        run_id: &RunId,
-    ) -> Result<SequenceNumber, DeduplicationError> {
+    pub async fn watermark(&self, run_id: &RunId) -> Result<SequenceNumber, DeduplicationError> {
         if let Some(w) = self.cache.get(run_id) {
             return Ok(*w.value());
         }

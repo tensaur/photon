@@ -4,8 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use photon_core::types::config::BatchConfig;
 use photon_core::types::id::RunId;
-use photon_core::types::sequence::SequenceNumber;
 use photon_core::types::metric::MetricBatch;
+use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 

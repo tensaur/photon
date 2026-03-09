@@ -1,2 +1,2 @@
-pub mod ports;
 pub mod memory;
+pub mod ports;

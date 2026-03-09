@@ -70,4 +70,3 @@ impl MetricReader for InMemoryMetricStore {
         Ok(run.iter().map(|item| item.key().clone()).collect())
     }
 }
-

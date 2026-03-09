@@ -57,4 +57,3 @@ impl Aggregator for M4Aggregator {
         }
     }
 }
-

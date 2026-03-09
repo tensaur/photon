@@ -53,4 +53,3 @@ impl TierSelector {
         ResolutionPlan { line, envelope }
     }
 }
-

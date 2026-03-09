@@ -52,7 +52,12 @@ where
     B: BucketReader,
     M: MetricReader,
 {
-    pub fn new(selector: S, bucket_reader: B, metric_reader: M, tier_selector: TierSelector) -> Self {
+    pub fn new(
+        selector: S,
+        bucket_reader: B,
+        metric_reader: M,
+        tier_selector: TierSelector,
+    ) -> Self {
         Self {
             selector,
             bucket_reader,
@@ -162,4 +167,3 @@ where
         Ok(self.metric_reader.list_metrics(run_id).await?)
     }
 }
-

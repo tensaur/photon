@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc};
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
 use photon_core::types::batch::AssembledBatch;
@@ -104,9 +104,8 @@ impl<S: IngestService + Send + 'static> GrpcIngestService for Handler<S> {
     ) -> Result<Response<WatermarkResponse>, Status> {
         let proto = request.into_inner();
 
-        let run_id = RunId::try_from(&proto).map_err(|e: ProtoConversionError| {
-            Status::invalid_argument(e.to_string())
-        })?;
+        let run_id = RunId::try_from(&proto)
+            .map_err(|e: ProtoConversionError| Status::invalid_argument(e.to_string()))?;
 
         let seq = self
             .service
@@ -121,4 +120,3 @@ impl<S: IngestService + Send + 'static> GrpcIngestService for Handler<S> {
         }))
     }
 }
-

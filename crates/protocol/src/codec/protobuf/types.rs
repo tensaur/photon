@@ -18,13 +18,8 @@ pub use ingest::v1::{
 };
 
 pub use query::v1::{
-    AggregatedData as ProtoAggregatedData,
-    DataPoint as ProtoDataPoint,
-    MetricQuery as ProtoMetricQuery,
-    MetricSeries as ProtoMetricSeries,
-    metric_series::Data as ProtoSeriesData,
-    QueryRequest as ProtoQueryRequest,
-    QueryResponse as ProtoQueryResponse,
-    RangePoint as ProtoRangePoint,
-    RawData as ProtoRawData,
+    AggregatedData as ProtoAggregatedData, DataPoint as ProtoDataPoint,
+    MetricQuery as ProtoMetricQuery, MetricSeries as ProtoMetricSeries,
+    QueryRequest as ProtoQueryRequest, QueryResponse as ProtoQueryResponse,
+    RangePoint as ProtoRangePoint, RawData as ProtoRawData, metric_series::Data as ProtoSeriesData,
 };

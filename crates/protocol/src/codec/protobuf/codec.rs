@@ -5,13 +5,11 @@ use prost::Message;
 
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
-use photon_core::types::query::{
-    MetricQuery, MetricSeries, QueryRequest, QueryResponse,
-};
+use photon_core::types::query::{MetricQuery, MetricSeries, QueryRequest, QueryResponse};
 
 use crate::codec::protobuf::types::{
-    MetricBatchContent, MetricPointProto, ProtoMetricQuery, ProtoMetricSeries,
-    ProtoQueryRequest, ProtoQueryResponse,
+    MetricBatchContent, MetricPointProto, ProtoMetricQuery, ProtoMetricSeries, ProtoQueryRequest,
+    ProtoQueryResponse,
 };
 use crate::ports::codec::{Codec, CodecError};
 
@@ -91,10 +89,9 @@ impl Codec<QueryRequest> for ProtobufCodec {
     }
 
     fn decode(&self, input: &[u8]) -> Result<QueryRequest, CodecError> {
-        let proto =
-            ProtoQueryRequest::decode(input).map_err(|e| CodecError::DecodeFailed {
-                reason: e.to_string(),
-            })?;
+        let proto = ProtoQueryRequest::decode(input).map_err(|e| CodecError::DecodeFailed {
+            reason: e.to_string(),
+        })?;
 
         QueryRequest::try_from(proto).map_err(|e| CodecError::DecodeFailed {
             reason: e.to_string(),
@@ -116,10 +113,9 @@ impl Codec<QueryResponse> for ProtobufCodec {
     }
 
     fn decode(&self, input: &[u8]) -> Result<QueryResponse, CodecError> {
-        let proto =
-            ProtoQueryResponse::decode(input).map_err(|e| CodecError::DecodeFailed {
-                reason: e.to_string(),
-            })?;
+        let proto = ProtoQueryResponse::decode(input).map_err(|e| CodecError::DecodeFailed {
+            reason: e.to_string(),
+        })?;
 
         QueryResponse::try_from(proto).map_err(|e| CodecError::DecodeFailed {
             reason: e.to_string(),
@@ -141,10 +137,9 @@ impl Codec<MetricQuery> for ProtobufCodec {
     }
 
     fn decode(&self, input: &[u8]) -> Result<MetricQuery, CodecError> {
-        let proto =
-            ProtoMetricQuery::decode(input).map_err(|e| CodecError::DecodeFailed {
-                reason: e.to_string(),
-            })?;
+        let proto = ProtoMetricQuery::decode(input).map_err(|e| CodecError::DecodeFailed {
+            reason: e.to_string(),
+        })?;
 
         MetricQuery::try_from(proto).map_err(|e| CodecError::DecodeFailed {
             reason: e.to_string(),
@@ -166,10 +161,9 @@ impl Codec<MetricSeries> for ProtobufCodec {
     }
 
     fn decode(&self, input: &[u8]) -> Result<MetricSeries, CodecError> {
-        let proto =
-            ProtoMetricSeries::decode(input).map_err(|e| CodecError::DecodeFailed {
-                reason: e.to_string(),
-            })?;
+        let proto = ProtoMetricSeries::decode(input).map_err(|e| CodecError::DecodeFailed {
+            reason: e.to_string(),
+        })?;
 
         MetricSeries::try_from(proto).map_err(|e| CodecError::DecodeFailed {
             reason: e.to_string(),
