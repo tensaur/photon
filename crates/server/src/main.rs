@@ -5,7 +5,7 @@ use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service;
 use photon_ingest::inbound::grpc::Handler;
 use photon_protocol::codec::protobuf::codec::ProtobufCodec;
-use photon_protocol::compressor::noop::NoopCompressor;
+use photon_protocol::compressor::zstd::ZstdCompressor;
 use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
 
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let watermark_store = InMemoryWatermarkStore::new();
     let metric_store = InMemoryMetricStore::new();
     let hook = NoOpHook;
-    let compressor = NoopCompressor;
+    let compressor = ZstdCompressor::default();
     let codec = ProtobufCodec;
 
     let ingest_service = Service::new(watermark_store, metric_store, hook, compressor, codec);

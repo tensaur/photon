@@ -15,6 +15,7 @@ tonic-prost.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
+zstd.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true

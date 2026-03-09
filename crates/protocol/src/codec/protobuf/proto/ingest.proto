@@ -38,11 +38,12 @@ enum AckStatus {
 
 message MetricBatchContent {
   string run_id = 1;
-  repeated MetricPointProto points = 2;
+  repeated string keys = 2;
+  repeated MetricPointCompact points = 3;
 }
 
-message MetricPointProto {
-  string key = 1;
+message MetricPointCompact {
+  uint32 key_index = 1;
   double value = 2;
   uint64 step = 3;
   uint64 timestamp_epoch_ms = 4;

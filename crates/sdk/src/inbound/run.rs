@@ -4,7 +4,7 @@ use std::time::Duration;
 use photon_core::types::config::{BatchConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_protocol::codec::protobuf::codec::ProtobufCodec;
-use photon_protocol::compressor::noop::NoopCompressor;
+use photon_protocol::compressor::zstd::ZstdCompressor;
 
 use crate::domain::service::{PipelineConfig, PipelineService, PipelineStats, Service};
 use crate::inbound::error::SdkError;
@@ -156,7 +156,7 @@ impl RunBuilder {
     pub fn start(self) -> Result<Run<Service>, SdkError> {
         let run_id = self.run_id.unwrap_or_default();
         let codec = ProtobufCodec;
-        let compressor = NoopCompressor;
+        let compressor = ZstdCompressor::default();
 
         let config = PipelineConfig {
             channel_capacity: self.channel_capacity,

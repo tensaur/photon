@@ -12,7 +12,7 @@ pub mod query {
 
 pub use ingest::v1::{
     AckStatus as ProtoAckStatus, MetricBatchAck, MetricBatchContent, MetricBatchRequest,
-    MetricPointProto, WatermarkRequest, WatermarkResponse,
+    MetricPointCompact, WatermarkRequest, WatermarkResponse,
     ingest_service_client::IngestServiceClient,
     ingest_service_server::{IngestService, IngestServiceServer},
 };

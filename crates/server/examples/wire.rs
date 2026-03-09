@@ -9,7 +9,7 @@ use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::grpc::Handler;
 use photon_protocol::codec::protobuf::codec::ProtobufCodec;
-use photon_protocol::compressor::noop::NoopCompressor;
+use photon_protocol::compressor::zstd::ZstdCompressor;
 use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
 
@@ -21,8 +21,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let watermark_store = InMemoryWatermarkStore::new();
     let metric_store = InMemoryMetricStore::new();
+    let compressor = ZstdCompressor::default();
     let ingest_service =
-        IngestService::new(watermark_store, metric_store, NoOpHook, NoopCompressor, ProtobufCodec);
+        IngestService::new(watermark_store, metric_store, NoOpHook, compressor, ProtobufCodec);
     let grpc_handler = Handler::new(ingest_service);
 
     // Spawn server in background

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::BytesMut;
@@ -8,8 +9,8 @@ use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
 use photon_core::types::query::{MetricQuery, MetricSeries, QueryRequest, QueryResponse};
 
 use crate::codec::protobuf::types::{
-    MetricBatchContent, MetricPointProto, ProtoMetricQuery, ProtoMetricSeries, ProtoQueryRequest,
-    ProtoQueryResponse,
+    MetricBatchContent, MetricPointCompact, ProtoMetricQuery, ProtoMetricSeries,
+    ProtoQueryRequest, ProtoQueryResponse,
 };
 use crate::ports::codec::{Codec, CodecError};
 
@@ -18,13 +19,26 @@ pub struct ProtobufCodec;
 
 impl Codec<MetricBatch> for ProtobufCodec {
     fn encode(&self, batch: &MetricBatch, output: &mut BytesMut) -> Result<(), CodecError> {
+        let mut key_to_index: HashMap<&str, u32> = HashMap::new();
+        let mut keys: Vec<String> = Vec::new();
+
+        for p in &batch.points {
+            let key_str = p.key.as_str();
+            if !key_to_index.contains_key(key_str) {
+                let idx = keys.len() as u32;
+                key_to_index.insert(key_str, idx);
+                keys.push(key_str.to_owned());
+            }
+        }
+
         let proto = MetricBatchContent {
             run_id: batch.run_id.to_string(),
+            keys,
             points: batch
                 .points
                 .iter()
-                .map(|p| MetricPointProto {
-                    key: p.key.as_str().to_owned(),
+                .map(|p| MetricPointCompact {
+                    key_index: key_to_index[p.key.as_str()],
                     value: p.value,
                     step: p.step,
                     timestamp_epoch_ms: system_time_to_epoch_ms(p.timestamp),
@@ -51,13 +65,26 @@ impl Codec<MetricBatch> for ProtobufCodec {
             reason: format!("invalid run_id: {}", proto.run_id),
         })?;
 
+        let metrics: Vec<Metric> = proto
+            .keys
+            .iter()
+            .map(|k| {
+                Metric::new(k).map_err(|e| CodecError::DecodeFailed {
+                    reason: format!("invalid metric key: {e}"),
+                })
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+
         let points = proto
             .points
             .into_iter()
             .map(|p| {
-                let key = Metric::new(p.key).map_err(|e| CodecError::DecodeFailed {
-                    reason: format!("invalid metric key: {e}"),
-                })?;
+                let key = metrics
+                    .get(p.key_index as usize)
+                    .ok_or_else(|| CodecError::DecodeFailed {
+                        reason: format!("key_index {} out of range (have {} keys)", p.key_index, metrics.len()),
+                    })?
+                    .clone();
 
                 Ok(MetricPoint {
                     key,
