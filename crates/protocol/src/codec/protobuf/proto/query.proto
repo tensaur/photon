@@ -1,0 +1,47 @@
+syntax = "proto3";
+package photon.query.v1;
+
+message QueryRequest {
+  repeated MetricQuery queries = 1;
+}
+
+message MetricQuery {
+  string run_id = 1;
+  string key = 2;
+  uint64 step_start = 3;
+  uint64 step_end = 4;
+  uint32 target_points = 5;
+}
+
+message QueryResponse {
+  repeated MetricSeries series = 1;
+}
+
+message MetricSeries {
+  string run_id = 1;
+  string key = 2;
+  oneof data {
+    RawData raw = 3;
+    AggregatedData aggregated = 4;
+  }
+}
+
+message RawData {
+  repeated DataPoint points = 1;
+}
+
+message AggregatedData {
+  repeated DataPoint points = 1;
+  repeated RangePoint envelope = 2;
+}
+
+message DataPoint {
+  uint64 step = 1;
+  double value = 2;
+}
+
+message RangePoint {
+  uint64 step = 1;
+  double min = 2;
+  double max = 3;
+}

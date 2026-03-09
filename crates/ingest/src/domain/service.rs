@@ -7,10 +7,11 @@ use photon_core::types::ack::AckStatus;
 use photon_core::types::batch::AssembledBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::metric::MetricBatch;
 use photon_downsample::ports::aggregator::Aggregator;
 use photon_downsample::reducer::BatchReducer;
-use photon_hook::IngestHook;
-use photon_protocol::ports::codec::BatchCodec;
+use photon_hook::{IngestHook};
+use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::bucket::BucketWriter;
 use photon_store::ports::metric::MetricWriter;
@@ -64,7 +65,7 @@ where
     B: BucketWriter,
     H: IngestHook,
     C: Compressor,
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
 {
     dedup: DeduplicationTracker<W>,
     aggregator: A,
@@ -85,7 +86,7 @@ where
     B: BucketWriter,
     H: IngestHook,
     C: Compressor,
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
 {
     pub fn new(
         aggregator: A,
@@ -119,7 +120,7 @@ where
     B: BucketWriter,
     H: IngestHook,
     C: Compressor,
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
 {
     async fn ingest(&mut self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;

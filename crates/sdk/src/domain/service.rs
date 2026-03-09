@@ -5,7 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use photon_core::types::config::BatchConfig;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
-use photon_protocol::ports::codec::BatchCodec;
+use photon_core::types::metric::MetricBatch;
+use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 
 use crate::domain::pipeline::accumulator::Accumulator;
@@ -56,7 +57,7 @@ impl Service {
     ) -> Self
     where
         W: WalStorage,
-        K: BatchCodec,
+        K: Codec<MetricBatch>,
         C: Compressor,
     {
         let interner = Arc::new(MetricKeyInterner::new());

@@ -9,7 +9,7 @@ use photon_core::types::config::BatchConfig;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::MetricBatch;
 use photon_core::types::sequence::SequenceNumber;
-use photon_protocol::ports::codec::{BatchCodec, CodecError};
+use photon_protocol::ports::codec::{Codec, CodecError};
 use photon_protocol::ports::compress::{CompressionError, Compressor};
 
 use crate::domain::ports::resolver::PointResolver;
@@ -18,7 +18,7 @@ use crate::domain::ports::wal::{WalError, WalStorage};
 pub struct BatchBuilder<R, K, W, C>
 where
     R: PointResolver,
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
     W: WalStorage,
     C: Compressor,
 {
@@ -37,7 +37,7 @@ where
 impl<R, K, W, C> BatchBuilder<R, K, W, C>
 where
     R: PointResolver,
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
     W: WalStorage,
     C: Compressor,
 {

@@ -5,3 +5,4 @@ pub mod config;
 pub mod id;
 pub mod metric;
 pub mod sequence;
+pub mod query;

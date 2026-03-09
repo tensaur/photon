@@ -5,16 +5,25 @@ use bytes::Bytes;
 use photon_core::types::ack::{AckResult, AckStatus};
 use photon_core::types::batch::AssembledBatch;
 use photon_core::types::id::RunId;
+use photon_core::types::metric::Metric;
+use photon_core::types::query::{
+    DataPoint, MetricQuery, MetricSeries, QueryRequest, QueryResponse, RangePoint, SeriesData,
+};
 use photon_core::types::sequence::SequenceNumber;
 
 use crate::codec::protobuf::types::{
-    MetricBatchAck, MetricBatchRequest, ProtoAckStatus, WatermarkRequest, WatermarkResponse,
+    MetricBatchAck, MetricBatchRequest, ProtoAckStatus, ProtoAggregatedData, ProtoDataPoint,
+    ProtoMetricQuery, ProtoMetricSeries, ProtoQueryRequest, ProtoQueryResponse, ProtoRangePoint,
+    ProtoRawData, ProtoSeriesData, WatermarkRequest, WatermarkResponse,
 };
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProtoConversionError {
     #[error("invalid run_id: {0}")]
     InvalidRunId(String),
+
+    #[error("invalid metric key: {0}")]
+    InvalidMetricKey(String),
 
     #[error("unrecognised ack status: {0}")]
     UnknownAckStatus(i32),
@@ -23,7 +32,6 @@ pub enum ProtoConversionError {
     MissingField(&'static str),
 }
 
-// SDK to wire
 impl From<&AssembledBatch> for MetricBatchRequest {
     fn from(batch: &AssembledBatch) -> Self {
         Self {
@@ -39,17 +47,6 @@ impl From<&AssembledBatch> for MetricBatchRequest {
     }
 }
 
-impl From<AckStatus> for ProtoAckStatus {
-    fn from(status: AckStatus) -> Self {
-        match status {
-            AckStatus::Ok => ProtoAckStatus::Ok,
-            AckStatus::Duplicate => ProtoAckStatus::Duplicate,
-            AckStatus::Rejected => ProtoAckStatus::Rejected,
-        }
-    }
-}
-
-// wire to server, TryFrom as network data can be malformed
 impl TryFrom<MetricBatchRequest> for AssembledBatch {
     type Error = ProtoConversionError;
 
@@ -71,7 +68,22 @@ impl TryFrom<MetricBatchRequest> for AssembledBatch {
     }
 }
 
-// wire to SDK, TryFrom as ack status enum could have an invalid value
+impl From<&AckResult> for MetricBatchAck {
+    fn from(ack: &AckResult) -> Self {
+        let status = match ack.status {
+            AckStatus::Ok => ProtoAckStatus::Ok,
+            AckStatus::Duplicate => ProtoAckStatus::Duplicate,
+            AckStatus::Rejected => ProtoAckStatus::Rejected,
+        };
+
+        Self {
+            sequence_number: u64::from(ack.sequence_number),
+            status: status.into(),
+            message: String::new(),
+        }
+    }
+}
+
 impl TryFrom<MetricBatchAck> for AckResult {
     type Error = ProtoConversionError;
 
@@ -95,19 +107,12 @@ impl TryFrom<MetricBatchAck> for AckResult {
     }
 }
 
-// server to wire
-impl From<&AckResult> for MetricBatchAck {
-    fn from(ack: &AckResult) -> Self {
-        let status = match ack.status {
+impl From<AckStatus> for ProtoAckStatus {
+    fn from(status: AckStatus) -> Self {
+        match status {
             AckStatus::Ok => ProtoAckStatus::Ok,
             AckStatus::Duplicate => ProtoAckStatus::Duplicate,
             AckStatus::Rejected => ProtoAckStatus::Rejected,
-        };
-
-        Self {
-            sequence_number: u64::from(ack.sequence_number),
-            status: status.into(),
-            message: String::new(),
         }
     }
 }
@@ -143,6 +148,174 @@ impl From<SequenceNumber> for WatermarkResponse {
 impl From<WatermarkResponse> for SequenceNumber {
     fn from(proto: WatermarkResponse) -> Self {
         SequenceNumber::from(proto.sequence_number)
+    }
+}
+
+impl From<&QueryRequest> for ProtoQueryRequest {
+    fn from(request: &QueryRequest) -> Self {
+        Self {
+            queries: request.queries.iter().map(ProtoMetricQuery::from).collect(),
+        }
+    }
+}
+
+impl TryFrom<ProtoQueryRequest> for QueryRequest {
+    type Error = ProtoConversionError;
+
+    fn try_from(proto: ProtoQueryRequest) -> Result<Self, Self::Error> {
+        let queries = proto
+            .queries
+            .into_iter()
+            .map(MetricQuery::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self { queries })
+    }
+}
+
+impl From<&MetricQuery> for ProtoMetricQuery {
+    fn from(query: &MetricQuery) -> Self {
+        Self {
+            run_id: query.run_id.to_string(),
+            key: query.key.as_str().to_owned(),
+            step_start: query.step_range.start,
+            step_end: query.step_range.end,
+            target_points: query.target_points as u32,
+        }
+    }
+}
+
+impl TryFrom<ProtoMetricQuery> for MetricQuery {
+    type Error = ProtoConversionError;
+
+    fn try_from(proto: ProtoMetricQuery) -> Result<Self, Self::Error> {
+        let run_id: uuid::Uuid = proto
+            .run_id
+            .parse()
+            .map_err(|_| ProtoConversionError::InvalidRunId(proto.run_id.clone()))?;
+        let key = Metric::new(&proto.key)
+            .map_err(|_| ProtoConversionError::InvalidMetricKey(proto.key.clone()))?;
+
+        Ok(Self {
+            run_id: RunId::from(run_id),
+            key,
+            step_range: proto.step_start..proto.step_end,
+            target_points: proto.target_points as usize,
+        })
+    }
+}
+
+impl From<&QueryResponse> for ProtoQueryResponse {
+    fn from(response: &QueryResponse) -> Self {
+        Self {
+            series: response.series.iter().map(ProtoMetricSeries::from).collect(),
+        }
+    }
+}
+
+impl TryFrom<ProtoQueryResponse> for QueryResponse {
+    type Error = ProtoConversionError;
+
+    fn try_from(proto: ProtoQueryResponse) -> Result<Self, Self::Error> {
+        let series = proto
+            .series
+            .into_iter()
+            .map(MetricSeries::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self { series })
+    }
+}
+
+impl From<&MetricSeries> for ProtoMetricSeries {
+    fn from(series: &MetricSeries) -> Self {
+        let data = match &series.data {
+            SeriesData::Raw { points } => ProtoSeriesData::Raw(ProtoRawData {
+                points: points.iter().map(ProtoDataPoint::from).collect(),
+            }),
+            SeriesData::Aggregated { points, envelope } => {
+                ProtoSeriesData::Aggregated(ProtoAggregatedData {
+                    points: points.iter().map(ProtoDataPoint::from).collect(),
+                    envelope: envelope.iter().map(ProtoRangePoint::from).collect(),
+                })
+            }
+        };
+
+        Self {
+            run_id: series.run_id.to_string(),
+            key: series.key.as_str().to_owned(),
+            data: Some(data),
+        }
+    }
+}
+
+impl TryFrom<ProtoMetricSeries> for MetricSeries {
+    type Error = ProtoConversionError;
+
+    fn try_from(proto: ProtoMetricSeries) -> Result<Self, Self::Error> {
+        let run_id: uuid::Uuid = proto
+            .run_id
+            .parse()
+            .map_err(|_| ProtoConversionError::InvalidRunId(proto.run_id.clone()))?;
+        let key = Metric::new(&proto.key)
+            .map_err(|_| ProtoConversionError::InvalidMetricKey(proto.key.clone()))?;
+
+        let data = match proto
+            .data
+            .ok_or(ProtoConversionError::MissingField("data"))?
+        {
+            ProtoSeriesData::Raw(raw) => SeriesData::Raw {
+                points: raw.points.into_iter().map(DataPoint::from).collect(),
+            },
+            ProtoSeriesData::Aggregated(agg) => SeriesData::Aggregated {
+                points: agg.points.into_iter().map(DataPoint::from).collect(),
+                envelope: agg.envelope.into_iter().map(RangePoint::from).collect(),
+            },
+        };
+
+        Ok(Self {
+            run_id: RunId::from(run_id),
+            key,
+            data,
+        })
+    }
+}
+
+impl From<&DataPoint> for ProtoDataPoint {
+    fn from(p: &DataPoint) -> Self {
+        Self {
+            step: p.step,
+            value: p.value,
+        }
+    }
+}
+
+impl From<ProtoDataPoint> for DataPoint {
+    fn from(proto: ProtoDataPoint) -> Self {
+        Self {
+            step: proto.step,
+            value: proto.value,
+        }
+    }
+}
+
+impl From<&RangePoint> for ProtoRangePoint {
+    fn from(p: &RangePoint) -> Self {
+        Self {
+            step: p.step,
+            min: p.min,
+            max: p.max,
+        }
+    }
+}
+
+impl From<ProtoRangePoint> for RangePoint {
+    fn from(proto: ProtoRangePoint) -> Self {
+        Self {
+            step: proto.step,
+            min: proto.min,
+            max: proto.max,
+        }
     }
 }
 
