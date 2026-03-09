@@ -29,5 +29,5 @@ pub trait IngestHook: Send + Sync + 'static {
     fn on_buckets_closed(&self, _run_id: RunId, _key: &Metric, _tier: u64, _bucket: &Bucket) {}
 
     /// Called when a run transitions between states.
-    fn on_run_status_change(&self, _run_id: RunId, _old: RunStatus, _new: RunStatus) {}
+    fn on_run_status_change(&self, _run_id: RunId, _old: &RunStatus, _new: &RunStatus) {}
 }

@@ -31,9 +31,9 @@ impl IngestHook for CompositeHook {
         }
     }
 
-    fn on_run_status_change(&self, run_id: RunId, old: RunStatus, new: RunStatus) {
+    fn on_run_status_change(&self, run_id: RunId, old: &RunStatus, new: &RunStatus) {
         for hook in &self.hooks {
-            hook.on_run_status_change(run_id, old.clone(), new.clone());
+            hook.on_run_status_change(run_id, old, new);
         }
     }
 }
