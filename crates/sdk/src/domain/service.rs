@@ -43,7 +43,7 @@ pub struct Service {
     run_id: RunId,
     accumulator: Accumulator<RawPoint>,
     interner: Arc<MetricKeyInterner>,
-    builder_handle: Option<JoinHandle<Result<BuilderStats, BatchBuilderError>>>,
+    builder_handle: JoinHandle<Result<BuilderStats, BatchBuilderError>>,
     points_logged: u64,
 }
 
@@ -80,7 +80,7 @@ impl Service {
             run_id,
             accumulator,
             interner,
-            builder_handle: Some(builder_handle),
+            builder_handle,
             points_logged: 0,
         }
     }
@@ -119,12 +119,7 @@ impl PipelineService for Service {
         });
         drop(_old);
 
-        let handle = self
-            .builder_handle
-            .take()
-            .expect("finish called more than once");
-
-        let builder_stats = handle
+        let builder_stats = self.builder_handle
             .join()
             .map_err(|_| SdkError::Unknown(anyhow::anyhow!("builder thread panicked")))?
             .map_err(|e| SdkError::Unknown(e.into()))?;
