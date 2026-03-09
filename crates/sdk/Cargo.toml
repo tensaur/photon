@@ -9,6 +9,10 @@ repository.workspace = true
 name = "rust_api"
 path = "examples/rust_api.rs"
 
+[[example]]
+name = "with_server"
+path = "examples/with_server.rs"
+
 [dependencies]
 photon-core = { path = "../core" }
 photon-protocol = { path = "../protocol" }

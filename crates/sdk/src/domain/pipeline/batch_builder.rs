@@ -81,13 +81,18 @@ where
                         Ok(point) => {
                             pending.push(point);
 
+                            while pending.len() < self.config.max_points {
+                                match self.rx.try_recv() {
+                                    Ok(p) => pending.push(p),
+                                    Err(_) => break,
+                                }
+                            }
+
                             if pending.len() >= self.config.max_points {
                                 self.flush(&mut pending, &mut stats)?;
                             }
                         }
                         Err(_) => {
-                            // Channel disconnected — accumulator was dropped.
-                            // Flush remaining points and exit cleanly.
                             if !pending.is_empty() {
                                 self.flush(&mut pending, &mut stats)?;
                             }
