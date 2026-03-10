@@ -1,6 +1,7 @@
 [package]
 name = "photon"
 version = "0.0.0"
+description = "Client SDK for Photon"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -14,8 +15,8 @@ name = "with_server"
 path = "examples/with_server.rs"
 
 [dependencies]
-photon-core = { path = "../core" }
-photon-protocol = { path = "../protocol" }
+photon-core = { path = "../core", version = "0.0.0" }
+photon-protocol = { path = "../protocol", version = "0.0.0" }
 
 dashmap.workspace = true
 thiserror.workspace = true

@@ -1,10 +1,11 @@
 [package]
 name = "photon-hook"
 version = "0.0.0"
+description = "Library crate to create ingest extensions for Photon"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-photon-core = { path = "../core" }
+photon-core = { path = "../core", version = "0.0.0" }
 

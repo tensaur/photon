@@ -1,12 +1,13 @@
 [package]
 name = "photon-protocol"
 version = "0.0.0"
+description = "Internal codec and compression traits for Photon"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-photon-core = { path = "../core" }
+photon-core = { path = "../core", version = "0.0.0" }
 
 bytes.workspace = true
 prost.workspace = true
