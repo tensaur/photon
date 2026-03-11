@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -55,31 +56,40 @@ pub trait PipelineService {
     fn points_dropped(&self) -> u64;
 }
 
-pub struct Service {
+pub struct Service<W: WalStorage, K: Codec<MetricBatch>, C: Compressor> {
     run_id: RunId,
     accumulator: Accumulator<RawPoint>,
     interner: Arc<MetricKeyInterner>,
     builder_handle: JoinHandle<Result<BuilderStats, BatchBuilderError>>,
     sender_ctx: Option<SenderContext>,
+    wal: W,
+    codec: PhantomData<K>,
+    compressor: PhantomData<C>,
     points_logged: u64,
 }
 
-impl Service {
-    pub fn start<W, K, C>(
+impl<W, K, C> Service<W, K, C>
+where
+    W: WalStorage,
+    K: Codec<MetricBatch>,
+    C: Compressor,
+{
+    pub fn start(
         run_id: RunId,
         wal: W,
         codec: K,
         compressor: C,
         config: PipelineConfig,
-    ) -> Self
-    where
-        W: WalStorage,
-        K: Codec<MetricBatch>,
-        C: Compressor,
-    {
+    ) -> Self {
         let interner = Arc::new(MetricKeyInterner::new());
         let resolver = InternResolver::new(Arc::clone(&interner));
         let (accumulator, rx) = Accumulator::new(config.channel_capacity, config.spill_capacity);
+
+        let start_sequence = wal
+            .read_from(SequenceNumber::ZERO)
+            .ok()
+            .and_then(|batches| batches.last().map(|b| b.sequence_number.next()))
+            .unwrap_or_else(|| SequenceNumber::ZERO.next());
 
         let sender_ctx = config.endpoint.map(|endpoint| {
             let sender_wal = wal.clone();
@@ -167,6 +177,7 @@ impl Service {
             }
         });
 
+        let wal_handle = wal.clone();
         let builder_handle = BatchBuilder::new(
             run_id,
             rx,
@@ -175,7 +186,7 @@ impl Service {
             wal,
             compressor,
             config.batch,
-            SequenceNumber::ZERO,
+            start_sequence,
         )
         .spawn();
 
@@ -185,12 +196,20 @@ impl Service {
             interner,
             builder_handle,
             sender_ctx,
+            wal: wal_handle,
+            codec: PhantomData,
+            compressor: PhantomData,
             points_logged: 0,
         }
     }
 }
 
-impl PipelineService for Service {
+impl<W, K, C> PipelineService for Service<W, K, C>
+where
+    W: WalStorage,
+    K: Codec<MetricBatch>,
+    C: Compressor,
+{
     fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), SdkError> {
         let metric_key = self.interner.get_or_intern(key)?;
 
@@ -210,7 +229,6 @@ impl PipelineService for Service {
         Ok(())
     }
 
-    /// Flushes remaining points and waits for the pipeline to drain.
     fn finish(mut self) -> Result<PipelineStats, SdkError> {
         let points_logged = self.points_logged;
         let points_dropped = self.accumulator.points_dropped();
@@ -243,6 +261,11 @@ impl PipelineService for Service {
             }
             None => (0, 0),
         };
+
+        // Clean shutdown: all batches were acked, so the WAL can be removed.
+        if batches_acked == builder_stats.batches_flushed {
+            let _ = self.wal.delete_all();
+        }
 
         Ok(PipelineStats {
             points_logged,

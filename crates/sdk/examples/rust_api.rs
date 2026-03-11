@@ -1,6 +1,5 @@
 fn main() {
     let mut run = photon::Run::builder()
-        .in_memory()
         .max_points_per_batch(50)
         .start()
         .expect("failed to start run");

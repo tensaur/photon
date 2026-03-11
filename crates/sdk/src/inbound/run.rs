@@ -8,7 +8,7 @@ use photon_protocol::compressor::zstd::ZstdCompressor;
 
 use crate::domain::service::{PipelineConfig, PipelineService, PipelineStats, Service};
 use crate::inbound::error::SdkError;
-use crate::outbound::wal::{DiskWalConfig, InMemoryWal, SharedDiskWal};
+use crate::outbound::wal::{DiskWalConfig, SharedDiskWal};
 
 /// A logging run.
 ///
@@ -61,14 +61,13 @@ impl From<PipelineStats> for RunStats {
 pub struct RunBuilder {
     run_id: Option<RunId>,
     wal_dir: Option<PathBuf>,
-    in_memory_wal: bool,
     channel_capacity: usize,
     spill_capacity: usize,
     batch: BatchConfig,
     endpoint: Option<String>,
 }
 
-impl Run<Service> {
+impl Run<Service<SharedDiskWal, ProtobufCodec, ZstdCompressor>> {
     pub fn builder() -> RunBuilder {
         RunBuilder::default()
     }
@@ -103,7 +102,6 @@ impl Default for RunBuilder {
         Self {
             run_id: None,
             wal_dir: None,
-            in_memory_wal: false,
             channel_capacity: 65_536,
             spill_capacity: 16_384,
             batch: BatchConfig::default(),
@@ -121,12 +119,6 @@ impl RunBuilder {
 
     pub fn wal_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.wal_dir = Some(dir.into());
-        self
-    }
-
-    /// Use an in-memory WAL (no disk I/O). Useful for testing.
-    pub fn in_memory(mut self) -> Self {
-        self.in_memory_wal = true;
         self
     }
 
@@ -153,7 +145,7 @@ impl RunBuilder {
     }
 
     /// Pick adapters and start the pipeline.
-    pub fn start(self) -> Result<Run<Service>, SdkError> {
+    pub fn start(self) -> Result<Run<Service<SharedDiskWal, ProtobufCodec, ZstdCompressor>>, SdkError> {
         let run_id = self.run_id.unwrap_or_default();
         let codec = ProtobufCodec;
         let compressor = ZstdCompressor::default();
@@ -166,15 +158,10 @@ impl RunBuilder {
             sender: SenderConfig::default(),
         };
 
-        let service = if self.in_memory_wal {
-            let wal = InMemoryWal::new();
-            Service::start(run_id, wal, codec, compressor, config)
-        } else {
-            let wal_dir = self.wal_dir.as_deref();
-            let wal = SharedDiskWal::open(wal_dir, run_id, DiskWalConfig::default())
-                .map_err(SdkError::WalRecoveryFailed)?;
-            Service::start(run_id, wal, codec, compressor, config)
-        };
+        let wal_dir = self.wal_dir.as_deref();
+        let wal = SharedDiskWal::open(wal_dir, run_id, DiskWalConfig::default())
+            .map_err(SdkError::WalRecoveryFailed)?;
+        let service = Service::start(run_id, wal, codec, compressor, config);
 
         Ok(Run { service })
     }
