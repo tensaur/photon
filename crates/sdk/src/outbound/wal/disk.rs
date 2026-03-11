@@ -248,24 +248,6 @@ impl DiskWalStorage {
             committed_sequence: self.committed,
         }
     }
-
-    pub fn clear(&mut self) -> Result<(), WalError> {
-        let cap = self.config.wal.segment_size;
-        let replacement = Segment::create(&self.dir, self.next_segment, cap)?;
-        self.next_segment = self.next_segment.next();
-
-        let old = std::mem::replace(&mut self.active, replacement);
-        let _ = old.seal().mark_acked().delete();
-
-        for seg in std::mem::take(&mut self.sealed) {
-            let _ = seg.mark_acked().delete();
-        }
-
-        self.bytes_used = 0;
-        self.committed = SequenceNumber::ZERO;
-        let _ = fs::remove_file(self.dir.join(META_FILENAME));
-        Ok(())
-    }
 }
 
 fn record_to_batch(run_id: RunId, r: WalRecord) -> AssembledBatch {
@@ -291,6 +273,7 @@ impl SharedDiskWal {
     ) -> Result<Self, WalError> {
         DiskWalStorage::open(dir, run_id, config).map(|d| d.into_shared())
     }
+
 }
 
 impl WalStorage for SharedDiskWal {
@@ -319,7 +302,9 @@ impl WalStorage for SharedDiskWal {
     }
 
     fn delete_all(&mut self) -> Result<(), WalError> {
-        self.0.write().unwrap().clear()
+        let inner = self.0.write().unwrap();
+        fs::remove_dir_all(&inner.dir)?;
+        Ok(())
     }
 
     fn total_bytes(&self) -> u64 {

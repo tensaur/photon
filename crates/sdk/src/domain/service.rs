@@ -4,31 +4,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::oneshot;
 
-use photon_core::types::config::BatchConfig;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::MetricBatch;
-use photon_core::types::sequence::SequenceNumber;
-use photon_core::types::config::SenderConfig;
-use photon_protocol::ports::codec::Codec;
-use photon_protocol::ports::compress::Compressor;
 
-use crate::domain::pipeline::ack_tracker::AckTracker;
 use crate::domain::pipeline::accumulator::Accumulator;
-use crate::domain::pipeline::batch_builder::{BatchBuilder, BatchBuilderError, BuilderStats};
-use crate::domain::pipeline::recovery::RecoveryManager;
-use crate::domain::pipeline::sender::{Sender, SenderStats};
-use crate::domain::pipeline::interner::{InternResolver, MetricKeyInterner, RawPoint};
-use crate::outbound::grpc::GrpcTransport;
+use crate::domain::pipeline::batch_builder::{BatchBuilderError, BuilderStats};
+use crate::domain::pipeline::sender::SenderStats;
+use crate::domain::pipeline::interner::{MetricKeyInterner, RawPoint};
+use crate::domain::ports::error::{FinishError, LogError, SenderThreadError};
 use crate::domain::ports::wal::WalStorage;
-use crate::inbound::error::SdkError;
-
-pub struct PipelineConfig {
-    pub channel_capacity: usize,
-    pub spill_capacity: usize,
-    pub batch: BatchConfig,
-    pub endpoint: Option<String>,
-    pub sender: SenderConfig,
-}
 
 #[derive(Clone, Debug)]
 pub struct PipelineStats {
@@ -41,157 +24,52 @@ pub struct PipelineStats {
     pub batches_acked: u64,
 }
 
-struct SenderContext {
-    shutdown_tx: Option<oneshot::Sender<()>>,
-    handle: std::thread::JoinHandle<Result<SenderStats, anyhow::Error>>,
+pub(crate) struct SenderHandle {
+    pub shutdown_tx: Option<oneshot::Sender<()>>,
+    pub handle: std::thread::JoinHandle<Result<SenderStats, SenderThreadError>>,
 }
 
 pub trait PipelineService {
-    fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), SdkError>;
-    fn finish(self) -> Result<PipelineStats, SdkError>;
-
+    fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), LogError>;
+    fn finish(self) -> Result<PipelineStats, FinishError>;
     fn run_id(&self) -> RunId;
     fn points_logged(&self) -> u64;
     fn points_dropped(&self) -> u64;
 }
 
-pub struct Service {
+pub struct Service<W: WalStorage> {
     run_id: RunId,
     accumulator: Accumulator<RawPoint>,
     interner: Arc<MetricKeyInterner>,
     builder_handle: JoinHandle<Result<BuilderStats, BatchBuilderError>>,
-    sender_ctx: Option<SenderContext>,
+    sender_handle: Option<SenderHandle>,
+    wal: W,
     points_logged: u64,
 }
 
-impl Service {
-    pub fn start<W, K, C>(
+impl<W: WalStorage> Service<W> {
+    pub(crate) fn new(
         run_id: RunId,
+        accumulator: Accumulator<RawPoint>,
+        interner: Arc<MetricKeyInterner>,
+        builder_handle: JoinHandle<Result<BuilderStats, BatchBuilderError>>,
+        sender_handle: Option<SenderHandle>,
         wal: W,
-        codec: K,
-        compressor: C,
-        config: PipelineConfig,
-    ) -> Self
-    where
-        W: WalStorage,
-        K: Codec<MetricBatch>,
-        C: Compressor,
-    {
-        let interner = Arc::new(MetricKeyInterner::new());
-        let resolver = InternResolver::new(Arc::clone(&interner));
-        let (accumulator, rx) = Accumulator::new(config.channel_capacity, config.spill_capacity);
-
-        let sender_ctx = config.endpoint.map(|endpoint| {
-            let sender_wal = wal.clone();
-            let ack_wal = wal.clone();
-            let recovery_wal = wal.clone();
-            let sender_config = config.sender.clone();
-            let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-            let handle = std::thread::Builder::new()
-                .name(format!("photon-sender-{run_id}"))
-                .spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .map_err(|e| anyhow::anyhow!("failed to create sender runtime: {e}"))?;
-
-                    rt.block_on(async move {
-                        let transport = GrpcTransport::connect(&endpoint, 64)
-                            .await
-                            .map_err(|e| anyhow::anyhow!("sender connection failed: {e}"))?;
-
-                        let recovery = RecoveryManager::new(recovery_wal, run_id);
-
-                        let watermark = if recovery.is_clean()
-                            .map_err(|e| anyhow::anyhow!("WAL check failed: {e}"))?
-                        {
-                            tracing::debug!(run_id = %run_id, "clean WAL, skipping recovery");
-                            SequenceNumber::ZERO
-                        } else {
-                            let result = recovery
-                                .recover(&transport)
-                                .await
-                                .map_err(|e| anyhow::anyhow!("recovery failed: {e}"))?;
-
-                            if result.batches_to_replay > 0 {
-                                tracing::info!(
-                                    run_id = %run_id,
-                                    batches = result.batches_to_replay,
-                                    bytes = result.bytes_to_replay,
-                                    "replaying uncommitted batches from WAL"
-                                );
-                            }
-
-                            result.effective_watermark
-                        };
-
-                        let mut sender = Sender::new(
-                            transport,
-                            sender_wal,
-                            sender_config,
-                            watermark,
-                            shutdown_rx,
-                        );
-
-                        let mut ack_tracker =
-                            AckTracker::new(ack_wal, watermark, 10);
-
-                        let mut result = sender
-                            .run(|seq| {
-                                if let Err(e) = ack_tracker.on_ack(seq) {
-                                    tracing::error!("ack tracker error for seq {seq}: {e}");
-                                }
-                            })
-                            .await
-                            .map_err(|e| anyhow::anyhow!(e));
-
-                        match ack_tracker.shutdown() {
-                            Ok(ack_stats) => {
-                                if let Ok(stats) = &mut result {
-                                    stats.watermark_advances = ack_stats.watermark_advances;
-                                    stats.segments_truncated = ack_stats.segments_truncated;
-                                }
-                            }
-                            Err(e) => tracing::error!("ack tracker shutdown failed: {e}"),
-                        }
-
-                        result
-                    })
-                })
-                .expect("failed to spawn sender thread");
-
-            SenderContext {
-                shutdown_tx: Some(shutdown_tx),
-                handle,
-            }
-        });
-
-        let builder_handle = BatchBuilder::new(
-            run_id,
-            rx,
-            resolver,
-            codec,
-            wal,
-            compressor,
-            config.batch,
-            SequenceNumber::ZERO,
-        )
-        .spawn();
-
+    ) -> Self {
         Self {
             run_id,
             accumulator,
             interner,
             builder_handle,
-            sender_ctx,
+            sender_handle,
+            wal,
             points_logged: 0,
         }
     }
 }
 
-impl PipelineService for Service {
-    fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), SdkError> {
+impl<W: WalStorage> PipelineService for Service<W> {
+    fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), LogError> {
         let metric_key = self.interner.get_or_intern(key)?;
 
         let now = SystemTime::now()
@@ -210,8 +88,7 @@ impl PipelineService for Service {
         Ok(())
     }
 
-    /// Flushes remaining points and waits for the pipeline to drain.
-    fn finish(mut self) -> Result<PipelineStats, SdkError> {
+    fn finish(mut self) -> Result<PipelineStats, FinishError> {
         let points_logged = self.points_logged;
         let points_dropped = self.accumulator.points_dropped();
 
@@ -225,24 +102,29 @@ impl PipelineService for Service {
 
         let builder_stats = self.builder_handle
             .join()
-            .map_err(|_| SdkError::Unknown(anyhow::anyhow!("builder thread panicked")))?
-            .map_err(|e| SdkError::Unknown(e.into()))?;
+            .map_err(|_| FinishError::Panicked)?
+            .map_err(FinishError::Builder)?;
 
         // Drop the keep-alive so the sender exits once WAL is empty, then join.
-        let (batches_sent, batches_acked) = match self.sender_ctx.take() {
+        let (batches_sent, batches_acked) = match self.sender_handle.take() {
             Some(mut ctx) => {
                 drop(ctx.shutdown_tx.take());
 
                 let sender_stats = ctx
                     .handle
                     .join()
-                    .map_err(|_| SdkError::Unknown(anyhow::anyhow!("sender thread panicked")))?
-                    .map_err(SdkError::Unknown)?;
+                    .map_err(|_| FinishError::Panicked)?
+                    .map_err(FinishError::Sender)?;
 
                 (sender_stats.batches_sent, sender_stats.batches_acked)
             }
             None => (0, 0),
         };
+
+        // Clean shutdown: all batches were acked, so the WAL can be removed.
+        if batches_acked == builder_stats.batches_flushed {
+            let _ = self.wal.delete_all();
+        }
 
         Ok(PipelineStats {
             points_logged,
