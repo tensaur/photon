@@ -2,7 +2,7 @@ use bytes::BytesMut;
 
 use crate::ports::compress::{CompressionError, Compressor};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NoopCompressor;
 
 impl Compressor for NoopCompressor {
