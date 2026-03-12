@@ -29,7 +29,7 @@ pub(crate) struct SenderHandle {
     pub handle: std::thread::JoinHandle<Result<SenderStats, SenderThreadError>>,
 }
 
-pub trait PipelineService {
+pub trait SdkService {
     fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), LogError>;
     fn finish(self) -> Result<PipelineStats, FinishError>;
     fn run_id(&self) -> RunId;
@@ -68,7 +68,7 @@ impl<W: WalStorage> Service<W> {
     }
 }
 
-impl<W: WalStorage> PipelineService for Service<W> {
+impl<W: WalStorage> SdkService for Service<W> {
     fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), LogError> {
         let metric_key = self.interner.get_or_intern(key)?;
 

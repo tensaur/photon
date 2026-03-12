@@ -14,7 +14,7 @@ impl Run {
 }
 
 pub use builder::RunBuilder;
-pub use domain::service::PipelineService;
+pub use domain::service::SdkService;
 pub use inbound::error::SdkError as PhotonSdkError;
 pub use inbound::run::RunStats;
 pub use photon_core::types::id::RunId;
