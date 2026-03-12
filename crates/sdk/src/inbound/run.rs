@@ -1,6 +1,6 @@
 use photon_core::types::id::RunId;
 
-use crate::domain::service::PipelineService;
+use crate::domain::service::SdkService;
 use crate::domain::service::PipelineStats;
 use crate::inbound::error::SdkError;
 
@@ -17,7 +17,7 @@ use crate::inbound::error::SdkError;
 ///
 /// let stats = run.finish()?;
 /// ```
-pub struct Run<S: PipelineService> {
+pub struct Run<S: SdkService> {
     pub(crate) service: S,
 }
 
@@ -46,7 +46,7 @@ impl From<PipelineStats> for RunStats {
     }
 }
 
-impl<S: PipelineService> Run<S> {
+impl<S: SdkService> Run<S> {
     /// Log a single metric data point.
     pub fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), SdkError> {
         self.service.log(key, value, step).map_err(Into::into)
