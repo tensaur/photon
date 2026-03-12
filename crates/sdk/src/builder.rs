@@ -22,7 +22,7 @@ use crate::domain::service::{SenderHandle, Service};
 use crate::inbound::error::SdkError;
 use crate::inbound::run::Run;
 use crate::outbound::grpc::GrpcTransport;
-use crate::outbound::wal::{DiskWalConfig, SharedDiskWal};
+use crate::outbound::wal::WalChoice;
 
 /// Configure and start a [`Run`].
 ///
@@ -33,6 +33,7 @@ use crate::outbound::wal::{DiskWalConfig, SharedDiskWal};
 pub struct RunBuilder {
     run_id: Option<RunId>,
     wal_dir: Option<PathBuf>,
+    in_memory_wal: bool,
     channel_capacity: usize,
     spill_capacity: usize,
     batch: BatchConfig,
@@ -46,6 +47,7 @@ impl Default for RunBuilder {
         Self {
             run_id: None,
             wal_dir: None,
+            in_memory_wal: false,
             channel_capacity: 65_536,
             spill_capacity: 16_384,
             batch: BatchConfig::default(),
@@ -65,6 +67,11 @@ impl RunBuilder {
 
     pub fn wal_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.wal_dir = Some(dir.into());
+        self
+    }
+
+    pub fn in_memory_wal(mut self) -> Self {
+        self.in_memory_wal = true;
         self
     }
 
@@ -101,12 +108,11 @@ impl RunBuilder {
     }
 
     /// Pick adapters and start the pipeline.
-    pub fn start(self) -> Result<Run<Service<SharedDiskWal>>, SdkError> {
+    pub fn start(self) -> Result<Run<Service<WalChoice>>, SdkError> {
         let run_id = self.run_id.unwrap_or_default();
 
         // 1. Open WAL
-        let wal_dir = self.wal_dir.as_deref();
-        let wal = SharedDiskWal::open(wal_dir, run_id, DiskWalConfig::default())
+        let wal = WalChoice::open(self.wal_dir.as_deref(), run_id, self.in_memory_wal)
             .map_err(SdkError::WalRecoveryFailed)?;
 
         // 2. Create accumulator + interner
@@ -162,7 +168,7 @@ impl RunBuilder {
 fn run_sender(
     endpoint: String,
     run_id: RunId,
-    wal: SharedDiskWal,
+    wal: WalChoice,
     config: SenderConfig,
     shutdown_rx: oneshot::Receiver<()>,
 ) -> Result<SenderStats, SenderThreadError> {

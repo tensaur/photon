@@ -4,7 +4,7 @@ mod inbound;
 mod outbound;
 
 pub type Run = inbound::run::Run<
-    domain::service::Service<outbound::wal::SharedDiskWal>,
+    domain::service::Service<outbound::wal::WalChoice>,
 >;
 
 impl Run {
