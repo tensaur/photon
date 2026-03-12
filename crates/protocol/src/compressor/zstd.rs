@@ -1,27 +1,57 @@
+use std::fmt;
+use std::sync::Mutex;
+
 use bytes::BytesMut;
 
 use crate::ports::compress::{CompressionError, Compressor};
 
-#[derive(Clone)]
 pub struct ZstdCompressor {
     level: i32,
+    compressor: Mutex<zstd::bulk::Compressor<'static>>,
+    decompressor: Mutex<zstd::bulk::Decompressor<'static>>,
 }
 
 impl ZstdCompressor {
     pub fn new(level: i32) -> Self {
-        Self { level }
+        Self {
+            level,
+            compressor: Mutex::new(
+                zstd::bulk::Compressor::new(level).expect("failed to create zstd compressor"),
+            ),
+            decompressor: Mutex::new(
+                zstd::bulk::Decompressor::new().expect("failed to create zstd decompressor"),
+            ),
+        }
     }
 }
 
 impl Default for ZstdCompressor {
     fn default() -> Self {
-        Self { level: 3 }
+        Self::new(3)
+    }
+}
+
+impl Clone for ZstdCompressor {
+    fn clone(&self) -> Self {
+        Self::new(self.level)
+    }
+}
+
+impl fmt::Debug for ZstdCompressor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ZstdCompressor")
+            .field("level", &self.level)
+            .finish()
     }
 }
 
 impl Compressor for ZstdCompressor {
     fn compress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
-        let compressed = zstd::encode_all(input, self.level)
+        let compressed = self
+            .compressor
+            .lock()
+            .unwrap()
+            .compress(input)
             .map_err(|e| CompressionError::Unknown(e.into()))?;
 
         output.extend_from_slice(&compressed);
@@ -29,7 +59,13 @@ impl Compressor for ZstdCompressor {
     }
 
     fn decompress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
-        let decompressed = zstd::decode_all(input)
+        let capacity = input.len() * 4;
+
+        let decompressed = self
+            .decompressor
+            .lock()
+            .unwrap()
+            .decompress(input, capacity)
             .map_err(|_| CompressionError::CorruptPayload {
                 compressor_name: self.name().to_owned(),
             })?;

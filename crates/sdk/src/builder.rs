@@ -7,8 +7,8 @@ use tokio::sync::oneshot;
 use photon_core::types::config::{BatchConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
-use photon_protocol::codec::protobuf::codec::ProtobufCodec;
-use photon_protocol::compressor::zstd::ZstdCompressor;
+use photon_protocol::codec::CodecChoice;
+use photon_protocol::compressor::CompressorChoice;
 
 use crate::domain::pipeline::accumulator::Accumulator;
 use crate::domain::pipeline::ack_tracker::AckTracker;
@@ -37,6 +37,8 @@ pub struct RunBuilder {
     spill_capacity: usize,
     batch: BatchConfig,
     endpoint: Option<String>,
+    codec: CodecChoice,
+    compressor: CompressorChoice,
 }
 
 impl Default for RunBuilder {
@@ -48,6 +50,8 @@ impl Default for RunBuilder {
             spill_capacity: 16_384,
             batch: BatchConfig::default(),
             endpoint: None,
+            codec: CodecChoice::default(),
+            compressor: CompressorChoice::default(),
         }
     }
 }
@@ -80,6 +84,16 @@ impl RunBuilder {
         self
     }
 
+    pub fn codec(mut self, codec: CodecChoice) -> Self {
+        self.codec = codec;
+        self
+    }
+
+    pub fn compressor(mut self, compressor: CompressorChoice) -> Self {
+        self.compressor = compressor;
+        self
+    }
+
     /// Connect to a remote photon server for metric ingestion.
     pub fn endpoint(mut self, url: impl Into<String>) -> Self {
         self.endpoint = Some(url.into());
@@ -108,16 +122,10 @@ impl RunBuilder {
             .unwrap_or_else(|| SequenceNumber::ZERO.next());
 
         // 4. Spawn batch builder thread
-        let builder_wal = wal.clone();
+        let batch_wal = wal.clone();
         let builder_handle = BatchBuilder::new(
-            run_id,
-            rx,
-            resolver,
-            ProtobufCodec,
-            builder_wal,
-            ZstdCompressor::default(),
-            self.batch,
-            start_sequence,
+            run_id, rx, resolver, self.codec, batch_wal,
+            self.compressor, self.batch, start_sequence,
         )
         .spawn();
 

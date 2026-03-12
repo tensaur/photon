@@ -18,3 +18,5 @@ pub use domain::service::SdkService;
 pub use inbound::error::SdkError as PhotonSdkError;
 pub use inbound::run::RunStats;
 pub use photon_core::types::id::RunId;
+pub use photon_protocol::codec::CodecChoice;
+pub use photon_protocol::compressor::CompressorChoice;
