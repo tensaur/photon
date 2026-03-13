@@ -1,7 +1,7 @@
 //! Spawns the ingest server and SDK client in a single process.
 
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tonic::transport::Server;
 
@@ -49,6 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("Run: {}", run.id());
 
+        let t0 = Instant::now();
+
         // Simulate a training loop
         for step in 0..10_000_000u64 {
             let loss = 1.0 / (1.0 + step as f64 * 0.05);
@@ -68,9 +70,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        println!("Logged: {} points", run.points_logged());
+        let log_elapsed = t0.elapsed();
+        println!("Logged: {} points in {:.2?}", run.points_logged(), log_elapsed);
 
         let stats = run.finish().expect("finish failed");
+        let total_elapsed = t0.elapsed();
 
         println!("\n--- Pipeline Stats ---");
         println!("Points logged:    {}", stats.points);
@@ -80,6 +84,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Bytes (wire):     {}", stats.bytes_compressed);
         println!("Batches sent:     {}", stats.batches_sent);
         println!("Batches acked:    {}", stats.batches_acked);
+
+        println!("\n--- Timing ---");
+        println!("Log phase:        {:.2?}", log_elapsed);
+        println!("Total (inc flush):{:.2?}", total_elapsed);
+        println!("Throughput (log): {:.2} M pts/s", stats.points as f64 / log_elapsed.as_secs_f64() / 1_000_000.0);
+        println!("Throughput (e2e): {:.2} M pts/s", stats.points as f64 / total_elapsed.as_secs_f64() / 1_000_000.0);
 
         assert!(stats.batches_sent > 0, "expected batches to be sent");
         assert!(stats.batches_acked > 0, "expected batches to be acked");
