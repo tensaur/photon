@@ -25,7 +25,8 @@ impl<P: Copy + Send> Accumulator<P> {
         match self.tx.try_send(point) {
             Ok(()) => {}
             Err(TrySendError::Full(point)) => {
-                if self.spill.push(point) {
+                // Block until there's space
+                if self.tx.send(point).is_err() {
                     self.points_dropped += 1;
                 }
             }
