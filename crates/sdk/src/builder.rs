@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
+use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{BatchConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
@@ -189,7 +190,7 @@ fn run_sender(
     wal: WalChoice,
     config: SenderConfig,
     shutdown_rx: oneshot::Receiver<()>,
-    batch_rx: crossbeam_channel::Receiver<photon_core::types::batch::WireBatch>,
+    batch_rx: crossbeam_channel::Receiver<WireBatch>,
 ) -> Result<SenderStats, SenderThreadError> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
