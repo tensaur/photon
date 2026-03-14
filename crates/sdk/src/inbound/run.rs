@@ -30,6 +30,7 @@ pub struct RunStats {
     pub bytes_uncompressed: u64,
     pub batches_sent: u64,
     pub batches_acked: u64,
+    pub batches_rejected: u64,
 }
 
 impl From<PipelineStats> for RunStats {
@@ -42,6 +43,7 @@ impl From<PipelineStats> for RunStats {
             bytes_uncompressed: s.bytes_uncompressed,
             batches_sent: s.batches_sent,
             batches_acked: s.batches_acked,
+            batches_rejected: s.batches_rejected,
         }
     }
 }
