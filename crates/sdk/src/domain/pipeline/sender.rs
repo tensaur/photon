@@ -162,38 +162,38 @@ where
     }
 
     async fn send_next(&mut self) -> Result<bool, SenderError> {
-        if self.in_flight.len() >= self.config.max_in_flight {
-            return Ok(false);
+        let mut sent_any = false;
+
+        while self.in_flight.len() < self.config.max_in_flight {
+            let batch = match self.wal.read_next(self.last_sent)? {
+                Some(b) => b,
+                None => break,
+            };
+
+            match self.transport.send(&batch).await {
+                Ok(()) => {
+                    self.in_flight.insert(
+                        batch.sequence_number,
+                        InFlightEntry {
+                            sequence_number: batch.sequence_number,
+                            sent_at: Instant::now(),
+                            attempt: 1,
+                        },
+                    );
+
+                    self.last_sent = batch.sequence_number;
+                    self.stats.batches_sent += 1;
+                    sent_any = true;
+                }
+                Err(TransportError::ConnectionLost { .. }) => {
+                    self.enter_reconnecting();
+                    return Ok(sent_any);
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
 
-        let batches = self.wal.read_from(self.last_sent)?;
-        let batch = match batches.first() {
-            Some(b) => b,
-            None => return Ok(false),
-        };
-
-        match self.transport.send(batch).await {
-            Ok(()) => {
-                self.in_flight.insert(
-                    batch.sequence_number,
-                    InFlightEntry {
-                        sequence_number: batch.sequence_number,
-                        sent_at: Instant::now(),
-                        attempt: 1,
-                    },
-                );
-
-                self.last_sent = batch.sequence_number;
-                self.stats.batches_sent += 1;
-
-                Ok(true)
-            }
-            Err(TransportError::ConnectionLost { .. }) => {
-                self.enter_reconnecting();
-                Ok(false)
-            }
-            Err(e) => Err(e.into()),
-        }
+        Ok(sent_any)
     }
 
     async fn recv_and_handle_ack(

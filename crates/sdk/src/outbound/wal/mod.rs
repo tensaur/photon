@@ -68,6 +68,13 @@ impl WalStorage for WalChoice {
         }
     }
 
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+        match self {
+            Self::Disk(inner) => inner.read_next(after),
+            Self::Memory(inner) => inner.read_next(after),
+        }
+    }
+
     fn read_meta(&self) -> Result<WalMeta, WalError> {
         match self {
             Self::Disk(inner) => inner.read_meta(),

@@ -243,6 +243,25 @@ impl DiskWalStorage {
         Ok(out)
     }
 
+    pub fn read_next_after(&self, seq: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+        let run_id = self.run_id;
+
+        for seg in &self.sealed {
+            if seg.last_sequence().map(|l| l <= seq).unwrap_or(true) {
+                continue;
+            }
+            if let Some(r) = seg.read_first_record_after(seq)? {
+                return Ok(Some(record_to_batch(run_id, r)));
+            }
+        }
+
+        if let Some(r) = self.active.read_first_record_after(seq)? {
+            return Ok(Some(record_to_batch(run_id, r)));
+        }
+
+        Ok(None)
+    }
+
     pub fn meta(&self) -> WalMeta {
         WalMeta {
             committed_sequence: self.committed,
@@ -295,6 +314,10 @@ impl WalStorage for SharedDiskWal {
 
     fn read_from(&self, seq: SequenceNumber) -> Result<Vec<AssembledBatch>, WalError> {
         self.0.read().unwrap().read_after(seq)
+    }
+
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+        self.0.read().unwrap().read_next_after(after)
     }
 
     fn read_meta(&self) -> Result<WalMeta, WalError> {

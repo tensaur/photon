@@ -61,6 +61,14 @@ impl WalStorage for InMemoryWal {
             .collect())
     }
 
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+        Ok(self
+            .batches
+            .range(after.next()..)
+            .next()
+            .map(|(_, batch)| batch.clone()))
+    }
+
     fn read_meta(&self) -> Result<WalMeta, WalError> {
         Ok(WalMeta {
             committed_sequence: self.committed,
