@@ -127,22 +127,25 @@ impl RunBuilder {
             .and_then(|batches: Vec<_>| batches.last().map(|b| b.sequence_number.next()))
             .unwrap_or_else(|| SequenceNumber::ZERO.next());
 
-        // 4. Spawn batch builder thread
+        // 4. Create channel from builder → sender
+        let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
+
+        // 5. Spawn batch builder thread
         let batch_wal = wal.clone();
         let builder_handle = BatchBuilder::new(
             run_id, rx, resolver, self.codec, batch_wal,
-            self.compressor, self.batch, start_sequence,
+            self.compressor, self.batch, start_sequence, batch_tx,
         )
         .spawn();
 
-        // 5. Spawn sender thread (if endpoint configured)
+        // 6. Spawn sender thread (if endpoint configured)
         let sender_wal = wal.clone();
         let sender_handle = self.endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
             let handle = std::thread::Builder::new()
                 .name(format!("photon-sender-{run_id}"))
-                .spawn(move || run_sender(endpoint, run_id, sender_wal, SenderConfig::default(), shutdown_rx))
+                .spawn(move || run_sender(endpoint, run_id, sender_wal, SenderConfig::default(), shutdown_rx, batch_rx))
                 .expect("failed to spawn sender thread");
 
             SenderHandle {
@@ -151,7 +154,7 @@ impl RunBuilder {
             }
         });
 
-        // 6. Assemble service from pre-built parts
+        // 7. Assemble service from pre-built parts
         let service = Service::new(
             run_id,
             accumulator,
@@ -171,6 +174,7 @@ fn run_sender(
     wal: WalChoice,
     config: SenderConfig,
     shutdown_rx: oneshot::Receiver<()>,
+    batch_rx: crossbeam_channel::Receiver<photon_core::types::batch::AssembledBatch>,
 ) -> Result<SenderStats, SenderThreadError> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -212,6 +216,7 @@ fn run_sender(
             config,
             watermark,
             shutdown_rx,
+            batch_rx,
         );
 
         let mut ack_tracker = AckTracker::new(wal, watermark, 10);
