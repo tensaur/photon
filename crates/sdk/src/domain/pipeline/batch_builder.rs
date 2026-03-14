@@ -2,7 +2,7 @@ use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 
 use bytes::BytesMut;
-use crossbeam_channel::{Receiver, select, tick};
+use crossbeam_channel::{Receiver, Sender, select, tick};
 
 use photon_core::types::batch::AssembledBatch;
 use photon_core::types::config::BatchConfig;
@@ -32,6 +32,7 @@ where
     next_sequence: SequenceNumber,
     encode_buf: BytesMut,
     compress_buf: BytesMut,
+    batch_tx: Sender<AssembledBatch>,
 }
 
 impl<R, K, W, C> BatchBuilder<R, K, W, C>
@@ -50,6 +51,7 @@ where
         compressor: C,
         config: BatchConfig,
         start_sequence: SequenceNumber,
+        batch_tx: Sender<AssembledBatch>,
     ) -> Self {
         Self {
             run_id,
@@ -62,6 +64,7 @@ where
             next_sequence: start_sequence,
             encode_buf: BytesMut::new(),
             compress_buf: BytesMut::new(),
+            batch_tx,
         }
     }
 
@@ -150,6 +153,8 @@ where
         stats.points_flushed += point_count as u64;
         stats.bytes_compressed += assembled.compressed_size() as u64;
         stats.bytes_uncompressed += uncompressed_size as u64;
+
+        let _ = self.batch_tx.send(assembled);
 
         pending.clear();
 

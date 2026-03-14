@@ -3,9 +3,11 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
+use crossbeam_channel::Receiver as CrossbeamReceiver;
 use tokio::sync::oneshot;
 
 use photon_core::types::ack::{AckResult, AckStatus};
+use photon_core::types::batch::AssembledBatch;
 use photon_core::types::config::{RetryConfig, SenderConfig};
 use photon_core::types::sequence::SequenceNumber;
 
@@ -26,6 +28,7 @@ where
     stats: SenderStats,
     shutdown_rx: oneshot::Receiver<()>,
     draining_since: Option<Instant>,
+    batch_rx: CrossbeamReceiver<AssembledBatch>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,6 +79,7 @@ where
         config: SenderConfig,
         start_after: SequenceNumber,
         shutdown_rx: oneshot::Receiver<()>,
+        batch_rx: CrossbeamReceiver<AssembledBatch>,
     ) -> Self {
         Self {
             transport,
@@ -87,6 +91,7 @@ where
             stats: SenderStats::default(),
             shutdown_rx,
             draining_since: None,
+            batch_rx,
         }
     }
 
@@ -165,9 +170,9 @@ where
         let mut sent_any = false;
 
         while self.in_flight.len() < self.config.max_in_flight {
-            let batch = match self.wal.read_next(self.last_sent)? {
-                Some(b) => b,
-                None => break,
+            let batch = match self.batch_rx.try_recv() {
+                Ok(b) => b,
+                Err(_) => break,
             };
 
             match self.transport.send(&batch).await {
@@ -238,7 +243,7 @@ where
     }
 
     async fn try_recv_ack(&mut self) -> Result<Option<SequenceNumber>, TransportError> {
-        let ack = tokio::time::timeout(Duration::from_millis(10), self.transport.recv_ack()).await;
+        let ack = tokio::time::timeout(Duration::from_millis(1), self.transport.recv_ack()).await;
 
         match ack {
             Err(_) => Ok(None),
