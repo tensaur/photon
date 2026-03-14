@@ -17,6 +17,11 @@ pub trait WalStorage: Send + Sync + Clone + 'static {
     /// Read all batches with sequence gt the given watermark.
     fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<AssembledBatch>, WalError>;
 
+    /// Read the first batch with sequence gt the given watermark.
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+        Ok(self.read_from(after)?.into_iter().next())
+    }
+
     fn read_meta(&self) -> Result<WalMeta, WalError>;
 
     fn delete_all(&mut self) -> Result<(), WalError>;
