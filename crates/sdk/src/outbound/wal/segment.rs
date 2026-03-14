@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
 use crate::domain::ports::wal::WalError;
@@ -99,7 +99,7 @@ impl Segment<Active> {
 
     pub fn append(
         &mut self,
-        batch: &AssembledBatch,
+        batch: &WireBatch,
         rotation_threshold: f64,
     ) -> Result<bool, WalError> {
         let payload = &batch.compressed_payload;

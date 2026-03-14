@@ -5,7 +5,7 @@ use crate::types::{id::RunId, sequence::SequenceNumber};
 
 /// A compressed, wire-ready batch of metric points.
 #[derive(Clone, Debug)]
-pub struct AssembledBatch {
+pub struct WireBatch {
     pub run_id: RunId,
     pub sequence_number: SequenceNumber,
     pub compressed_payload: Bytes,
@@ -15,7 +15,7 @@ pub struct AssembledBatch {
     pub uncompressed_size: usize,
 }
 
-impl AssembledBatch {
+impl WireBatch {
     pub fn compressed_size(&self) -> usize {
         self.compressed_payload.len()
     }

@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use bytes::Bytes;
 
 use photon_core::types::ack::{AckResult, AckStatus};
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{
@@ -32,8 +32,8 @@ pub enum ProtoConversionError {
     MissingField(&'static str),
 }
 
-impl From<&AssembledBatch> for MetricBatchRequest {
-    fn from(batch: &AssembledBatch) -> Self {
+impl From<&WireBatch> for MetricBatchRequest {
+    fn from(batch: &WireBatch) -> Self {
         Self {
             run_id: batch.run_id.to_string(),
             sequence_number: u64::from(batch.sequence_number),
@@ -47,7 +47,7 @@ impl From<&AssembledBatch> for MetricBatchRequest {
     }
 }
 
-impl TryFrom<MetricBatchRequest> for AssembledBatch {
+impl TryFrom<MetricBatchRequest> for WireBatch {
     type Error = ProtoConversionError;
 
     fn try_from(proto: MetricBatchRequest) -> Result<Self, Self::Error> {

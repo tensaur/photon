@@ -2,7 +2,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use photon_core::types::ack::AckResult;
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
@@ -10,7 +10,7 @@ use photon_core::types::sequence::SequenceNumber;
 pub trait BatchTransport: Send + Sync + Clone + 'static {
     fn send(
         &self,
-        batch: &AssembledBatch,
+        batch: &WireBatch,
     ) -> impl Future<Output = Result<(), TransportError>> + Send;
 
     fn recv_ack(&self) -> impl Future<Output = Result<AckResult, TransportError>> + Send;

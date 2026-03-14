@@ -7,9 +7,10 @@ use tokio::sync::oneshot;
 use photon_core::types::id::RunId;
 
 use crate::domain::pipeline::accumulator::Accumulator;
-use crate::domain::pipeline::batch_builder::{BatchBuilderError, BuilderStats};
+use crate::domain::pipeline::pipeline::RawPoint;
+use crate::domain::pipeline::interner::MetricKeyInterner;
+use crate::domain::pipeline::pipeline::{FlushStats, PipelineError};
 use crate::domain::pipeline::sender::SenderStats;
-use crate::domain::pipeline::interner::{MetricKeyInterner, RawPoint};
 use crate::domain::ports::error::{FinishError, LogError, SenderThreadError};
 use crate::domain::ports::wal::WalStorage;
 
@@ -42,7 +43,7 @@ pub struct Service<W: WalStorage> {
     run_id: RunId,
     accumulator: Accumulator<RawPoint>,
     interner: Arc<MetricKeyInterner>,
-    builder_handle: JoinHandle<Result<BuilderStats, BatchBuilderError>>,
+    pipeline_handle: JoinHandle<Result<FlushStats, PipelineError>>,
     sender_handle: Option<SenderHandle>,
     wal: W,
     points_logged: u64,
@@ -53,7 +54,7 @@ impl<W: WalStorage> Service<W> {
         run_id: RunId,
         accumulator: Accumulator<RawPoint>,
         interner: Arc<MetricKeyInterner>,
-        builder_handle: JoinHandle<Result<BuilderStats, BatchBuilderError>>,
+        pipeline_handle: JoinHandle<Result<FlushStats, PipelineError>>,
         sender_handle: Option<SenderHandle>,
         wal: W,
     ) -> Self {
@@ -61,7 +62,7 @@ impl<W: WalStorage> Service<W> {
             run_id,
             accumulator,
             interner,
-            builder_handle,
+            pipeline_handle,
             sender_handle,
             wal,
             points_logged: 0,
@@ -94,17 +95,17 @@ impl<W: WalStorage> SdkService for Service<W> {
         let points_dropped = self.accumulator.points_dropped();
 
         // Replaces accumulator with a dummy so the real one drops,
-        // which closes the channel and lets the builder drain.
+        // which closes the channel and lets the pipeline drain.
         let _old = std::mem::replace(&mut self.accumulator, {
             let (acc, _rx) = Accumulator::new(1, 1);
             acc
         });
         drop(_old);
 
-        let builder_stats = self.builder_handle
+        let flush_stats = self.pipeline_handle
             .join()
             .map_err(|_| FinishError::Panicked)?
-            .map_err(FinishError::Builder)?;
+            .map_err(FinishError::Pipeline)?;
 
         // Drop the keep-alive so the sender exits once WAL is empty, then join.
         let (batches_sent, batches_acked, batches_rejected) = match self.sender_handle.take() {
@@ -123,16 +124,16 @@ impl<W: WalStorage> SdkService for Service<W> {
         };
 
         // Clean shutdown: all batches were acked, so the WAL can be removed.
-        if batches_acked == builder_stats.batches_flushed {
+        if batches_acked == flush_stats.batches_flushed {
             let _ = self.wal.delete_all();
         }
 
         Ok(PipelineStats {
             points_logged,
             points_dropped,
-            batches_flushed: builder_stats.batches_flushed,
-            bytes_compressed: builder_stats.bytes_compressed,
-            bytes_uncompressed: builder_stats.bytes_uncompressed,
+            batches_flushed: flush_stats.batches_flushed,
+            bytes_compressed: flush_stats.bytes_compressed,
+            bytes_uncompressed: flush_stats.bytes_uncompressed,
             batches_sent,
             batches_acked,
             batches_rejected,

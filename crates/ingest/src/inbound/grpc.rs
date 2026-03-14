@@ -5,7 +5,7 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
 use photon_protocol::codec::protobuf::convert::ProtoConversionError;
 use photon_protocol::codec::protobuf::types::{
@@ -59,7 +59,7 @@ impl<S: IngestService + Send + Sync + 'static> GrpcIngestService for Handler<S> 
 
                 let seq = proto.sequence_number;
 
-                let batch = match AssembledBatch::try_from(proto) {
+                let batch = match WireBatch::try_from(proto) {
                     Ok(batch) => batch,
                     Err(e) => {
                         tracing::warn!("invalid batch: {e}");

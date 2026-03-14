@@ -4,7 +4,7 @@ use tokio::sync::{Mutex, mpsc};
 use tonic::transport::Channel;
 
 use photon_core::types::ack::AckResult;
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
@@ -54,7 +54,7 @@ impl GrpcTransport {
 }
 
 impl BatchTransport for GrpcTransport {
-    async fn send(&self, batch: &AssembledBatch) -> Result<(), TransportError> {
+    async fn send(&self, batch: &WireBatch) -> Result<(), TransportError> {
         let proto: MetricBatchRequest = batch.into();
 
         self.request_tx

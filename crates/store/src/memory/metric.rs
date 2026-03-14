@@ -33,7 +33,7 @@ impl MetricWriter for InMemoryMetricStore {
     async fn write_batch(&self, batch: &MetricBatch) -> Result<(), WriteError> {
         let run = self.data.entry(batch.run_id).or_default();
         for point in &batch.points {
-            run.entry(point.key.clone())
+            run.entry(batch.key(point).clone())
                 .or_default()
                 .insert(point.step, point.value);
         }

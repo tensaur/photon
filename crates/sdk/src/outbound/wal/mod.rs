@@ -5,7 +5,7 @@ mod segment;
 pub(crate) use self::disk::{DiskWalConfig, SharedDiskWal};
 pub(crate) use self::memory::InMemoryWal;
 
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
@@ -33,7 +33,7 @@ impl WalChoice {
 }
 
 impl WalStorage for WalChoice {
-    fn append(&mut self, batch: &AssembledBatch) -> Result<(), WalError> {
+    fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
         match self {
             Self::Disk(inner) => inner.append(batch),
             Self::Memory(inner) => inner.append(batch),
@@ -61,14 +61,14 @@ impl WalStorage for WalChoice {
         }
     }
 
-    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<AssembledBatch>, WalError> {
+    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
         match self {
             Self::Disk(inner) => inner.read_from(sequence),
             Self::Memory(inner) => inner.read_from(sequence),
         }
     }
 
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
         match self {
             Self::Disk(inner) => inner.read_next(after),
             Self::Memory(inner) => inner.read_next(after),
