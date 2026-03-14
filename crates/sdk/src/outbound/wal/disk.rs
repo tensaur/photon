@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{WalConfig, WalMeta, WalSyncPolicy};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
@@ -181,7 +181,7 @@ impl DiskWalStorage {
         Ok(())
     }
 
-    pub fn append_batch(&mut self, batch: &AssembledBatch) -> Result<(), WalError> {
+    pub fn append_batch(&mut self, batch: &WireBatch) -> Result<(), WalError> {
         self.enforce_budget()?;
 
         let threshold = self.config.rotation_threshold;
@@ -221,7 +221,7 @@ impl DiskWalStorage {
         Ok(())
     }
 
-    pub fn read_after(&self, seq: SequenceNumber) -> Result<Vec<AssembledBatch>, WalError> {
+    pub fn read_after(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
         let run_id = self.run_id;
         let mut out = Vec::new();
 
@@ -243,7 +243,7 @@ impl DiskWalStorage {
         Ok(out)
     }
 
-    pub fn read_next_after(&self, seq: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+    pub fn read_next_after(&self, seq: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
         let run_id = self.run_id;
 
         for seg in &self.sealed {
@@ -269,8 +269,8 @@ impl DiskWalStorage {
     }
 }
 
-fn record_to_batch(run_id: RunId, r: WalRecord) -> AssembledBatch {
-    AssembledBatch {
+fn record_to_batch(run_id: RunId, r: WalRecord) -> WireBatch {
+    WireBatch {
         run_id,
         sequence_number: r.sequence_number,
         compressed_payload: r.compressed_payload,
@@ -296,7 +296,7 @@ impl SharedDiskWal {
 }
 
 impl WalStorage for SharedDiskWal {
-    fn append(&mut self, batch: &AssembledBatch) -> Result<(), WalError> {
+    fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
         self.0.write().unwrap().append_batch(batch)
     }
 
@@ -312,11 +312,11 @@ impl WalStorage for SharedDiskWal {
         self.0.write().unwrap().truncate_through_seq(seq)
     }
 
-    fn read_from(&self, seq: SequenceNumber) -> Result<Vec<AssembledBatch>, WalError> {
+    fn read_from(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
         self.0.read().unwrap().read_after(seq)
     }
 
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
         self.0.read().unwrap().read_next_after(after)
     }
 

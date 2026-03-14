@@ -3,12 +3,11 @@ use std::future::Future;
 use bytes::BytesMut;
 
 use photon_core::types::ack::AckStatus;
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::MetricBatch;
 use photon_core::types::sequence::SequenceNumber;
 use photon_hook::IngestHook;
-use photon_protocol::ports::codec::Codec;
+use photon_protocol::ports::codec::BatchCodec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::metric::MetricWriter;
 use photon_store::ports::watermark::WatermarkStore;
@@ -39,7 +38,7 @@ pub enum IngestError {
 pub trait IngestService {
     fn ingest(
         &self,
-        batch: &AssembledBatch,
+        batch: &WireBatch,
     ) -> impl Future<Output = Result<IngestResult, IngestError>> + Send;
 
     fn watermark(
@@ -56,7 +55,7 @@ where
     M: MetricWriter,
     H: IngestHook,
     C: Compressor,
-    K: Codec<MetricBatch>,
+    K: BatchCodec,
 {
     dedup: DeduplicationTracker<W>,
     metric_store: M,
@@ -71,7 +70,7 @@ where
     M: MetricWriter,
     H: IngestHook,
     C: Compressor,
-    K: Codec<MetricBatch>,
+    K: BatchCodec,
 {
     pub fn new(
         watermark_store: W,
@@ -96,9 +95,9 @@ where
     M: MetricWriter,
     H: IngestHook,
     C: Compressor,
-    K: Codec<MetricBatch>,
+    K: BatchCodec,
 {
-    async fn ingest(&self, batch: &AssembledBatch) -> Result<IngestResult, IngestError> {
+    async fn ingest(&self, batch: &WireBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;
 
         // 1. Dedup
@@ -119,7 +118,7 @@ where
         }
 
         // 3. Decompress + decode
-        let mut buf = BytesMut::new();
+        let mut buf = BytesMut::with_capacity(batch.uncompressed_size);
         self.compressor
             .decompress(&batch.compressed_payload, &mut buf)
             .map_err(IngestError::Decompress)?;

@@ -1,30 +1,38 @@
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::SystemTime;
 
 use bytes::BytesMut;
 use crossbeam_channel::{Receiver, Sender, select, tick};
 
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::config::BatchConfig;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::MetricBatch;
 use photon_core::types::sequence::SequenceNumber;
-use photon_protocol::ports::codec::{Codec, CodecError};
+use photon_protocol::ports::codec::{BatchCodec, CodecError};
 use photon_protocol::ports::compress::{CompressionError, Compressor};
 
-use crate::domain::ports::resolver::PointResolver;
+use super::assembler::BatchAssembler;
+use super::interner::{MetricKey, MetricKeyInterner};
 use crate::domain::ports::wal::{WalError, WalStorage};
 
-pub struct BatchBuilder<R, K, W, C>
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RawPoint {
+    pub key: MetricKey,
+    pub value: f64,
+    pub step: u64,
+    pub timestamp_ns: u64,
+}
+
+pub struct Pipeline<K, W, C>
 where
-    R: PointResolver,
-    K: Codec<MetricBatch>,
+    K: BatchCodec,
     W: WalStorage,
     C: Compressor,
 {
     run_id: RunId,
-    rx: Receiver<R::Point>,
-    resolver: R,
+    rx: Receiver<RawPoint>,
+    assembler: BatchAssembler,
     codec: K,
     wal: W,
     compressor: C,
@@ -32,31 +40,30 @@ where
     next_sequence: SequenceNumber,
     encode_buf: BytesMut,
     compress_buf: BytesMut,
-    batch_tx: Sender<AssembledBatch>,
+    batch_tx: Sender<WireBatch>,
 }
 
-impl<R, K, W, C> BatchBuilder<R, K, W, C>
+impl<K, W, C> Pipeline<K, W, C>
 where
-    R: PointResolver,
-    K: Codec<MetricBatch>,
+    K: BatchCodec,
     W: WalStorage,
     C: Compressor,
 {
     pub fn new(
         run_id: RunId,
-        rx: Receiver<R::Point>,
-        resolver: R,
+        rx: Receiver<RawPoint>,
+        interner: Arc<MetricKeyInterner>,
         codec: K,
         wal: W,
         compressor: C,
         config: BatchConfig,
         start_sequence: SequenceNumber,
-        batch_tx: Sender<AssembledBatch>,
+        batch_tx: Sender<WireBatch>,
     ) -> Self {
         Self {
             run_id,
             rx,
-            resolver,
+            assembler: BatchAssembler::new(interner),
             codec,
             wal,
             compressor,
@@ -68,14 +75,14 @@ where
         }
     }
 
-    pub fn spawn(self) -> JoinHandle<Result<BuilderStats, BatchBuilderError>> {
+    pub fn spawn(self) -> JoinHandle<Result<FlushStats, PipelineError>> {
         thread::spawn(move || self.run())
     }
 
-    fn run(mut self) -> Result<BuilderStats, BatchBuilderError> {
+    fn run(mut self) -> Result<FlushStats, PipelineError> {
         let ticker = tick(self.config.flush_interval);
-        let mut pending: Vec<R::Point> = Vec::with_capacity(self.config.max_points);
-        let mut stats = BuilderStats::default();
+        let mut pending: Vec<RawPoint> = Vec::with_capacity(self.config.max_points);
+        let mut stats = FlushStats::default();
 
         loop {
             select! {
@@ -116,18 +123,18 @@ where
 
     fn flush(
         &mut self,
-        pending: &mut Vec<R::Point>,
-        stats: &mut BuilderStats,
-    ) -> Result<(), BatchBuilderError> {
-        let points = self.resolver.resolve(pending);
-        let batch = MetricBatch {
-            run_id: self.run_id,
-            points,
-        };
-        let point_count = batch.len();
+        pending: &mut Vec<RawPoint>,
+        stats: &mut FlushStats,
+    ) -> Result<(), PipelineError> {
+        let point_count = pending.len();
+
+        let batch = self.assembler.assemble(self.run_id, pending);
 
         self.encode_buf.clear();
         self.codec.encode(&batch, &mut self.encode_buf)?;
+
+        self.assembler.reclaim(batch);
+
         let uncompressed_size = self.encode_buf.len();
 
         self.compress_buf.clear();
@@ -136,7 +143,7 @@ where
 
         let crc = crc32fast::hash(&self.compress_buf);
 
-        let assembled = AssembledBatch {
+        let assembled = WireBatch {
             run_id: self.run_id,
             sequence_number: self.next_sequence,
             point_count,
@@ -163,7 +170,7 @@ where
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct BuilderStats {
+pub struct FlushStats {
     pub batches_flushed: u64,
     pub points_flushed: u64,
     pub bytes_compressed: u64,
@@ -171,7 +178,7 @@ pub struct BuilderStats {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum BatchBuilderError {
+pub enum PipelineError {
     #[error("WAL write failed")]
     Wal(#[from] WalError),
 

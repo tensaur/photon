@@ -7,7 +7,7 @@ use crossbeam_channel::Receiver as CrossbeamReceiver;
 use tokio::sync::oneshot;
 
 use photon_core::types::ack::{AckResult, AckStatus};
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{RetryConfig, SenderConfig};
 use photon_core::types::sequence::SequenceNumber;
 
@@ -28,7 +28,7 @@ where
     stats: SenderStats,
     shutdown_rx: oneshot::Receiver<()>,
     draining_since: Option<Instant>,
-    batch_rx: CrossbeamReceiver<AssembledBatch>,
+    batch_rx: CrossbeamReceiver<WireBatch>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,7 +79,7 @@ where
         config: SenderConfig,
         start_after: SequenceNumber,
         shutdown_rx: oneshot::Receiver<()>,
-        batch_rx: CrossbeamReceiver<AssembledBatch>,
+        batch_rx: CrossbeamReceiver<WireBatch>,
     ) -> Self {
         Self {
             transport,

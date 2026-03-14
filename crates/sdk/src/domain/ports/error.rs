@@ -1,6 +1,6 @@
 use photon_core::types::metric::MetricError;
 
-use crate::domain::pipeline::batch_builder::BatchBuilderError;
+use crate::domain::pipeline::pipeline::PipelineError;
 use crate::domain::pipeline::recovery::RecoveryError;
 use crate::domain::pipeline::sender::SenderError;
 use crate::domain::ports::transport::TransportError;
@@ -13,8 +13,8 @@ pub enum LogError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FinishError {
-    #[error("batch builder failed")]
-    Builder(#[from] BatchBuilderError),
+    #[error("pipeline failed")]
+    Pipeline(#[from] PipelineError),
     #[error("sender failed")]
     Sender(#[from] SenderThreadError),
     #[error("pipeline thread panicked")]

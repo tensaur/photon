@@ -1,5 +1,3 @@
-use std::time::SystemTime;
-
 use super::id::RunId;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -42,22 +40,26 @@ impl Metric {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct MetricPoint {
-    pub key: Metric,
+    pub key_index: u32,
     pub value: f64,
     pub step: u64,
-    pub timestamp: SystemTime,
+    pub timestamp_ms: u64,
 }
 
-/// A collection of resolved metric points for a single run.
 #[derive(Clone, Debug)]
 pub struct MetricBatch {
     pub run_id: RunId,
+    pub keys: Vec<Metric>,
     pub points: Vec<MetricPoint>,
 }
 
 impl MetricBatch {
+    pub fn key(&self, point: &MetricPoint) -> &Metric {
+        &self.keys[point.key_index as usize]
+    }
+
     pub fn len(&self) -> usize {
         self.points.len()
     }

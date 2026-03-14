@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
@@ -9,7 +9,7 @@ use crate::domain::ports::wal::{WalError, WalStorage};
 /// In-memory WAL for testing
 #[derive(Clone)]
 pub struct InMemoryWal {
-    batches: BTreeMap<SequenceNumber, AssembledBatch>,
+    batches: BTreeMap<SequenceNumber, WireBatch>,
     committed: SequenceNumber,
     next_segment: SegmentIndex,
 }
@@ -31,7 +31,7 @@ impl Default for InMemoryWal {
 }
 
 impl WalStorage for InMemoryWal {
-    fn append(&mut self, batch: &AssembledBatch) -> Result<(), WalError> {
+    fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
         self.batches.insert(batch.sequence_number, batch.clone());
         Ok(())
     }
@@ -53,7 +53,7 @@ impl WalStorage for InMemoryWal {
         Ok(())
     }
 
-    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<AssembledBatch>, WalError> {
+    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
         Ok(self
             .batches
             .range(sequence.next()..)
@@ -61,7 +61,7 @@ impl WalStorage for InMemoryWal {
             .collect())
     }
 
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
         Ok(self
             .batches
             .range(after.next()..)

@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
 use bytes::BytesMut;
 use prost::Message;
 
@@ -12,42 +9,27 @@ use crate::codec::protobuf::types::{
     MetricBatchContent, MetricPointCompact, ProtoMetricQuery, ProtoMetricSeries,
     ProtoQueryRequest, ProtoQueryResponse,
 };
-use crate::ports::codec::{Codec, CodecError};
+use crate::ports::codec::{BatchCodec, Codec, CodecError};
 
 #[derive(Clone)]
 pub struct ProtobufCodec;
 
-impl Codec<MetricBatch> for ProtobufCodec {
+impl BatchCodec for ProtobufCodec {
     fn encode(&self, batch: &MetricBatch, output: &mut BytesMut) -> Result<(), CodecError> {
-        let mut key_to_index: HashMap<&str, u32> = HashMap::new();
-        let mut keys: Vec<String> = Vec::new();
-
-        for p in &batch.points {
-            let key_str = p.key.as_str();
-            if !key_to_index.contains_key(key_str) {
-                let idx = keys.len() as u32;
-                key_to_index.insert(key_str, idx);
-                keys.push(key_str.to_owned());
-            }
-        }
-
         let proto = MetricBatchContent {
             run_id: batch.run_id.to_string(),
-            keys,
+            keys: batch.keys.iter().map(|k| k.as_str().to_owned()).collect(),
             points: batch
                 .points
                 .iter()
                 .map(|p| MetricPointCompact {
-                    key_index: key_to_index[p.key.as_str()],
+                    key_index: p.key_index,
                     value: p.value,
                     step: p.step,
-                    timestamp_epoch_ms: system_time_to_epoch_ms(p.timestamp),
+                    timestamp_epoch_ms: p.timestamp_ms,
                 })
                 .collect(),
         };
-
-        let len = proto.encoded_len();
-        output.reserve(len);
 
         proto.encode(output).map_err(|e| CodecError::EncodeFailed {
             reason: e.to_string(),
@@ -65,7 +47,7 @@ impl Codec<MetricBatch> for ProtobufCodec {
             reason: format!("invalid run_id: {}", proto.run_id),
         })?;
 
-        let metrics: Vec<Metric> = proto
+        let keys = proto
             .keys
             .iter()
             .map(|k| {
@@ -79,24 +61,27 @@ impl Codec<MetricBatch> for ProtobufCodec {
             .points
             .into_iter()
             .map(|p| {
-                let key = metrics
-                    .get(p.key_index as usize)
-                    .ok_or_else(|| CodecError::DecodeFailed {
-                        reason: format!("key_index {} out of range (have {} keys)", p.key_index, metrics.len()),
-                    })?
-                    .clone();
-
+                if p.key_index as usize >= keys.len() {
+                    return Err(CodecError::DecodeFailed {
+                        reason: format!(
+                            "key_index {} out of range (have {} keys)",
+                            p.key_index,
+                            keys.len()
+                        ),
+                    });
+                }
                 Ok(MetricPoint {
-                    key,
+                    key_index: p.key_index,
                     value: p.value,
                     step: p.step,
-                    timestamp: epoch_ms_to_system_time(p.timestamp_epoch_ms),
+                    timestamp_ms: p.timestamp_epoch_ms,
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
 
         Ok(MetricBatch {
             run_id: RunId::from(run_id),
+            keys,
             points,
         })
     }
@@ -196,14 +181,4 @@ impl Codec<MetricSeries> for ProtobufCodec {
             reason: e.to_string(),
         })
     }
-}
-
-fn system_time_to_epoch_ms(time: SystemTime) -> u64 {
-    time.duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO)
-        .as_millis() as u64
-}
-
-fn epoch_ms_to_system_time(ms: u64) -> SystemTime {
-    UNIX_EPOCH + Duration::from_millis(ms)
 }

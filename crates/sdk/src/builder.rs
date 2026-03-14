@@ -12,8 +12,8 @@ use photon_protocol::compressor::CompressorChoice;
 
 use crate::domain::pipeline::accumulator::Accumulator;
 use crate::domain::pipeline::ack_tracker::AckTracker;
-use crate::domain::pipeline::batch_builder::BatchBuilder;
-use crate::domain::pipeline::interner::{InternResolver, MetricKeyInterner};
+use crate::domain::pipeline::interner::MetricKeyInterner;
+use crate::domain::pipeline::pipeline::Pipeline;
 use crate::domain::pipeline::recovery::RecoveryManager;
 use crate::domain::pipeline::sender::{Sender, SenderStats};
 use crate::domain::ports::error::SenderThreadError;
@@ -117,7 +117,6 @@ impl RunBuilder {
 
         // 2. Create accumulator + interner
         let interner = Arc::new(MetricKeyInterner::new());
-        let resolver = InternResolver::new(Arc::clone(&interner));
         let (accumulator, rx) = Accumulator::new(self.channel_capacity, self.spill_capacity);
 
         // 3. Compute start sequence from WAL
@@ -130,10 +129,10 @@ impl RunBuilder {
         // 4. Create channel from builder → sender
         let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
 
-        // 5. Spawn batch builder thread
+        // 5. Spawn pipeline thread
         let batch_wal = wal.clone();
-        let builder_handle = BatchBuilder::new(
-            run_id, rx, resolver, self.codec, batch_wal,
+        let pipeline_handle = Pipeline::new(
+            run_id, rx, Arc::clone(&interner), self.codec, batch_wal,
             self.compressor, self.batch, start_sequence, batch_tx,
         )
         .spawn();
@@ -159,7 +158,7 @@ impl RunBuilder {
             run_id,
             accumulator,
             interner,
-            builder_handle,
+            pipeline_handle,
             sender_handle,
             wal,
         );
@@ -174,7 +173,7 @@ fn run_sender(
     wal: WalChoice,
     config: SenderConfig,
     shutdown_rx: oneshot::Receiver<()>,
-    batch_rx: crossbeam_channel::Receiver<photon_core::types::batch::AssembledBatch>,
+    batch_rx: crossbeam_channel::Receiver<photon_core::types::batch::WireBatch>,
 ) -> Result<SenderStats, SenderThreadError> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()

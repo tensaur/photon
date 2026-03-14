@@ -1,11 +1,11 @@
-use photon_core::types::batch::AssembledBatch;
+use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
 /// Abstraction over the write-ahead log storage backend.
 /// The WAL is the durability boundary of the pipeline.
 pub trait WalStorage: Send + Sync + Clone + 'static {
-    fn append(&mut self, batch: &AssembledBatch) -> Result<(), WalError>;
+    fn append(&mut self, batch: &WireBatch) -> Result<(), WalError>;
 
     fn sync(&self) -> Result<(), WalError>;
 
@@ -15,10 +15,10 @@ pub trait WalStorage: Send + Sync + Clone + 'static {
     fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError>;
 
     /// Read all batches with sequence gt the given watermark.
-    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<AssembledBatch>, WalError>;
+    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<WireBatch>, WalError>;
 
     /// Read the first batch with sequence gt the given watermark.
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<AssembledBatch>, WalError> {
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
         Ok(self.read_from(after)?.into_iter().next())
     }
 
