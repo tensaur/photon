@@ -7,8 +7,8 @@ use tokio::sync::oneshot;
 use photon_core::types::id::RunId;
 
 use crate::domain::pipeline::accumulator::Accumulator;
-use crate::domain::pipeline::pipeline::RawPoint;
 use crate::domain::pipeline::interner::MetricKeyInterner;
+use crate::domain::pipeline::pipeline::RawPoint;
 use crate::domain::pipeline::pipeline::{FlushStats, PipelineError};
 use crate::domain::pipeline::sender::SenderStats;
 use crate::domain::ports::error::{FinishError, LogError, SenderThreadError};
@@ -102,7 +102,8 @@ impl<W: WalStorage> SdkService for Service<W> {
         });
         drop(_old);
 
-        let flush_stats = self.pipeline_handle
+        let flush_stats = self
+            .pipeline_handle
             .join()
             .map_err(|_| FinishError::Panicked)?
             .map_err(FinishError::Pipeline)?;
@@ -118,7 +119,11 @@ impl<W: WalStorage> SdkService for Service<W> {
                     .map_err(|_| FinishError::Panicked)?
                     .map_err(FinishError::Sender)?;
 
-                (sender_stats.batches_sent, sender_stats.batches_acked, sender_stats.rejections_received)
+                (
+                    sender_stats.batches_sent,
+                    sender_stats.batches_acked,
+                    sender_stats.rejections_received,
+                )
             }
             None => (0, 0, 0),
         };

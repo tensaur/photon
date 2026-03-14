@@ -3,9 +3,7 @@ mod domain;
 mod inbound;
 mod outbound;
 
-pub type Run = inbound::run::Run<
-    domain::service::Service<outbound::wal::WalChoice>,
->;
+pub type Run = inbound::run::Run<domain::service::Service<outbound::wal::WalChoice>>;
 
 impl Run {
     pub fn builder() -> builder::RunBuilder {

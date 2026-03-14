@@ -2,10 +2,10 @@ pub mod flatbuffers;
 pub mod json;
 pub mod protobuf;
 
+use self::protobuf::codec::ProtobufCodec;
+use crate::ports::codec::{BatchCodec, CodecError};
 use bytes::BytesMut;
 use photon_core::types::metric::MetricBatch;
-use crate::ports::codec::{BatchCodec, CodecError};
-use self::protobuf::codec::ProtobufCodec;
 
 #[derive(Clone, Debug, Default)]
 pub enum CodecChoice {

@@ -109,14 +109,13 @@ where
             total_buckets += entries.len();
         }
 
-        Ok(CompactionResult { buckets_written: total_buckets })
+        Ok(CompactionResult {
+            buckets_written: total_buckets,
+        })
     }
 
     /// Final compaction when a run finishes. Flushes partial buckets.
-    pub async fn compact_run(
-        &self,
-        run_id: &RunId,
-    ) -> Result<CompactionResult, CompactionError> {
+    pub async fn compact_run(&self, run_id: &RunId) -> Result<CompactionResult, CompactionError> {
         let keys = self
             .metric_reader
             .list_metrics(run_id)
@@ -185,7 +184,9 @@ where
             }
         }
 
-        Ok(CompactionResult { buckets_written: total_buckets })
+        Ok(CompactionResult {
+            buckets_written: total_buckets,
+        })
     }
 }
 

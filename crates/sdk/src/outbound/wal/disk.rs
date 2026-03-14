@@ -292,7 +292,6 @@ impl SharedDiskWal {
     ) -> Result<Self, WalError> {
         DiskWalStorage::open(dir, run_id, config).map(|d| d.into_shared())
     }
-
 }
 
 impl WalStorage for SharedDiskWal {

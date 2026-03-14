@@ -2,10 +2,10 @@ pub mod lz4;
 pub mod noop;
 pub mod zstd;
 
-use bytes::BytesMut;
-use crate::ports::compress::{CompressionError, Compressor};
 use self::noop::NoopCompressor;
 use self::zstd::ZstdCompressor;
+use crate::ports::compress::{CompressionError, Compressor};
+use bytes::BytesMut;
 
 #[derive(Clone, Debug)]
 pub enum CompressorChoice {

@@ -8,10 +8,7 @@ use photon_core::types::sequence::SequenceNumber;
 
 /// Abstraction over the batch transport layer.
 pub trait BatchTransport: Send + Sync + Clone + 'static {
-    fn send(
-        &self,
-        batch: &WireBatch,
-    ) -> impl Future<Output = Result<(), TransportError>> + Send;
+    fn send(&self, batch: &WireBatch) -> impl Future<Output = Result<(), TransportError>> + Send;
 
     fn recv_ack(&self) -> impl Future<Output = Result<AckResult, TransportError>> + Send;
 
