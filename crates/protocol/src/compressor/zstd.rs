@@ -59,7 +59,11 @@ impl Compressor for ZstdCompressor {
     }
 
     fn decompress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
-        let capacity = input.len() * 4;
+        let capacity = zstd::zstd_safe::get_frame_content_size(input)
+            .ok()
+            .flatten()
+            .map(|s| s as usize)
+            .unwrap_or(input.len() * 10);
 
         let decompressed = self
             .decompressor

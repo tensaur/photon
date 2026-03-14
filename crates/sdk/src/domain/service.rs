@@ -22,6 +22,7 @@ pub struct PipelineStats {
     pub bytes_uncompressed: u64,
     pub batches_sent: u64,
     pub batches_acked: u64,
+    pub batches_rejected: u64,
 }
 
 pub(crate) struct SenderHandle {
@@ -106,7 +107,7 @@ impl<W: WalStorage> SdkService for Service<W> {
             .map_err(FinishError::Builder)?;
 
         // Drop the keep-alive so the sender exits once WAL is empty, then join.
-        let (batches_sent, batches_acked) = match self.sender_handle.take() {
+        let (batches_sent, batches_acked, batches_rejected) = match self.sender_handle.take() {
             Some(mut ctx) => {
                 drop(ctx.shutdown_tx.take());
 
@@ -116,9 +117,9 @@ impl<W: WalStorage> SdkService for Service<W> {
                     .map_err(|_| FinishError::Panicked)?
                     .map_err(FinishError::Sender)?;
 
-                (sender_stats.batches_sent, sender_stats.batches_acked)
+                (sender_stats.batches_sent, sender_stats.batches_acked, sender_stats.rejections_received)
             }
-            None => (0, 0),
+            None => (0, 0, 0),
         };
 
         // Clean shutdown: all batches were acked, so the WAL can be removed.
@@ -134,6 +135,7 @@ impl<W: WalStorage> SdkService for Service<W> {
             bytes_uncompressed: builder_stats.bytes_uncompressed,
             batches_sent,
             batches_acked,
+            batches_rejected,
         })
     }
 

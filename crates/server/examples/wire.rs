@@ -84,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Bytes (wire):     {}", stats.bytes_compressed);
         println!("Batches sent:     {}", stats.batches_sent);
         println!("Batches acked:    {}", stats.batches_acked);
+        println!("Batches rejected: {}", stats.batches_rejected);
 
         println!("\n--- Timing ---");
         println!("Log phase:        {:.2?}", log_elapsed);
