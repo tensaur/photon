@@ -5,9 +5,10 @@ use bytes::BytesMut;
 use photon_core::types::ack::AckStatus;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
+use photon_core::types::metric::MetricBatch;
 use photon_core::types::sequence::SequenceNumber;
 use photon_hook::IngestHook;
-use photon_protocol::ports::codec::BatchCodec;
+use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::metric::MetricWriter;
 use photon_store::ports::watermark::WatermarkStore;
@@ -55,7 +56,7 @@ where
     M: MetricWriter,
     H: IngestHook,
     C: Compressor,
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
 {
     dedup: DeduplicationTracker<W>,
     metric_store: M,
@@ -70,7 +71,7 @@ where
     M: MetricWriter,
     H: IngestHook,
     C: Compressor,
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
 {
     pub fn new(watermark_store: W, metric_store: M, hook: H, compressor: C, codec: K) -> Self {
         Self {
@@ -89,7 +90,7 @@ where
     M: MetricWriter,
     H: IngestHook,
     C: Compressor,
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
 {
     async fn ingest(&self, batch: &WireBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;

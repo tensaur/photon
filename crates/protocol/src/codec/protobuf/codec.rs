@@ -9,12 +9,12 @@ use crate::codec::protobuf::types::{
     MetricBatchContent, MetricPointCompact, ProtoMetricQuery, ProtoMetricSeries, ProtoQueryRequest,
     ProtoQueryResponse,
 };
-use crate::ports::codec::{BatchCodec, Codec, CodecError};
+use crate::ports::codec::{Codec, CodecError};
 
 #[derive(Clone)]
 pub struct ProtobufCodec;
 
-impl BatchCodec for ProtobufCodec {
+impl Codec<MetricBatch> for ProtobufCodec {
     fn encode(&self, batch: &MetricBatch, output: &mut BytesMut) -> Result<(), CodecError> {
         let proto = MetricBatchContent {
             run_id: batch.run_id.to_string(),
