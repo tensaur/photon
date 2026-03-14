@@ -8,8 +8,9 @@ use crossbeam_channel::{Receiver, Sender, select, tick};
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::BatchConfig;
 use photon_core::types::id::RunId;
+use photon_core::types::metric::MetricBatch;
 use photon_core::types::sequence::SequenceNumber;
-use photon_protocol::ports::codec::{BatchCodec, CodecError};
+use photon_protocol::ports::codec::{Codec, CodecError};
 use photon_protocol::ports::compress::{CompressionError, Compressor};
 
 use super::assembler::BatchAssembler;
@@ -26,7 +27,7 @@ pub(crate) struct RawPoint {
 
 pub struct Pipeline<K, W, C>
 where
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
     W: WalStorage,
     C: Compressor,
 {
@@ -45,7 +46,7 @@ where
 
 impl<K, W, C> Pipeline<K, W, C>
 where
-    K: BatchCodec,
+    K: Codec<MetricBatch>,
     W: WalStorage,
     C: Compressor,
 {

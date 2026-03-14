@@ -3,7 +3,7 @@ pub mod json;
 pub mod protobuf;
 
 use self::protobuf::codec::ProtobufCodec;
-use crate::ports::codec::{BatchCodec, CodecError};
+use crate::ports::codec::{Codec, CodecError};
 use bytes::BytesMut;
 use photon_core::types::metric::MetricBatch;
 
@@ -19,7 +19,7 @@ impl CodecChoice {
     }
 }
 
-impl BatchCodec for CodecChoice {
+impl Codec<MetricBatch> for CodecChoice {
     fn encode(&self, batch: &MetricBatch, output: &mut BytesMut) -> Result<(), CodecError> {
         match self {
             Self::Protobuf => ProtobufCodec.encode(batch, output),
