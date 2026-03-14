@@ -55,10 +55,7 @@ impl MetricReader for InMemoryMetricStore {
             return Ok(Vec::new());
         };
 
-        Ok(points
-            .range(step_range)
-            .map(|(&s, &v)| (s, v))
-            .collect())
+        Ok(points.range(step_range).map(|(&s, &v)| (s, v)).collect())
     }
 
     async fn count_points(

@@ -97,11 +97,7 @@ impl Segment<Active> {
         Ok(seg)
     }
 
-    pub fn append(
-        &mut self,
-        batch: &WireBatch,
-        rotation_threshold: f64,
-    ) -> Result<bool, WalError> {
+    pub fn append(&mut self, batch: &WireBatch, rotation_threshold: f64) -> Result<bool, WalError> {
         let payload = &batch.compressed_payload;
         let total = RECORD_OVERHEAD as u64 + payload.len() as u64;
 

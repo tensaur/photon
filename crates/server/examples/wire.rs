@@ -22,8 +22,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let watermark_store = InMemoryWatermarkStore::new();
     let metric_store = InMemoryMetricStore::new();
     let compressor = ZstdCompressor::default();
-    let ingest_service =
-        IngestService::new(watermark_store, metric_store, NoOpHook, compressor, ProtobufCodec);
+    let ingest_service = IngestService::new(
+        watermark_store,
+        metric_store,
+        NoOpHook,
+        compressor,
+        ProtobufCodec,
+    );
     let grpc_handler = Handler::new(ingest_service);
 
     // Spawn server in background
@@ -71,7 +76,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let log_elapsed = t0.elapsed();
-        println!("Logged: {} points in {:.2?}", run.points_logged(), log_elapsed);
+        println!(
+            "Logged: {} points in {:.2?}",
+            run.points_logged(),
+            log_elapsed
+        );
 
         let stats = run.finish().expect("finish failed");
         let total_elapsed = t0.elapsed();
@@ -89,8 +98,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\n--- Timing ---");
         println!("Log phase:        {:.2?}", log_elapsed);
         println!("Total (inc flush):{:.2?}", total_elapsed);
-        println!("Throughput (log): {:.2} M pts/s", stats.points as f64 / log_elapsed.as_secs_f64() / 1_000_000.0);
-        println!("Throughput (e2e): {:.2} M pts/s", stats.points as f64 / total_elapsed.as_secs_f64() / 1_000_000.0);
+        println!(
+            "Throughput (log): {:.2} M pts/s",
+            stats.points as f64 / log_elapsed.as_secs_f64() / 1_000_000.0
+        );
+        println!(
+            "Throughput (e2e): {:.2} M pts/s",
+            stats.points as f64 / total_elapsed.as_secs_f64() / 1_000_000.0
+        );
 
         assert!(stats.batches_sent > 0, "expected batches to be sent");
         assert!(stats.batches_acked > 0, "expected batches to be acked");

@@ -1,7 +1,7 @@
 use photon_core::types::id::RunId;
 
-use crate::domain::service::SdkService;
 use crate::domain::service::PipelineStats;
+use crate::domain::service::SdkService;
 use crate::inbound::error::SdkError;
 
 /// A logging run.
@@ -68,6 +68,9 @@ impl<S: SdkService> Run<S> {
 
     /// Flushes remaining points and waits for the pipeline to drain.
     pub fn finish(self) -> Result<RunStats, SdkError> {
-        self.service.finish().map(RunStats::from).map_err(Into::into)
+        self.service
+            .finish()
+            .map(RunStats::from)
+            .map_err(Into::into)
     }
 }

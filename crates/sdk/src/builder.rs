@@ -132,8 +132,15 @@ impl RunBuilder {
         // 5. Spawn pipeline thread
         let batch_wal = wal.clone();
         let pipeline_handle = Pipeline::new(
-            run_id, rx, Arc::clone(&interner), self.codec, batch_wal,
-            self.compressor, self.batch, start_sequence, batch_tx,
+            run_id,
+            rx,
+            Arc::clone(&interner),
+            self.codec,
+            batch_wal,
+            self.compressor,
+            self.batch,
+            start_sequence,
+            batch_tx,
         )
         .spawn();
 
@@ -144,7 +151,16 @@ impl RunBuilder {
 
             let handle = std::thread::Builder::new()
                 .name(format!("photon-sender-{run_id}"))
-                .spawn(move || run_sender(endpoint, run_id, sender_wal, SenderConfig::default(), shutdown_rx, batch_rx))
+                .spawn(move || {
+                    run_sender(
+                        endpoint,
+                        run_id,
+                        sender_wal,
+                        SenderConfig::default(),
+                        shutdown_rx,
+                        batch_rx,
+                    )
+                })
                 .expect("failed to spawn sender thread");
 
             SenderHandle {
@@ -181,8 +197,7 @@ fn run_sender(
         .map_err(SenderThreadError::Runtime)?;
 
     rt.block_on(async move {
-        let transport = GrpcTransport::connect(&endpoint, 64)
-            .await?;
+        let transport = GrpcTransport::connect(&endpoint, 64).await?;
 
         let recovery = RecoveryManager::new(wal.clone(), run_id);
 
@@ -193,9 +208,7 @@ fn run_sender(
             tracing::debug!(run_id = %run_id, "clean WAL, skipping recovery");
             SequenceNumber::ZERO
         } else {
-            let result = recovery
-                .recover(&transport)
-                .await?;
+            let result = recovery.recover(&transport).await?;
 
             if result.batches_to_replay > 0 {
                 tracing::info!(

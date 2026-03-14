@@ -34,7 +34,10 @@ impl CompactionCursor for InMemoryCompactionCursor {
         key: &Metric,
         tier: usize,
     ) -> Result<Option<u64>, ReadError> {
-        Ok(self.data.get(&(*run_id, key.clone(), tier)).map(|e| *e.value()))
+        Ok(self
+            .data
+            .get(&(*run_id, key.clone(), tier))
+            .map(|e| *e.value()))
     }
 
     async fn advance(

@@ -1,7 +1,7 @@
 pub mod bucket;
+pub mod compaction;
 pub mod metric;
 pub mod watermark;
-pub mod compaction;
 
 use photon_core::types::id::RunId;
 

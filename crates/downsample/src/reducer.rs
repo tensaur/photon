@@ -52,7 +52,8 @@ impl<A: Aggregator> Reducer<A> {
                 let bucket = tier.open.take().unwrap();
                 closed.push((
                     i,
-                    self.aggregator.close(&bucket, tier.first_step, tier.last_step),
+                    self.aggregator
+                        .close(&bucket, tier.first_step, tier.last_step),
                 ));
                 tier.count = 0;
             }
@@ -69,7 +70,8 @@ impl<A: Aggregator> Reducer<A> {
             if let Some(bucket) = tier.open.take() {
                 closed.push((
                     i,
-                    self.aggregator.close(&bucket, tier.first_step, tier.last_step),
+                    self.aggregator
+                        .close(&bucket, tier.first_step, tier.last_step),
                 ));
                 tier.count = 0;
             }
@@ -78,4 +80,3 @@ impl<A: Aggregator> Reducer<A> {
         closed
     }
 }
-

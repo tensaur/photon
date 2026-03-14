@@ -6,8 +6,8 @@ use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
 use photon_core::types::query::{MetricQuery, MetricSeries, QueryRequest, QueryResponse};
 
 use crate::codec::protobuf::types::{
-    MetricBatchContent, MetricPointCompact, ProtoMetricQuery, ProtoMetricSeries,
-    ProtoQueryRequest, ProtoQueryResponse,
+    MetricBatchContent, MetricPointCompact, ProtoMetricQuery, ProtoMetricSeries, ProtoQueryRequest,
+    ProtoQueryResponse,
 };
 use crate::ports::codec::{BatchCodec, Codec, CodecError};
 

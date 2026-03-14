@@ -72,13 +72,7 @@ where
     C: Compressor,
     K: BatchCodec,
 {
-    pub fn new(
-        watermark_store: W,
-        metric_store: M,
-        hook: H,
-        compressor: C,
-        codec: K,
-    ) -> Self {
+    pub fn new(watermark_store: W, metric_store: M, hook: H, compressor: C, codec: K) -> Self {
         Self {
             dedup: DeduplicationTracker::new(watermark_store),
             metric_store,
