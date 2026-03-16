@@ -10,6 +10,7 @@ use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::CompressorChoice;
+use photon_transport::TransportChoice;
 
 use crate::domain::pipeline::accumulator::Accumulator;
 use crate::domain::pipeline::ack_tracker::AckTracker;
@@ -22,7 +23,7 @@ use crate::domain::ports::wal::WalStorage;
 use crate::domain::service::{SenderHandle, Service};
 use crate::inbound::error::SdkError;
 use crate::inbound::run::Run;
-use crate::outbound::grpc::GrpcTransport;
+use crate::outbound::transport;
 use crate::outbound::wal::WalChoice;
 
 /// Configure and start a [`Run`].
@@ -39,6 +40,7 @@ pub struct RunBuilder {
     spill_capacity: usize,
     batch: BatchConfig,
     endpoint: Option<String>,
+    transport: TransportChoice,
     codec: CodecChoice,
     compressor: CompressorChoice,
 }
@@ -53,6 +55,7 @@ impl Default for RunBuilder {
             spill_capacity: 16_384,
             batch: BatchConfig::default(),
             endpoint: None,
+            transport: TransportChoice::default(),
             codec: CodecChoice::default(),
             compressor: CompressorChoice::default(),
         }
@@ -102,6 +105,12 @@ impl RunBuilder {
         self
     }
 
+    /// Select the transport adapter. Defaults to TCP.
+    pub fn transport(mut self, config: TransportChoice) -> Self {
+        self.transport = config;
+        self
+    }
+
     /// Connect to a remote photon server for metric ingestion.
     pub fn endpoint(mut self, url: impl Into<String>) -> Self {
         self.endpoint = Some(url.into());
@@ -132,6 +141,7 @@ impl RunBuilder {
 
         // 5. Spawn pipeline thread
         let batch_wal = wal.clone();
+        let wire_codec = self.codec.clone();
         let pipeline_handle = Pipeline::new(
             run_id,
             rx,
@@ -147,6 +157,7 @@ impl RunBuilder {
 
         // 6. Spawn sender thread (if endpoint configured)
         let sender_wal = wal.clone();
+        let transport_config = self.transport;
         let sender_handle = self.endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -154,6 +165,8 @@ impl RunBuilder {
                 .name(format!("photon-sender-{run_id}"))
                 .spawn(move || {
                     run_sender(
+                        transport_config,
+                        wire_codec,
                         endpoint,
                         run_id,
                         sender_wal,
@@ -185,6 +198,8 @@ impl RunBuilder {
 }
 
 fn run_sender(
+    transport_config: TransportChoice,
+    wire_codec: CodecChoice,
     endpoint: String,
     run_id: RunId,
     wal: WalChoice,
@@ -198,7 +213,8 @@ fn run_sender(
         .map_err(SenderThreadError::Runtime)?;
 
     rt.block_on(async move {
-        let transport = GrpcTransport::connect(&endpoint, 64).await?;
+        let (transport, watermark_transport) =
+            transport::connect(&transport_config, &endpoint, wire_codec).await?;
 
         let recovery = RecoveryManager::new(wal.clone(), run_id);
 
@@ -209,7 +225,7 @@ fn run_sender(
             tracing::debug!(run_id = %run_id, "clean WAL, skipping recovery");
             SequenceNumber::ZERO
         } else {
-            let result = recovery.recover(&transport).await?;
+            let result = recovery.recover(&watermark_transport).await?;
 
             if result.batches_to_replay > 0 {
                 tracing::info!(

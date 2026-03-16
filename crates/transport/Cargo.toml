@@ -1,17 +1,18 @@
 [package]
-name = "photon-protocol"
+name = "photon-transport"
 version = "0.0.0"
-description = "Internal codec and compression traits for Photon"
+description = "Transport traits and adapters for Photon"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
 photon-core = { path = "../core", version = "0.0.0" }
+photon-protocol = { path = "../protocol", version = "0.0.0" }
 
 bytes.workspace = true
-postcard.workspace = true
+reqwest.workspace = true
 serde.workspace = true
+tokio.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
-zstd.workspace = true

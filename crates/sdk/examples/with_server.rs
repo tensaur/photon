@@ -1,6 +1,6 @@
 fn main() {
     let mut run = photon::Run::builder()
-        .endpoint("http://[::1]:50051")
+        .endpoint("[::1]:50051")
         .max_points_per_batch(50)
         .start()
         .expect("failed to start run");

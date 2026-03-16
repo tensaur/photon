@@ -1,10 +1,11 @@
 use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
 use crate::types::{id::RunId, sequence::SequenceNumber};
 
 /// A compressed, wire-ready batch of metric points.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WireBatch {
     pub run_id: RunId,
     pub sequence_number: SequenceNumber,

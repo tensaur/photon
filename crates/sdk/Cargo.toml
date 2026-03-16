@@ -17,13 +17,13 @@ path = "examples/with_server.rs"
 [dependencies]
 photon-core = { path = "../core", version = "0.0.0" }
 photon-protocol = { path = "../protocol", version = "0.0.0" }
+photon-transport = { path = "../transport" }
 
 dashmap.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 bytes.workspace = true
 crossbeam-channel.workspace = true
-tonic.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 serde.workspace = true

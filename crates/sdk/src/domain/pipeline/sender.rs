@@ -11,12 +11,14 @@ use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{RetryConfig, SenderConfig};
 use photon_core::types::sequence::SequenceNumber;
 
-use crate::domain::ports::transport::{BatchTransport, TransportError};
+use photon_transport::ports::Transport;
+
+use crate::domain::ports::error::TransportError;
 use crate::domain::ports::wal::{WalError, WalStorage};
 
 pub struct Sender<T, W>
 where
-    T: BatchTransport,
+    T: Transport<WireBatch, AckResult>,
     W: WalStorage,
 {
     transport: T,
@@ -70,7 +72,7 @@ pub enum SenderError {
 
 impl<T, W> Sender<T, W>
 where
-    T: BatchTransport,
+    T: Transport<WireBatch, AckResult>,
     W: WalStorage,
 {
     pub fn new(
@@ -175,7 +177,12 @@ where
                 Err(_) => break,
             };
 
-            match self.transport.send(&batch).await {
+            match self
+                .transport
+                .send(&batch)
+                .await
+                .map_err(TransportError::from)
+            {
                 Ok(()) => {
                     self.in_flight.insert(
                         batch.sequence_number,
@@ -243,12 +250,12 @@ where
     }
 
     async fn try_recv_ack(&mut self) -> Result<Option<SequenceNumber>, TransportError> {
-        let ack = tokio::time::timeout(Duration::from_millis(1), self.transport.recv_ack()).await;
+        let ack = tokio::time::timeout(Duration::from_millis(1), self.transport.recv()).await;
 
         match ack {
             Err(_) => Ok(None),
             Ok(Ok(ack)) => Ok(Some(self.handle_ack(ack))),
-            Ok(Err(e)) => Err(e),
+            Ok(Err(e)) => Err(TransportError::from(e)),
         }
     }
 

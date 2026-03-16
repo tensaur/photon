@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use super::id::RunId;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct Metric(String);
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -40,7 +42,17 @@ impl Metric {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+impl<'de> Deserialize<'de> for Metric {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Metric::new(s).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct MetricPoint {
     pub key_index: u32,
     pub value: f64,
@@ -48,7 +60,7 @@ pub struct MetricPoint {
     pub timestamp_ms: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetricBatch {
     pub run_id: RunId,
     pub keys: Vec<Metric>,

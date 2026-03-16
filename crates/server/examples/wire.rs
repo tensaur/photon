@@ -1,49 +1,56 @@
-//! Spawns the ingest server and SDK client in a single process.
+//! End-to-end wire example: spawns the ingest server and SDK client in a single process.
 
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Instant;
 
-use tonic::transport::Server;
+use tokio::net::TcpListener;
 
 use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service as IngestService;
-use photon_ingest::inbound::grpc::Handler;
-use photon_protocol::codec::protobuf::codec::ProtobufCodec;
+use photon_ingest::inbound::handler;
+use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::zstd::ZstdCompressor;
 use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
+use photon_transport::tcp::TcpTransport;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let listener = tokio::net::TcpListener::bind("[::1]:0").await?;
+    let listener = TcpListener::bind("[::1]:0").await?;
     let addr: SocketAddr = listener.local_addr()?;
     println!("Server listening on {addr}");
 
     let watermark_store = InMemoryWatermarkStore::new();
     let metric_store = InMemoryMetricStore::new();
     let compressor = ZstdCompressor::default();
-    let ingest_service = IngestService::new(
+    let ingest_service = Arc::new(IngestService::new(
         watermark_store,
         metric_store,
         NoOpHook,
         compressor,
-        ProtobufCodec,
-    );
-    let grpc_handler = Handler::new(ingest_service);
+        CodecChoice::default(),
+    ));
+
+    let wire_codec = CodecChoice::default();
 
     // Spawn server in background
     tokio::spawn(async move {
-        Server::builder()
-            .add_service(grpc_handler.into_server())
-            .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
-            .await
-            .expect("server crashed");
+        loop {
+            let (stream, _) = listener.accept().await.expect("accept failed");
+            let transport = TcpTransport::from_stream(stream, wire_codec.clone());
+            let service = Arc::clone(&ingest_service);
+
+            tokio::spawn(async move {
+                handler::handle_stream(&service, &transport).await;
+            });
+        }
     });
 
     // Give the server a moment to start accepting connections
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-    let endpoint = format!("http://{addr}");
+    let endpoint = format!("[::1]:{}", addr.port());
     let client_handle = tokio::task::spawn_blocking(move || {
         let mut run = photon::Run::builder()
             .endpoint(endpoint)

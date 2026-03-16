@@ -1,2 +1,2 @@
-pub(crate) mod grpc;
+pub(crate) mod transport;
 pub(crate) mod wal;

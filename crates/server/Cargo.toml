@@ -18,12 +18,12 @@ photon-core = { path = "../core" }
 photon-protocol = { path = "../protocol" }
 photon-store = { path = "../store" }
 photon-ingest = { path = "../ingest" }
+photon-transport = { path = "../transport" }
 photon-hook = { path = "../hook" }
 photon = { path = "../sdk" }
 
 tokio.workspace = true
 tokio-stream.workspace = true
-tonic.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

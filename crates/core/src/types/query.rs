@@ -1,9 +1,11 @@
 use std::ops::Range;
 
+use serde::{Deserialize, Serialize};
+
 use crate::types::id::RunId;
 use crate::types::metric::Metric;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetricQuery {
     pub run_id: RunId,
     pub key: Metric,
@@ -11,14 +13,14 @@ pub struct MetricQuery {
     pub target_points: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetricSeries {
     pub run_id: RunId,
     pub key: Metric,
     pub data: SeriesData,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SeriesData {
     Raw {
         points: Vec<DataPoint>,
@@ -29,13 +31,13 @@ pub enum SeriesData {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DataPoint {
     pub step: u64,
     pub value: f64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RangePoint {
     pub step_start: u64,
     pub step_end: u64,
@@ -43,12 +45,12 @@ pub struct RangePoint {
     pub max: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QueryRequest {
     pub queries: Vec<MetricQuery>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QueryResponse {
     pub series: Vec<MetricSeries>,
 }

@@ -1,8 +1,10 @@
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// Monotonically increasing batch identifier, scoped per run.
 /// Used for ordering, deduplication, and WAL truncation watermarks.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SequenceNumber(u64);
 
 impl SequenceNumber {
@@ -48,7 +50,7 @@ impl fmt::Display for SequenceNumber {
 }
 
 /// Identifies a WAL segment file on disk. Monotonically increasing per run.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SegmentIndex(u64);
 
 impl SegmentIndex {

@@ -1,7 +1,8 @@
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
+use photon_transport::ports::Transport;
 
-use crate::domain::ports::transport::{BatchTransport, TransportError};
+use crate::domain::ports::error::TransportError;
 use crate::domain::ports::wal::{WalError, WalStorage};
 
 pub struct RecoveryManager<W: WalStorage> {
@@ -30,18 +31,18 @@ impl<W: WalStorage> RecoveryManager<W> {
         Self { wal, run_id }
     }
 
-    /// Determine the recovery starting point and what needs replaying.
-    /// Compares two watermarks:
-    /// - Local: persisted in WAL metadata.
-    /// - Server: what the server actually commited. Can be ahead of
-    ///   local if the SDK crashed after the server acked but before
-    ///   the ack tracker flushed.
-    pub async fn recover<T: BatchTransport>(
-        &self,
-        transport: &T,
-    ) -> Result<RecoveryResult, RecoveryError> {
+    pub async fn recover<T>(&self, transport: &T) -> Result<RecoveryResult, RecoveryError>
+    where
+        T: Transport<RunId, SequenceNumber>,
+    {
         let local = self.wal.read_meta()?.committed_sequence;
-        let server = transport.get_watermark(&self.run_id).await?;
+
+        transport
+            .send(&self.run_id)
+            .await
+            .map_err(TransportError::from)?;
+        let server = transport.recv().await.map_err(TransportError::from)?;
+
         let effective = std::cmp::max(local, server);
 
         let batches = self.wal.read_from(effective)?;
@@ -64,7 +65,6 @@ impl<W: WalStorage> RecoveryManager<W> {
         })
     }
 
-    /// Check for clean recovery, i.e. no WAL data exists
     pub fn is_clean(&self) -> Result<bool, WalError> {
         let meta = self.wal.read_meta()?;
         let batches = self.wal.read_from(meta.committed_sequence)?;

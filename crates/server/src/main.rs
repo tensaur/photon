@@ -1,13 +1,16 @@
-use tonic::transport::Server;
+use std::sync::Arc;
+
+use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service;
-use photon_ingest::inbound::grpc::Handler;
-use photon_protocol::codec::protobuf::codec::ProtobufCodec;
+use photon_ingest::inbound::handler;
+use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::zstd::ZstdCompressor;
 use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
+use photon_transport::tcp::TcpTransport;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,23 +20,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let addr = "[::1]:50051".parse()?;
+    let addr = "[::1]:50051";
 
     let watermark_store = InMemoryWatermarkStore::new();
     let metric_store = InMemoryMetricStore::new();
     let hook = NoOpHook;
     let compressor = ZstdCompressor::default();
-    let codec = ProtobufCodec;
+    let codec = CodecChoice::default();
+    let wire_codec = CodecChoice::default();
 
-    let ingest_service = Service::new(watermark_store, metric_store, hook, compressor, codec);
-    let grpc_handler = Handler::new(ingest_service);
+    let ingest_service = Arc::new(Service::new(
+        watermark_store,
+        metric_store,
+        hook,
+        compressor,
+        codec,
+    ));
 
+    let listener = TcpListener::bind(addr).await?;
     tracing::info!("photon server listening on {addr}");
 
-    Server::builder()
-        .add_service(grpc_handler.into_server())
-        .serve(addr)
-        .await?;
+    loop {
+        let (stream, peer) = listener.accept().await?;
+        tracing::debug!("accepted connection from {peer}");
 
-    Ok(())
+        let transport = TcpTransport::from_stream(stream, wire_codec.clone());
+        let service = Arc::clone(&ingest_service);
+
+        tokio::spawn(async move {
+            handler::handle_stream(&service, &transport).await;
+            tracing::debug!("connection from {peer} closed");
+        });
+    }
 }

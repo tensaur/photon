@@ -8,12 +8,12 @@ repository.workspace = true
 [dependencies]
 photon-core = { path = "../core" }
 photon-protocol = { path = "../protocol" }
+photon-transport = { path = "../transport" }
 photon-store = { path = "../store" }
 photon-hook = { path = "../hook" }
 
 tokio.workspace = true
 tokio-stream.workspace = true
-tonic.workspace = true
 dashmap.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true

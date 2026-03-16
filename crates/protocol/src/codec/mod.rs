@@ -1,34 +1,37 @@
-pub mod flatbuffers;
-pub mod json;
-pub mod protobuf;
+pub mod postcard;
 
-use self::protobuf::codec::ProtobufCodec;
-use crate::ports::codec::{Codec, CodecError};
 use bytes::BytesMut;
-use photon_core::types::metric::MetricBatch;
+use serde::{Serialize, de::DeserializeOwned};
+
+use crate::ports::codec::{Codec, CodecError};
+
+use self::postcard::PostcardCodec;
 
 #[derive(Clone, Debug, Default)]
 pub enum CodecChoice {
     #[default]
-    Protobuf,
+    Postcard,
 }
 
 impl CodecChoice {
-    pub fn protobuf() -> Self {
-        Self::Protobuf
+    pub fn postcard() -> Self {
+        Self::Postcard
     }
 }
 
-impl Codec<MetricBatch> for CodecChoice {
-    fn encode(&self, batch: &MetricBatch, output: &mut BytesMut) -> Result<(), CodecError> {
+impl<T> Codec<T> for CodecChoice
+where
+    T: Serialize + DeserializeOwned + Send + Sync,
+{
+    fn encode(&self, value: &T, output: &mut BytesMut) -> Result<(), CodecError> {
         match self {
-            Self::Protobuf => ProtobufCodec.encode(batch, output),
+            Self::Postcard => PostcardCodec.encode(value, output),
         }
     }
 
-    fn decode(&self, input: &[u8]) -> Result<MetricBatch, CodecError> {
+    fn decode(&self, input: &[u8]) -> Result<T, CodecError> {
         match self {
-            Self::Protobuf => ProtobufCodec.decode(input),
+            Self::Postcard => PostcardCodec.decode(input),
         }
     }
 }
