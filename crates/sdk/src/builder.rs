@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
-use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{BatchConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
@@ -16,7 +15,6 @@ use crate::domain::pipeline::accumulator::Accumulator;
 use crate::domain::pipeline::interner::MetricKeyInterner;
 use crate::domain::pipeline::pipeline::Pipeline;
 use crate::domain::pipeline::sender;
-use crate::domain::ports::error::SenderThreadError;
 use crate::domain::ports::wal::WalStorage;
 use crate::domain::service::{SenderHandle, Service};
 use crate::inbound::error::SdkError;

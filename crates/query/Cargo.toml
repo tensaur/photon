@@ -8,12 +8,11 @@ repository.workspace = true
 [dependencies]
 photon-core = { path = "../core" }
 photon-protocol = { path = "../protocol" }
+photon-transport = { path = "../transport" }
 photon-store = { path = "../store" }
 photon-downsample = { path = "../downsample" }
 
-axum.workspace = true
-bytes.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true

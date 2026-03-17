@@ -16,6 +16,12 @@ pub struct TierSelector {
     divisors: Vec<usize>,
 }
 
+impl Default for TierSelector {
+    fn default() -> Self {
+        Self::new(vec![60, 3600])
+    }
+}
+
 impl TierSelector {
     pub fn new(divisors: Vec<usize>) -> Self {
         debug_assert!(

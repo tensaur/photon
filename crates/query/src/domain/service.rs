@@ -9,13 +9,14 @@ use photon_downsample::ports::selector::Selector;
 use photon_store::ports::bucket::BucketReader;
 use photon_store::ports::compaction::CompactionCursor;
 use photon_store::ports::metric::MetricReader;
+use photon_store::ports::ReadError;
 
 use crate::domain::tier::{Resolution, TierSelector};
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
     #[error("store read failed")]
-    Read(#[from] photon_store::ports::ReadError),
+    Read(#[from] ReadError),
 }
 
 pub trait QueryService {
