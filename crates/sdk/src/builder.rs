@@ -13,17 +13,14 @@ use photon_protocol::compressor::CompressorChoice;
 use photon_transport::TransportChoice;
 
 use crate::domain::pipeline::accumulator::Accumulator;
-use crate::domain::pipeline::ack_tracker::AckTracker;
 use crate::domain::pipeline::interner::MetricKeyInterner;
 use crate::domain::pipeline::pipeline::Pipeline;
-use crate::domain::pipeline::recovery::RecoveryManager;
-use crate::domain::pipeline::sender::{Sender, SenderStats};
+use crate::domain::pipeline::sender;
 use crate::domain::ports::error::SenderThreadError;
 use crate::domain::ports::wal::WalStorage;
 use crate::domain::service::{SenderHandle, Service};
 use crate::inbound::error::SdkError;
 use crate::inbound::run::Run;
-use crate::outbound::transport;
 use crate::outbound::wal::WalChoice;
 
 /// Configure and start a [`Run`].
@@ -106,8 +103,8 @@ impl RunBuilder {
     }
 
     /// Select the transport adapter. Defaults to TCP.
-    pub fn transport(mut self, config: TransportChoice) -> Self {
-        self.transport = config;
+    pub fn transport(mut self, transport: TransportChoice) -> Self {
+        self.transport = transport;
         self
     }
 
@@ -141,7 +138,6 @@ impl RunBuilder {
 
         // 5. Spawn pipeline thread
         let batch_wal = wal.clone();
-        let wire_codec = self.codec.clone();
         let pipeline_handle = Pipeline::new(
             run_id,
             rx,
@@ -157,16 +153,14 @@ impl RunBuilder {
 
         // 6. Spawn sender thread (if endpoint configured)
         let sender_wal = wal.clone();
-        let transport_config = self.transport;
         let sender_handle = self.endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
             let handle = std::thread::Builder::new()
                 .name(format!("photon-sender-{run_id}"))
                 .spawn(move || {
-                    run_sender(
-                        transport_config,
-                        wire_codec,
+                    sender::run_thread(
+                        self.transport,
                         endpoint,
                         run_id,
                         sender_wal,
@@ -195,77 +189,4 @@ impl RunBuilder {
 
         Ok(Run { service })
     }
-}
-
-fn run_sender(
-    transport_config: TransportChoice,
-    wire_codec: CodecChoice,
-    endpoint: String,
-    run_id: RunId,
-    wal: WalChoice,
-    config: SenderConfig,
-    shutdown_rx: oneshot::Receiver<()>,
-    batch_rx: crossbeam_channel::Receiver<WireBatch>,
-) -> Result<SenderStats, SenderThreadError> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(SenderThreadError::Runtime)?;
-
-    rt.block_on(async move {
-        let (transport, watermark_transport) =
-            transport::connect(&transport_config, &endpoint, wire_codec).await?;
-
-        let recovery = RecoveryManager::new(wal.clone(), run_id);
-
-        let watermark = if recovery
-            .is_clean()
-            .map_err(|e| SenderThreadError::Recovery(e.into()))?
-        {
-            tracing::debug!(run_id = %run_id, "clean WAL, skipping recovery");
-            SequenceNumber::ZERO
-        } else {
-            let result = recovery.recover(&watermark_transport).await?;
-
-            if result.batches_to_replay > 0 {
-                tracing::info!(
-                    run_id = %run_id,
-                    batches = result.batches_to_replay,
-                    bytes = result.bytes_to_replay,
-                    "replaying uncommitted batches from WAL"
-                );
-            }
-
-            result.effective_watermark
-        };
-
-        let mut sender = Sender::new(
-            transport,
-            wal.clone(),
-            config,
-            watermark,
-            shutdown_rx,
-            batch_rx,
-        );
-
-        let mut ack_tracker = AckTracker::new(wal, watermark, 10);
-
-        let mut result = sender
-            .run(|seq| {
-                if let Err(e) = ack_tracker.on_ack(seq) {
-                    tracing::error!("ack tracker error for seq {seq}: {e}");
-                }
-            })
-            .await?;
-
-        match ack_tracker.shutdown() {
-            Ok(ack_stats) => {
-                result.watermark_advances = ack_stats.watermark_advances;
-                result.segments_truncated = ack_stats.segments_truncated;
-            }
-            Err(e) => tracing::error!("ack tracker shutdown failed: {e}"),
-        }
-
-        Ok(result)
-    })
 }

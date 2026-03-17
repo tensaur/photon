@@ -9,51 +9,38 @@ use self::http::HttpTransport;
 use self::ports::{Transport, TransportError};
 use self::tcp::TcpTransport;
 
-/// Transport selection for builders. Analogous to `CodecChoice` and `CompressorChoice`.
-#[derive(Clone, Debug, Default)]
-pub enum TransportChoice {
-    #[default]
-    Tcp,
-    Http { url: String },
-}
-
-impl TransportChoice {
-    pub fn tcp() -> Self {
-        Self::Tcp
-    }
-
-    pub fn http(url: impl Into<String>) -> Self {
-        Self::Http { url: url.into() }
-    }
-
-    /// Connect using the selected transport and codec.
-    pub async fn connect(
-        &self,
-        endpoint: &str,
-        codec: CodecChoice,
-    ) -> Result<ConnectedTransport, TransportError> {
-        match self {
-            Self::Tcp => {
-                let t = TcpTransport::connect(endpoint, codec).await?;
-                Ok(ConnectedTransport::Tcp(t))
-            }
-            Self::Http { url } => {
-                let t = HttpTransport::new(url, codec);
-                Ok(ConnectedTransport::Http(t))
-            }
-        }
-    }
-}
-
-/// A connected transport. Implements `Transport<S, R>` by dispatching
-/// to the concrete adapter inside.
+/// Runtime transport selection.
 #[derive(Clone)]
-pub enum ConnectedTransport {
+pub enum TransportChoice {
     Tcp(TcpTransport<CodecChoice>),
     Http(HttpTransport<CodecChoice>),
 }
 
-impl<S, R> Transport<S, R> for ConnectedTransport
+impl Default for TransportChoice {
+    fn default() -> Self {
+        Self::Tcp(TcpTransport::new(CodecChoice::default()))
+    }
+}
+
+impl TransportChoice {
+    pub fn tcp(codec: CodecChoice) -> Self {
+        Self::Tcp(TcpTransport::new(codec))
+    }
+
+    pub fn http(url: impl Into<String>, codec: CodecChoice) -> Self {
+        Self::Http(HttpTransport::new(url, codec))
+    }
+
+    /// Establish the connection. Call before `send()`/`recv()`.
+    pub async fn connect(&self, endpoint: &str) -> Result<(), TransportError> {
+        match self {
+            Self::Tcp(t) => t.connect(endpoint).await,
+            Self::Http(_) => Ok(()),
+        }
+    }
+}
+
+impl<S, R> Transport<S, R> for TransportChoice
 where
     S: Send + Sync + 'static,
     R: Send + 'static,

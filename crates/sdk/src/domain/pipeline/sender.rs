@@ -9,12 +9,17 @@ use tokio::sync::oneshot;
 use photon_core::types::ack::{AckResult, AckStatus};
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{RetryConfig, SenderConfig};
+use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
-
+use photon_transport::TransportChoice;
 use photon_transport::ports::Transport;
 
-use crate::domain::ports::error::TransportError;
+use crate::domain::ports::error::{SenderThreadError, TransportError};
 use crate::domain::ports::wal::{WalError, WalStorage};
+use crate::outbound::wal::WalChoice;
+
+use super::ack_tracker::AckTracker;
+use super::recovery::RecoveryManager;
 
 pub struct Sender<T, W>
 where
@@ -363,4 +368,80 @@ fn rand() -> f64 {
     Instant::now().hash(&mut hasher);
     std::thread::current().id().hash(&mut hasher);
     (hasher.finish() % 10_000) as f64 / 10_000.0
+}
+
+/// Entry point for the sender thread. Connects transport, runs
+/// recovery, then enters the send/ack loop.
+pub fn run_thread(
+    transport: TransportChoice,
+    endpoint: String,
+    run_id: RunId,
+    wal: WalChoice,
+    config: SenderConfig,
+    shutdown_rx: oneshot::Receiver<()>,
+    batch_rx: CrossbeamReceiver<WireBatch>,
+) -> Result<SenderStats, SenderThreadError> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(SenderThreadError::Runtime)?;
+
+    rt.block_on(async move {
+        transport
+            .connect(&endpoint)
+            .await
+            .map_err(TransportError::from)?;
+
+        let recovery = RecoveryManager::new(wal.clone(), run_id);
+
+        let watermark = if recovery
+            .is_clean()
+            .map_err(|e| SenderThreadError::Recovery(e.into()))?
+        {
+            tracing::debug!(run_id = %run_id, "clean WAL, skipping recovery");
+            SequenceNumber::ZERO
+        } else {
+            let result = recovery.recover(&transport).await?;
+
+            if result.batches_to_replay > 0 {
+                tracing::info!(
+                    run_id = %run_id,
+                    batches = result.batches_to_replay,
+                    bytes = result.bytes_to_replay,
+                    "replaying uncommitted batches from WAL"
+                );
+            }
+
+            result.effective_watermark
+        };
+
+        let mut sender = Sender::new(
+            transport,
+            wal.clone(),
+            config,
+            watermark,
+            shutdown_rx,
+            batch_rx,
+        );
+
+        let mut ack_tracker = AckTracker::new(wal, watermark, 10);
+
+        let mut result = sender
+            .run(|seq| {
+                if let Err(e) = ack_tracker.on_ack(seq) {
+                    tracing::error!("ack tracker error for seq {seq}: {e}");
+                }
+            })
+            .await?;
+
+        match ack_tracker.shutdown() {
+            Ok(ack_stats) => {
+                result.watermark_advances = ack_stats.watermark_advances;
+                result.segments_truncated = ack_stats.segments_truncated;
+            }
+            Err(e) => tracing::error!("ack tracker shutdown failed: {e}"),
+        }
+
+        Ok(result)
+    })
 }

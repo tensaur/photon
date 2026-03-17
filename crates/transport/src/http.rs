@@ -77,6 +77,7 @@ where
             .take()
             .ok_or_else(|| TransportError::Request("no pending response".into()))?;
 
-        Codec::<R>::decode(&self.codec, &bytes).map_err(|e| TransportError::Request(e.to_string()))
+        Codec::<R>::decode(&self.codec, &bytes)
+            .map_err(|e| TransportError::Request(e.to_string()))
     }
 }
