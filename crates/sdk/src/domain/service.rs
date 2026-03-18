@@ -12,7 +12,7 @@ use crate::domain::pipeline::pipeline::RawPoint;
 use crate::domain::pipeline::pipeline::{FlushStats, PipelineError};
 use crate::domain::pipeline::sender::SenderStats;
 use crate::domain::ports::error::{FinishError, LogError, SenderThreadError};
-use crate::domain::ports::wal::WalStorage;
+use crate::domain::ports::wal::WalManager;
 
 #[derive(Clone, Debug)]
 pub struct PipelineStats {
@@ -39,7 +39,7 @@ pub trait SdkService {
     fn points_dropped(&self) -> u64;
 }
 
-pub struct Service<W: WalStorage> {
+pub struct Service<W: WalManager> {
     run_id: RunId,
     accumulator: Accumulator<RawPoint>,
     interner: Arc<MetricKeyInterner>,
@@ -49,7 +49,7 @@ pub struct Service<W: WalStorage> {
     points_logged: u64,
 }
 
-impl<W: WalStorage> Service<W> {
+impl<W: WalManager> Service<W> {
     pub(crate) fn new(
         run_id: RunId,
         accumulator: Accumulator<RawPoint>,
@@ -70,7 +70,7 @@ impl<W: WalStorage> Service<W> {
     }
 }
 
-impl<W: WalStorage> SdkService for Service<W> {
+impl<W: WalManager> SdkService for Service<W> {
     fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), LogError> {
         let metric_key = self.interner.get_or_intern(key)?;
 

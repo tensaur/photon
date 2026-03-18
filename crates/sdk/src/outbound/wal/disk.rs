@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{WalConfig, WalMeta, WalSyncPolicy};
@@ -9,7 +10,7 @@ use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
 use super::segment::{self, Active, RECORD_OVERHEAD, Sealed, Segment, WalRecord};
 
-use crate::domain::ports::wal::{WalError, WalStorage};
+use crate::domain::ports::wal::{WalAppender, WalError, WalManager};
 
 #[derive(Clone, Debug)]
 pub struct DiskWalConfig {
@@ -41,66 +42,73 @@ pub fn default_wal_dir(run_id: &RunId) -> PathBuf {
 
 const META_FILENAME: &str = "wal.meta";
 
-pub struct DiskWalStorage {
-    dir: PathBuf,
+pub fn open_disk_wal(
+    dir: Option<&Path>,
     run_id: RunId,
     config: DiskWalConfig,
+) -> Result<(DiskWalAppender, DiskWalManager), WalError> {
+    let dir = dir
+        .map(|d| d.join(run_id.to_string()))
+        .unwrap_or_else(|| default_wal_dir(&run_id));
+    fs::create_dir_all(&dir)?;
+
+    let (committed, next_seg) = load_meta(&dir);
+    let existing = segment::list_segments(&dir)?;
+    let cap = config.wal.segment_size;
+
+    let (active, sealed) = if existing.is_empty() {
+        (Segment::create(&dir, next_seg, cap)?, Vec::new())
+    } else {
+        recover_segments(&dir, &existing, cap)?
+    };
+
+    let bytes_used_val =
+        active.bytes_used() + sealed.iter().map(|s| s.bytes_used()).sum::<u64>();
+
+    let next_segment = sealed
+        .iter()
+        .map(|s| s.index())
+        .chain(std::iter::once(active.index()))
+        .max()
+        .unwrap_or(next_seg)
+        .next();
+
+    let sealed = Arc::new(Mutex::new(sealed));
+    let bytes_used = Arc::new(AtomicU64::new(bytes_used_val));
+
+    let appender = DiskWalAppender {
+        dir: dir.clone(),
+        config: config.clone(),
+        active,
+        sealed: Arc::clone(&sealed),
+        bytes_used: Arc::clone(&bytes_used),
+        next_segment,
+        batches_since_sync: 0,
+    };
+
+    let manager = DiskWalManager {
+        sealed,
+        committed: Arc::new(Mutex::new(committed)),
+        dir,
+        run_id,
+        config,
+        bytes_used,
+    };
+
+    Ok((appender, manager))
+}
+
+pub struct DiskWalAppender {
+    dir: PathBuf,
+    config: DiskWalConfig,
     active: Segment<Active>,
-    sealed: Vec<Segment<Sealed>>,
-    bytes_used: u64,
+    sealed: Arc<Mutex<Vec<Segment<Sealed>>>>,
+    bytes_used: Arc<AtomicU64>,
     next_segment: SegmentIndex,
-    committed: SequenceNumber,
     batches_since_sync: u32,
 }
 
-impl DiskWalStorage {
-    pub fn open(
-        dir: Option<&Path>,
-        run_id: RunId,
-        config: DiskWalConfig,
-    ) -> Result<Self, WalError> {
-        let dir = dir
-            .map(|d| d.join(run_id.to_string()))
-            .unwrap_or_else(|| default_wal_dir(&run_id));
-        fs::create_dir_all(&dir)?;
-
-        let (committed, next_seg) = load_meta(&dir);
-        let existing = segment::list_segments(&dir)?;
-        let cap = config.wal.segment_size;
-
-        let (active, sealed) = if existing.is_empty() {
-            (Segment::create(&dir, next_seg, cap)?, Vec::new())
-        } else {
-            recover_segments(&dir, &existing, cap)?
-        };
-
-        let bytes_used = active.bytes_used() + sealed.iter().map(|s| s.bytes_used()).sum::<u64>();
-
-        let next_segment = sealed
-            .iter()
-            .map(|s| s.index())
-            .chain(std::iter::once(active.index()))
-            .max()
-            .unwrap_or(next_seg)
-            .next();
-
-        Ok(Self {
-            dir,
-            run_id,
-            config,
-            active,
-            sealed,
-            bytes_used,
-            next_segment,
-            committed,
-            batches_since_sync: 0,
-        })
-    }
-
-    pub fn into_shared(self) -> SharedDiskWal {
-        SharedDiskWal(Arc::new(RwLock::new(self)))
-    }
-
+impl DiskWalAppender {
     fn rotate(&mut self) -> Result<SegmentIndex, WalError> {
         let idx = self.next_segment;
         let cap = self.config.wal.segment_size;
@@ -109,7 +117,8 @@ impl DiskWalStorage {
 
         let old = std::mem::replace(&mut self.active, new);
         old.flush()?;
-        self.sealed.push(old.seal());
+        let sealed_seg = old.seal();
+        self.sealed.lock().unwrap().push(sealed_seg);
         Ok(idx)
     }
 
@@ -134,59 +143,55 @@ impl DiskWalStorage {
             None => return Ok(()),
         };
 
-        let ratio = self.bytes_used as f64 / budget as f64;
+        let used = self.bytes_used.load(Ordering::Relaxed);
+        let ratio = used as f64 / budget as f64;
 
         if ratio < self.config.soft_pressure_ratio {
             return Ok(());
         }
 
         if ratio < self.config.hard_pressure_ratio {
-            tracing::warn!(used = self.bytes_used, budget, "WAL soft pressure");
+            tracing::warn!(used, budget, "WAL soft pressure");
             return Ok(());
         }
 
-        while self.bytes_used as f64 / budget as f64 > self.config.soft_pressure_ratio {
-            let Some(victim) = self.sealed.first() else {
+        // Hard pressure: drop oldest sealed segments
+        let mut sealed = self.sealed.lock().unwrap();
+        let mut current_used = used;
+        while current_used as f64 / budget as f64 > self.config.soft_pressure_ratio {
+            let Some(victim) = sealed.first() else {
                 break;
             };
             tracing::error!(segment = %victim.index(), "dropping un-acked segment");
 
-            let victim = self.sealed.remove(0);
+            let victim = sealed.remove(0);
             let freed = victim.bytes_used();
             let _ = victim.mark_acked().delete();
-            self.bytes_used = self.bytes_used.saturating_sub(freed);
+            current_used = current_used.saturating_sub(freed);
         }
+        drop(sealed);
 
-        if self.bytes_used > budget {
+        self.bytes_used.store(current_used, Ordering::Relaxed);
+
+        if current_used > budget {
             return Err(WalError::DiskFull {
                 budget,
-                used: self.bytes_used,
+                used: current_used,
             });
         }
 
         Ok(())
     }
+}
 
-    fn persist_meta(&self) -> Result<(), WalError> {
-        let json = serde_json::to_string(&MetaFile {
-            run_id: self.run_id.to_string(),
-            committed_sequence: u64::from(self.committed),
-            next_segment_index: u64::from(self.next_segment),
-        })
-        .map_err(|e| WalError::Unknown(e.into()))?;
-
-        let tmp = self.dir.join(".wal.meta.tmp");
-        fs::write(&tmp, json.as_bytes())?;
-        fs::rename(&tmp, self.dir.join(META_FILENAME))?;
-        Ok(())
-    }
-
-    pub fn append_batch(&mut self, batch: &WireBatch) -> Result<(), WalError> {
+impl WalAppender for DiskWalAppender {
+    fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
         self.enforce_budget()?;
 
         let threshold = self.config.rotation_threshold;
         let at_cap = self.active.append(batch, threshold)?;
-        self.bytes_used += batch.compressed_payload.len() as u64 + RECORD_OVERHEAD as u64;
+        let added = batch.compressed_payload.len() as u64 + RECORD_OVERHEAD as u64;
+        self.bytes_used.fetch_add(added, Ordering::Relaxed);
         self.batches_since_sync += 1;
         self.maybe_sync()?;
 
@@ -196,57 +201,70 @@ impl DiskWalStorage {
 
         Ok(())
     }
+}
 
-    pub fn sync_wal(&self) -> Result<(), WalError> {
-        self.active.flush()?;
-        self.persist_meta()
-    }
+#[derive(Clone)]
+pub struct DiskWalManager {
+    sealed: Arc<Mutex<Vec<Segment<Sealed>>>>,
+    committed: Arc<Mutex<SequenceNumber>>,
+    dir: PathBuf,
+    run_id: RunId,
+    config: DiskWalConfig,
+    bytes_used: Arc<AtomicU64>,
+}
 
-    pub fn truncate_through_seq(&mut self, seq: SequenceNumber) -> Result<(), WalError> {
-        self.committed = seq;
+impl DiskWalManager {
+    fn persist_meta(&self, committed: SequenceNumber) -> Result<(), WalError> {
+        let json = serde_json::to_string(&MetaFile {
+            run_id: self.run_id.to_string(),
+            committed_sequence: u64::from(committed),
+            next_segment_index: 0, // not critical for recovery
+        })
+        .map_err(|e| WalError::Unknown(e.into()))?;
 
-        let drained = std::mem::take(&mut self.sealed);
-        for seg in drained {
-            let dominated = seg.last_sequence().map(|l| l <= seq).unwrap_or(true);
-
-            if dominated {
-                let freed = seg.bytes_used();
-                let _ = seg.mark_acked().delete();
-                self.bytes_used = self.bytes_used.saturating_sub(freed);
-            } else {
-                self.sealed.push(seg);
-            }
-        }
-
+        let tmp = self.dir.join(".wal.meta.tmp");
+        fs::write(&tmp, json.as_bytes())?;
+        fs::rename(&tmp, self.dir.join(META_FILENAME))?;
         Ok(())
     }
 
-    pub fn read_after(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
+    fn read_after(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
         let run_id = self.run_id;
         let mut out = Vec::new();
 
-        for seg in &self.sealed {
+        let sealed = self.sealed.lock().unwrap();
+        for seg in sealed.iter() {
             for r in seg.read_records()? {
                 if r.sequence_number > seq {
                     out.push(record_to_batch(run_id, r));
                 }
             }
         }
+        drop(sealed);
 
-        for r in self.active.read_records()? {
-            if r.sequence_number > seq {
-                out.push(record_to_batch(run_id, r));
+        // Read the active segment by opening the latest segment file read-only.
+        // The appender may be concurrently writing, but we read only flushed data.
+        let active_segments = segment::list_segments(&self.dir)?;
+        if let Some((idx, _)) = active_segments.last() {
+            let active =
+                Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
+            for r in active.read_records()? {
+                if r.sequence_number > seq {
+                    out.push(record_to_batch(run_id, r));
+                }
             }
         }
 
         out.sort_by_key(|b| b.sequence_number);
+        out.dedup_by_key(|b| b.sequence_number);
         Ok(out)
     }
 
-    pub fn read_next_after(&self, seq: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
+    fn read_next_after(&self, seq: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
         let run_id = self.run_id;
 
-        for seg in &self.sealed {
+        let sealed = self.sealed.lock().unwrap();
+        for seg in sealed.iter() {
             if seg.last_sequence().map(|l| l <= seq).unwrap_or(true) {
                 continue;
             }
@@ -254,18 +272,68 @@ impl DiskWalStorage {
                 return Ok(Some(record_to_batch(run_id, r)));
             }
         }
+        drop(sealed);
 
-        if let Some(r) = self.active.read_first_record_after(seq)? {
-            return Ok(Some(record_to_batch(run_id, r)));
+        let active_segments = segment::list_segments(&self.dir)?;
+        if let Some((idx, _)) = active_segments.last() {
+            let active =
+                Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
+            if let Some(r) = active.read_first_record_after(seq)? {
+                return Ok(Some(record_to_batch(run_id, r)));
+            }
         }
 
         Ok(None)
     }
+}
 
-    pub fn meta(&self) -> WalMeta {
-        WalMeta {
-            committed_sequence: self.committed,
+impl WalManager for DiskWalManager {
+    fn truncate_through(&mut self, seq: SequenceNumber) -> Result<(), WalError> {
+        *self.committed.lock().unwrap() = seq;
+
+        let mut sealed = self.sealed.lock().unwrap();
+        let drained = std::mem::take(&mut *sealed);
+        for seg in drained {
+            let dominated = seg.last_sequence().map(|l| l <= seq).unwrap_or(true);
+
+            if dominated {
+                let freed = seg.bytes_used();
+                let _ = seg.mark_acked().delete();
+                self.bytes_used.fetch_sub(freed, Ordering::Relaxed);
+            } else {
+                sealed.push(seg);
+            }
         }
+
+        Ok(())
+    }
+
+    fn sync(&self) -> Result<(), WalError> {
+        let committed = *self.committed.lock().unwrap();
+        self.persist_meta(committed)
+    }
+
+    fn read_from(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
+        self.read_after(seq)
+    }
+
+    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
+        self.read_next_after(after)
+    }
+
+    fn read_meta(&self) -> Result<WalMeta, WalError> {
+        Ok(WalMeta {
+            committed_sequence: *self.committed.lock().unwrap(),
+        })
+    }
+
+    fn delete_all(&mut self) -> Result<(), WalError> {
+        fs::remove_dir_all(&self.dir)?;
+        Ok(())
+    }
+
+    fn total_bytes(&self) -> u64 {
+        self.bytes_used.load(Ordering::Relaxed)
     }
 }
 
@@ -278,59 +346,6 @@ fn record_to_batch(run_id: RunId, r: WalRecord) -> WireBatch {
         created_at: r.created_at,
         point_count: r.point_count,
         uncompressed_size: r.uncompressed_size,
-    }
-}
-
-#[derive(Clone)]
-pub struct SharedDiskWal(Arc<RwLock<DiskWalStorage>>);
-
-impl SharedDiskWal {
-    pub fn open(
-        dir: Option<&Path>,
-        run_id: RunId,
-        config: DiskWalConfig,
-    ) -> Result<Self, WalError> {
-        DiskWalStorage::open(dir, run_id, config).map(|d| d.into_shared())
-    }
-}
-
-impl WalStorage for SharedDiskWal {
-    fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
-        self.0.write().unwrap().append_batch(batch)
-    }
-
-    fn sync(&self) -> Result<(), WalError> {
-        self.0.read().unwrap().sync_wal()
-    }
-
-    fn rotate_segment(&mut self) -> Result<SegmentIndex, WalError> {
-        self.0.write().unwrap().rotate()
-    }
-
-    fn truncate_through(&mut self, seq: SequenceNumber) -> Result<(), WalError> {
-        self.0.write().unwrap().truncate_through_seq(seq)
-    }
-
-    fn read_from(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
-        self.0.read().unwrap().read_after(seq)
-    }
-
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
-        self.0.read().unwrap().read_next_after(after)
-    }
-
-    fn read_meta(&self) -> Result<WalMeta, WalError> {
-        Ok(self.0.read().unwrap().meta())
-    }
-
-    fn delete_all(&mut self) -> Result<(), WalError> {
-        let inner = self.0.write().unwrap();
-        fs::remove_dir_all(&inner.dir)?;
-        Ok(())
-    }
-
-    fn total_bytes(&self) -> u64 {
-        self.0.read().unwrap().bytes_used
     }
 }
 

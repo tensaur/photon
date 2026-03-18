@@ -2,41 +2,55 @@ mod disk;
 mod memory;
 mod segment;
 
-pub(crate) use self::disk::{DiskWalConfig, SharedDiskWal};
-pub(crate) use self::memory::InMemoryWal;
+pub(crate) use self::disk::{DiskWalAppender, DiskWalConfig, DiskWalManager};
+pub(crate) use self::memory::{InMemoryWalAppender, InMemoryWalManager};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
 use photon_core::types::id::RunId;
-use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
+use photon_core::types::sequence::SequenceNumber;
 
-use crate::domain::ports::wal::{WalError, WalStorage};
+use crate::domain::ports::wal::{WalAppender, WalError, WalManager};
 
-#[derive(Clone)]
-pub enum WalChoice {
-    Disk(SharedDiskWal),
-    Memory(InMemoryWal),
+pub enum WalAppenderChoice {
+    Disk(DiskWalAppender),
+    Memory(InMemoryWalAppender),
 }
 
-impl WalChoice {
-    pub(crate) fn open(
-        wal_dir: Option<&std::path::Path>,
-        run_id: RunId,
-        in_memory: bool,
-    ) -> Result<Self, WalError> {
-        if in_memory {
-            Ok(Self::Memory(InMemoryWal::new()))
-        } else {
-            SharedDiskWal::open(wal_dir, run_id, DiskWalConfig::default()).map(Self::Disk)
-        }
+#[derive(Clone)]
+pub enum WalManagerChoice {
+    Disk(DiskWalManager),
+    Memory(InMemoryWalManager),
+}
+
+pub(crate) fn open_wal(
+    wal_dir: Option<&std::path::Path>,
+    run_id: RunId,
+    in_memory: bool,
+) -> Result<(WalAppenderChoice, WalManagerChoice), WalError> {
+    if in_memory {
+        let (a, m) = memory::open_in_memory_wal();
+        Ok((WalAppenderChoice::Memory(a), WalManagerChoice::Memory(m)))
+    } else {
+        let (a, m) = disk::open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
+        Ok((WalAppenderChoice::Disk(a), WalManagerChoice::Disk(m)))
     }
 }
 
-impl WalStorage for WalChoice {
+impl WalAppender for WalAppenderChoice {
     fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
         match self {
             Self::Disk(inner) => inner.append(batch),
             Self::Memory(inner) => inner.append(batch),
+        }
+    }
+}
+
+impl WalManager for WalManagerChoice {
+    fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError> {
+        match self {
+            Self::Disk(inner) => inner.truncate_through(sequence),
+            Self::Memory(inner) => inner.truncate_through(sequence),
         }
     }
 
@@ -44,20 +58,6 @@ impl WalStorage for WalChoice {
         match self {
             Self::Disk(inner) => inner.sync(),
             Self::Memory(inner) => inner.sync(),
-        }
-    }
-
-    fn rotate_segment(&mut self) -> Result<SegmentIndex, WalError> {
-        match self {
-            Self::Disk(inner) => inner.rotate_segment(),
-            Self::Memory(inner) => inner.rotate_segment(),
-        }
-    }
-
-    fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError> {
-        match self {
-            Self::Disk(inner) => inner.truncate_through(sequence),
-            Self::Memory(inner) => inner.truncate_through(sequence),
         }
     }
 

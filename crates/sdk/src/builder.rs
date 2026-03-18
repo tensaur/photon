@@ -15,11 +15,11 @@ use crate::domain::pipeline::accumulator::Accumulator;
 use crate::domain::pipeline::interner::MetricKeyInterner;
 use crate::domain::pipeline::pipeline::Pipeline;
 use crate::domain::pipeline::sender;
-use crate::domain::ports::wal::WalStorage;
+use crate::domain::ports::wal::WalManager;
 use crate::domain::service::{SenderHandle, Service};
 use crate::inbound::error::SdkError;
 use crate::inbound::run::Run;
-use crate::outbound::wal::WalChoice;
+use crate::outbound::wal::{self, WalManagerChoice};
 
 /// Configure and start a [`Run`].
 ///
@@ -113,19 +113,20 @@ impl RunBuilder {
     }
 
     /// Pick adapters and start the pipeline.
-    pub fn start(self) -> Result<Run<Service<WalChoice>>, SdkError> {
+    pub fn start(self) -> Result<Run<Service<WalManagerChoice>>, SdkError> {
         let run_id = self.run_id.unwrap_or_default();
 
-        // 1. Open WAL
-        let wal = WalChoice::open(self.wal_dir.as_deref(), run_id, self.in_memory_wal)
-            .map_err(SdkError::WalRecoveryFailed)?;
+        // 1. Open WAL — split into appender (pipeline) + manager (sender/service)
+        let (appender, manager) =
+            wal::open_wal(self.wal_dir.as_deref(), run_id, self.in_memory_wal)
+                .map_err(SdkError::WalRecoveryFailed)?;
 
         // 2. Create accumulator + interner
         let interner = Arc::new(MetricKeyInterner::new());
         let (accumulator, rx) = Accumulator::new(self.channel_capacity, self.spill_capacity);
 
         // 3. Compute start sequence from WAL
-        let start_sequence = wal
+        let start_sequence = manager
             .read_from(SequenceNumber::ZERO)
             .ok()
             .and_then(|batches: Vec<_>| batches.last().map(|b| b.sequence_number.next()))
@@ -134,14 +135,13 @@ impl RunBuilder {
         // 4. Create channel from builder → sender
         let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
 
-        // 5. Spawn pipeline thread
-        let batch_wal = wal.clone();
+        // 5. Spawn pipeline thread (appender moved in, not cloned)
         let pipeline_handle = Pipeline::new(
             run_id,
             rx,
             Arc::clone(&interner),
             self.codec,
-            batch_wal,
+            appender,
             self.compressor,
             self.batch,
             start_sequence,
@@ -150,7 +150,7 @@ impl RunBuilder {
         .spawn();
 
         // 6. Spawn sender thread (if endpoint configured)
-        let sender_wal = wal.clone();
+        let sender_manager = manager.clone();
         let sender_handle = self.endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -161,7 +161,7 @@ impl RunBuilder {
                         self.transport,
                         endpoint,
                         run_id,
-                        sender_wal,
+                        sender_manager,
                         SenderConfig::default(),
                         shutdown_rx,
                         batch_rx,
@@ -182,7 +182,7 @@ impl RunBuilder {
             interner,
             pipeline_handle,
             sender_handle,
-            wal,
+            manager,
         );
 
         Ok(Run { service })

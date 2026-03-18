@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 
 use photon_core::types::sequence::SequenceNumber;
 
-use crate::domain::ports::wal::{WalError, WalStorage};
+use crate::domain::ports::wal::{WalError, WalManager};
 
-pub struct AckTracker<W: WalStorage> {
+pub struct AckTracker<W: WalManager> {
     wal: W,
     committed: SequenceNumber,
     pending: BTreeSet<SequenceNumber>,
@@ -20,7 +20,7 @@ pub struct AckTrackerStats {
     pub segments_truncated: u64,
 }
 
-impl<W: WalStorage> AckTracker<W> {
+impl<W: WalManager> AckTracker<W> {
     pub fn new(wal: W, committed: SequenceNumber, flush_interval: u32) -> Self {
         Self {
             wal,

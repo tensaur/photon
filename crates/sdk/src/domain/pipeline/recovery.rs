@@ -3,9 +3,9 @@ use photon_core::types::sequence::SequenceNumber;
 use photon_transport::ports::Transport;
 
 use crate::domain::ports::error::TransportError;
-use crate::domain::ports::wal::{WalError, WalStorage};
+use crate::domain::ports::wal::{WalError, WalManager};
 
-pub struct RecoveryManager<W: WalStorage> {
+pub struct RecoveryManager<W: WalManager> {
     wal: W,
     run_id: RunId,
 }
@@ -26,7 +26,7 @@ pub enum RecoveryError {
     Transport(#[from] TransportError),
 }
 
-impl<W: WalStorage> RecoveryManager<W> {
+impl<W: WalManager> RecoveryManager<W> {
     pub fn new(wal: W, run_id: RunId) -> Self {
         Self { wal, run_id }
     }
