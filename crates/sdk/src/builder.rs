@@ -19,7 +19,7 @@ use crate::domain::ports::wal::WalManager;
 use crate::domain::service::{SenderHandle, Service};
 use crate::inbound::error::SdkError;
 use crate::inbound::run::Run;
-use crate::outbound::wal::{self, WalManagerChoice};
+use crate::outbound::wal::{WalChoice, WalManagerChoice};
 
 /// Configure and start a [`Run`].
 ///
@@ -30,7 +30,7 @@ use crate::outbound::wal::{self, WalManagerChoice};
 pub struct RunBuilder {
     run_id: Option<RunId>,
     wal_dir: Option<PathBuf>,
-    in_memory_wal: bool,
+    wal: WalChoice,
     channel_capacity: usize,
     spill_capacity: usize,
     batch: BatchConfig,
@@ -45,7 +45,7 @@ impl Default for RunBuilder {
         Self {
             run_id: None,
             wal_dir: None,
-            in_memory_wal: false,
+            wal: WalChoice::Disk,
             channel_capacity: 65_536,
             spill_capacity: 16_384,
             batch: BatchConfig::default(),
@@ -69,8 +69,8 @@ impl RunBuilder {
         self
     }
 
-    pub fn in_memory_wal(mut self) -> Self {
-        self.in_memory_wal = true;
+    pub fn wal(mut self, wal: WalChoice) -> Self {
+        self.wal = wal;
         self
     }
 
@@ -116,10 +116,11 @@ impl RunBuilder {
     pub fn start(self) -> Result<Run<Service<WalManagerChoice>>, SdkError> {
         let run_id = self.run_id.unwrap_or_default();
 
-        // 1. Open WAL — split into appender (pipeline) + manager (sender/service)
-        let (appender, manager) =
-            wal::open_wal(self.wal_dir.as_deref(), run_id, self.in_memory_wal)
-                .map_err(SdkError::WalRecoveryFailed)?;
+        // 1. Open WAL
+        let (appender, manager) = self
+            .wal
+            .open(self.wal_dir.as_deref(), run_id)
+            .map_err(SdkError::WalRecoveryFailed)?;
 
         // 2. Create accumulator + interner
         let interner = Arc::new(MetricKeyInterner::new());

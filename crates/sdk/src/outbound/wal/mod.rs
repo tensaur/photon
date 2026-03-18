@@ -12,6 +12,31 @@ use photon_core::types::sequence::SequenceNumber;
 
 use crate::domain::ports::wal::{WalAppender, WalError, WalManager};
 
+pub enum WalChoice {
+    Disk,
+    Memory,
+}
+
+impl WalChoice {
+    pub(crate) fn open(
+        self,
+        wal_dir: Option<&std::path::Path>,
+        run_id: RunId,
+    ) -> Result<(WalAppenderChoice, WalManagerChoice), WalError> {
+        match self {
+            Self::Memory => {
+                let (a, m) = memory::open_in_memory_wal();
+                Ok((WalAppenderChoice::Memory(a), WalManagerChoice::Memory(m)))
+            }
+            Self::Disk => {
+                let (a, m) =
+                    disk::open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
+                Ok((WalAppenderChoice::Disk(a), WalManagerChoice::Disk(m)))
+            }
+        }
+    }
+}
+
 pub enum WalAppenderChoice {
     Disk(DiskWalAppender),
     Memory(InMemoryWalAppender),
@@ -21,20 +46,6 @@ pub enum WalAppenderChoice {
 pub enum WalManagerChoice {
     Disk(DiskWalManager),
     Memory(InMemoryWalManager),
-}
-
-pub(crate) fn open_wal(
-    wal_dir: Option<&std::path::Path>,
-    run_id: RunId,
-    in_memory: bool,
-) -> Result<(WalAppenderChoice, WalManagerChoice), WalError> {
-    if in_memory {
-        let (a, m) = memory::open_in_memory_wal();
-        Ok((WalAppenderChoice::Memory(a), WalManagerChoice::Memory(m)))
-    } else {
-        let (a, m) = disk::open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
-        Ok((WalAppenderChoice::Disk(a), WalManagerChoice::Disk(m)))
-    }
 }
 
 impl WalAppender for WalAppenderChoice {
