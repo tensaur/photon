@@ -83,10 +83,7 @@ pub enum WalSyncPolicy {
 
 impl Default for WalSyncPolicy {
     fn default() -> Self {
-        Self::Periodic {
-            batches: 10,
-            interval: Duration::from_millis(500),
-        }
+        Self::OsManaged
     }
 }
 

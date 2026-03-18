@@ -15,8 +15,8 @@ use photon_transport::TransportChoice;
 use photon_transport::ports::Transport;
 
 use crate::domain::ports::error::{SenderThreadError, TransportError};
-use crate::domain::ports::wal::{WalError, WalStorage};
-use crate::outbound::wal::WalChoice;
+use crate::domain::ports::wal::{WalError, WalManager};
+use crate::outbound::wal::WalManagerChoice;
 
 use super::ack_tracker::AckTracker;
 use super::recovery::RecoveryManager;
@@ -24,7 +24,7 @@ use super::recovery::RecoveryManager;
 pub struct Sender<T, W>
 where
     T: Transport<WireBatch, AckResult>,
-    W: WalStorage,
+    W: WalManager,
 {
     transport: T,
     wal: W,
@@ -78,7 +78,7 @@ pub enum SenderError {
 impl<T, W> Sender<T, W>
 where
     T: Transport<WireBatch, AckResult>,
-    W: WalStorage,
+    W: WalManager,
 {
     pub fn new(
         transport: T,
@@ -376,7 +376,7 @@ pub fn run_thread(
     transport: TransportChoice,
     endpoint: String,
     run_id: RunId,
-    wal: WalChoice,
+    wal: WalManagerChoice,
     config: SenderConfig,
     shutdown_rx: oneshot::Receiver<()>,
     batch_rx: CrossbeamReceiver<WireBatch>,

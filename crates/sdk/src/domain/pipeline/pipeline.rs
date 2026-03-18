@@ -15,7 +15,7 @@ use photon_protocol::ports::compress::{CompressionError, Compressor};
 
 use super::assembler::BatchAssembler;
 use super::interner::{MetricKey, MetricKeyInterner};
-use crate::domain::ports::wal::{WalError, WalStorage};
+use crate::domain::ports::wal::{WalAppender, WalError};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RawPoint {
@@ -28,7 +28,7 @@ pub(crate) struct RawPoint {
 pub struct Pipeline<K, W, C>
 where
     K: Codec<MetricBatch>,
-    W: WalStorage,
+    W: WalAppender,
     C: Compressor,
 {
     run_id: RunId,
@@ -47,7 +47,7 @@ where
 impl<K, W, C> Pipeline<K, W, C>
 where
     K: Codec<MetricBatch>,
-    W: WalStorage,
+    W: WalAppender,
     C: Compressor,
 {
     pub fn new(

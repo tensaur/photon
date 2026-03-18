@@ -1,38 +1,55 @@
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
-use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
+use photon_core::types::sequence::SequenceNumber;
 
-use crate::domain::ports::wal::{WalError, WalStorage};
+use crate::domain::ports::wal::{WalAppender, WalError, WalManager};
 
-/// In-memory WAL for testing
+type SharedBatches = Arc<Mutex<BTreeMap<SequenceNumber, WireBatch>>>;
+
+/// In-memory WAL appender for testing.
+pub struct InMemoryWalAppender {
+    batches: SharedBatches,
+}
+
+/// In-memory WAL manager for testing.
 #[derive(Clone)]
-pub struct InMemoryWal {
-    batches: BTreeMap<SequenceNumber, WireBatch>,
+pub struct InMemoryWalManager {
+    batches: SharedBatches,
     committed: SequenceNumber,
-    next_segment: SegmentIndex,
 }
 
-impl InMemoryWal {
-    pub fn new() -> Self {
-        Self {
-            batches: BTreeMap::new(),
+pub fn open_in_memory_wal() -> (InMemoryWalAppender, InMemoryWalManager) {
+    let batches: SharedBatches = Arc::new(Mutex::new(BTreeMap::new()));
+    (
+        InMemoryWalAppender {
+            batches: Arc::clone(&batches),
+        },
+        InMemoryWalManager {
+            batches,
             committed: SequenceNumber::ZERO,
-            next_segment: SegmentIndex::ZERO,
-        }
-    }
+        },
+    )
 }
 
-impl Default for InMemoryWal {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl WalStorage for InMemoryWal {
+impl WalAppender for InMemoryWalAppender {
     fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
-        self.batches.insert(batch.sequence_number, batch.clone());
+        self.batches
+            .lock()
+            .unwrap()
+            .insert(batch.sequence_number, batch.clone());
+        Ok(())
+    }
+}
+
+impl WalManager for InMemoryWalManager {
+    fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError> {
+        let mut batches = self.batches.lock().unwrap();
+        let keep = batches.split_off(&sequence.next());
+        *batches = keep;
+        self.committed = sequence;
         Ok(())
     }
 
@@ -40,22 +57,11 @@ impl WalStorage for InMemoryWal {
         Ok(())
     }
 
-    fn rotate_segment(&mut self) -> Result<SegmentIndex, WalError> {
-        let index = self.next_segment;
-        self.next_segment = self.next_segment.next();
-        Ok(index)
-    }
-
-    fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError> {
-        let keep = self.batches.split_off(&sequence.next());
-        self.batches = keep;
-        self.committed = sequence;
-        Ok(())
-    }
-
     fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
         Ok(self
             .batches
+            .lock()
+            .unwrap()
             .range(sequence.next()..)
             .map(|(_, batch)| batch.clone())
             .collect())
@@ -64,6 +70,8 @@ impl WalStorage for InMemoryWal {
     fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
         Ok(self
             .batches
+            .lock()
+            .unwrap()
             .range(after.next()..)
             .next()
             .map(|(_, batch)| batch.clone()))
@@ -76,13 +84,15 @@ impl WalStorage for InMemoryWal {
     }
 
     fn delete_all(&mut self) -> Result<(), WalError> {
-        self.batches.clear();
+        self.batches.lock().unwrap().clear();
         self.committed = SequenceNumber::ZERO;
         Ok(())
     }
 
     fn total_bytes(&self) -> u64 {
         self.batches
+            .lock()
+            .unwrap()
             .values()
             .map(|b| b.compressed_size() as u64)
             .sum()
