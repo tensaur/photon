@@ -1,6 +1,3 @@
-use std::sync::RwLock;
-
-use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 
 use super::id::RunId;
@@ -38,6 +35,11 @@ impl Metric {
         }
 
         Ok(Self(key))
+    }
+
+    /// Create a Metric from a string that was already validated.
+    pub fn new_unchecked(key: impl Into<String>) -> Self {
+        Self(key.into())
     }
 
     pub fn as_str(&self) -> &str {
@@ -86,44 +88,23 @@ impl MetricBatch {
 
 /// Compact handle for an interned metric key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct MetricKey(u32);
+pub struct MetricKey(lasso::Spur);
 
-/// Thread-safe bidirectional map between string keys and a MetricKey.
-pub struct MetricKeyInterner {
-    forward: DashMap<String, MetricKey>,
-    reverse: RwLock<Vec<Metric>>,
+impl MetricKey {
+    pub fn new(spur: lasso::Spur) -> Self {
+        Self(spur)
+    }
+
+    pub fn spur(self) -> lasso::Spur {
+        self.0
+    }
 }
 
-impl MetricKeyInterner {
-    pub fn new() -> Self {
-        Self {
-            forward: DashMap::new(),
-            reverse: RwLock::new(Vec::new()),
-        }
-    }
-
-    pub fn get_or_intern(&self, key: &str) -> Result<MetricKey, MetricError> {
-        if let Some(entry) = self.forward.get(key) {
-            return Ok(*entry.value());
-        }
-
-        let metric = Metric::new(key)?;
-
-        let mut reverse = self.reverse.write().unwrap();
-
-        if let Some(entry) = self.forward.get(key) {
-            return Ok(*entry.value());
-        }
-
-        let handle = MetricKey(reverse.len() as u32);
-        reverse.push(metric);
-        self.forward.insert(key.to_owned(), handle);
-
-        Ok(handle)
-    }
-
-    pub fn resolve(&self, handle: MetricKey) -> Metric {
-        let reverse = self.reverse.read().unwrap();
-        reverse[handle.0 as usize].clone()
-    }
+/// A single logged data point before batching.
+#[derive(Clone, Copy, Debug)]
+pub struct RawPoint {
+    pub key: MetricKey,
+    pub value: f64,
+    pub step: u64,
+    pub timestamp_ns: u64,
 }

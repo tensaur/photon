@@ -40,4 +40,5 @@ postcard = { version = "1", features = ["alloc"] }
 tokio-stream = "0.1"
 reqwest = { version = "0.12", features = ["json"] }
 axum = "0.8"
+lasso = { version = "0.7", features = ["multi-threaded"] }
 zstd = "0.13"

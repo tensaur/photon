@@ -1,24 +1,23 @@
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender, select, tick};
+use lasso::ThreadedRodeo;
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::BatchConfig;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::MetricBatch;
+use photon_core::types::metric::{MetricBatch, RawPoint};
 use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_wal::WalAppender;
 
-use photon_core::types::metric::MetricKeyInterner;
-
 use crate::domain::service::{BatchError, BatchService, Service};
-use crate::domain::types::{BatchStats, RawPoint};
+use crate::domain::types::BatchStats;
 
 pub fn run_batch_thread<K, C, A>(
     run_id: RunId,
-    interner: Arc<MetricKeyInterner>,
+    interner: Arc<ThreadedRodeo>,
     codec: K,
     compressor: C,
     wal: A,

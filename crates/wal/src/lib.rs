@@ -18,7 +18,7 @@ pub enum WalChoice {
 
 impl WalChoice {
     pub fn open(
-        self,
+        &self,
         wal_dir: Option<&std::path::Path>,
         run_id: RunId,
     ) -> Result<(WalAppenderChoice, WalManagerChoice), WalError> {
@@ -30,6 +30,25 @@ impl WalChoice {
             Self::Disk => {
                 let (a, m) = open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
                 Ok((WalAppenderChoice::Disk(a), WalManagerChoice::Disk(m)))
+            }
+        }
+    }
+
+    pub fn close(
+        &self,
+        wal_dir: Option<&std::path::Path>,
+        run_id: RunId,
+    ) -> Result<(), WalError> {
+        match self {
+            Self::Memory => Ok(()),
+            Self::Disk => {
+                let dir = wal_dir
+                    .map(|d| d.join(run_id.to_string()))
+                    .unwrap_or_else(|| disk::default_wal_dir(&run_id));
+                if dir.exists() {
+                    std::fs::remove_dir_all(&dir)?;
+                }
+                Ok(())
             }
         }
     }

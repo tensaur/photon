@@ -12,10 +12,11 @@ use photon_protocol::ports::compress::{CompressionError, Compressor};
 use photon_wal::WalAppender;
 use photon_wal::ports::WalError;
 
-use photon_core::types::metric::MetricKeyInterner;
+use lasso::ThreadedRodeo;
+use photon_core::types::metric::RawPoint;
 
 use super::assembler::BatchAssembler;
-use super::types::{BatchStats, RawPoint};
+use super::types::BatchStats;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BatchError {
@@ -61,7 +62,7 @@ where
 {
     pub fn new(
         run_id: RunId,
-        interner: Arc<MetricKeyInterner>,
+        interner: Arc<ThreadedRodeo>,
         codec: K,
         compressor: C,
         wal: A,

@@ -4,10 +4,11 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
+use lasso::ThreadedRodeo;
+
 use photon_batch::run_batch_thread;
 use photon_core::types::config::{BatchConfig, UplinkConfig};
 use photon_core::types::id::RunId;
-use photon_core::types::metric::MetricKeyInterner;
 use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::CompressorChoice;
@@ -114,7 +115,7 @@ impl RunBuilder {
 
         let (wal_appender, wal_manager) = self.wal.open(self.wal_dir.as_deref(), run_id)?;
 
-        let interner = Arc::new(MetricKeyInterner::new());
+        let interner = Arc::new(ThreadedRodeo::default());
         let (accumulator, rx) = Accumulator::new(self.channel_capacity);
 
         let start_sequence = wal_manager
@@ -143,7 +144,7 @@ impl RunBuilder {
             })
             .expect("failed to spawn batch thread");
 
-        let uplink_wal = wal_manager.clone();
+        let uplink_wal = wal_manager;
         let uplink_handle = self.endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -174,7 +175,8 @@ impl RunBuilder {
             interner,
             batch_handle,
             uplink_handle,
-            wal_manager,
+            self.wal,
+            self.wal_dir,
         ))
     }
 }
