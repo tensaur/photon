@@ -4,16 +4,16 @@ use photon_core::types::ack::AckResult;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::UplinkConfig;
 use photon_core::types::id::RunId;
-use photon_transport::ports::Transport;
 use photon_transport::TransportChoice;
+use photon_transport::ports::Transport;
 use photon_wal::WalManagerChoice;
 use tokio::sync::oneshot;
 
 use super::connection::{ConnectionState, ReconnectResult, try_reconnect};
-use crate::domain::ack::UplinkStats;
-use crate::domain::error::{UplinkError, TransportError};
-use crate::domain::service::{UplinkService, Service};
 use crate::UplinkThreadError;
+use crate::domain::ack::UplinkStats;
+use crate::domain::error::{TransportError, UplinkError};
+use crate::domain::service::{Service, UplinkService};
 
 pub fn run_uplink_thread(
     transport: TransportChoice,

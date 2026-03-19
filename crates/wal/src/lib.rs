@@ -1,6 +1,6 @@
-pub mod ports;
 pub mod disk;
 pub mod memory;
+pub mod ports;
 
 pub use self::disk::{DiskWalAppender, DiskWalConfig, DiskWalManager, open_disk_wal};
 pub use self::memory::{InMemoryWalAppender, InMemoryWalManager, open_in_memory_wal};

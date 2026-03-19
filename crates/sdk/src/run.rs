@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use photon_core::types::id::RunId;
 use photon_batch::{BatchError, BatchStats, RawPoint};
+use photon_core::types::id::RunId;
 use photon_core::types::metric::MetricKeyInterner;
 use photon_uplink::{UplinkStats, UplinkThreadError};
 use photon_wal::{WalManager, WalManagerChoice};

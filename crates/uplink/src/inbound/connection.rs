@@ -58,7 +58,12 @@ impl ConnectionState {
     }
 
     pub fn record_sent(&mut self, seq: SequenceNumber) {
-        self.in_flight.insert(seq, InFlightEntry { sent_at: Instant::now() });
+        self.in_flight.insert(
+            seq,
+            InFlightEntry {
+                sent_at: Instant::now(),
+            },
+        );
     }
 
     pub fn record_acked(&mut self, seq: SequenceNumber) {
@@ -70,27 +75,45 @@ impl ConnectionState {
     }
 
     pub fn enter_reconnecting(&mut self) {
-        tracing::warn!(in_flight = self.in_flight.len(), "connection lost, entering reconnection");
-        self.phase = Phase::Reconnecting { attempt: 0, next_at: Instant::now() };
+        tracing::warn!(
+            in_flight = self.in_flight.len(),
+            "connection lost, entering reconnection"
+        );
+        self.phase = Phase::Reconnecting {
+            attempt: 0,
+            next_at: Instant::now(),
+        };
     }
 
     pub fn reconnected(&mut self) {
-        tracing::info!("reconnected, replaying {} in-flight batches", self.in_flight.len());
+        tracing::info!(
+            "reconnected, replaying {} in-flight batches",
+            self.in_flight.len()
+        );
         self.in_flight.clear();
         self.phase = Phase::Connected;
     }
 
     pub fn reconnect_due(&self) -> Option<u32> {
         match &self.phase {
-            Phase::Reconnecting { attempt, next_at } if Instant::now() >= *next_at => Some(*attempt),
+            Phase::Reconnecting { attempt, next_at } if Instant::now() >= *next_at => {
+                Some(*attempt)
+            }
             _ => None,
         }
     }
 
     pub fn schedule_next_reconnect(&mut self, attempt: u32) {
         let delay = backoff_delay(&self.retry, attempt);
-        tracing::info!(attempt = attempt + 1, delay_ms = delay.as_millis(), "scheduling reconnection attempt");
-        self.phase = Phase::Reconnecting { attempt: attempt + 1, next_at: Instant::now() + delay };
+        tracing::info!(
+            attempt = attempt + 1,
+            delay_ms = delay.as_millis(),
+            "scheduling reconnection attempt"
+        );
+        self.phase = Phase::Reconnecting {
+            attempt: attempt + 1,
+            next_at: Instant::now() + delay,
+        };
     }
 
     pub fn check_timeouts(&mut self) -> Option<u64> {

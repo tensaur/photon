@@ -4,15 +4,15 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
+use photon_batch::run_batch_thread;
 use photon_core::types::config::{BatchConfig, UplinkConfig};
 use photon_core::types::id::RunId;
-use photon_core::types::sequence::SequenceNumber;
-use photon_batch::run_batch_thread;
 use photon_core::types::metric::MetricKeyInterner;
+use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::CompressorChoice;
-use photon_uplink::run_uplink_thread;
 use photon_transport::TransportChoice;
+use photon_uplink::run_uplink_thread;
 use photon_wal::{WalChoice, WalManager};
 
 use crate::accumulator::Accumulator;
@@ -112,9 +112,7 @@ impl RunBuilder {
     pub fn start(self) -> Result<Run, StartError> {
         let run_id = self.run_id.unwrap_or_default();
 
-        let (appender, manager) = self
-            .wal
-            .open(self.wal_dir.as_deref(), run_id)?;
+        let (appender, manager) = self.wal.open(self.wal_dir.as_deref(), run_id)?;
 
         let interner = Arc::new(MetricKeyInterner::new());
         let (accumulator, rx) = Accumulator::new(self.channel_capacity);
