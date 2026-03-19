@@ -10,7 +10,7 @@ use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
 pub(crate) mod segment;
 
-use self::segment::{Active, RECORD_OVERHEAD, Sealed, Segment, WalRecord};
+use self::segment::{Active, RECORD_OVERHEAD, Sealed, Segment};
 
 use crate::ports::{WalAppender, WalError, WalManager};
 
@@ -237,7 +237,7 @@ impl DiskWalManager {
         for seg in sealed.iter() {
             for r in seg.read_records()? {
                 if r.sequence_number > seq {
-                    out.push(record_to_batch(run_id, r));
+                    out.push(r.into_wire_batch(run_id));
                 }
             }
         }
@@ -250,7 +250,7 @@ impl DiskWalManager {
             let active = Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
             for r in active.read_records()? {
                 if r.sequence_number > seq {
-                    out.push(record_to_batch(run_id, r));
+                    out.push(r.into_wire_batch(run_id));
                 }
             }
         }
@@ -300,18 +300,6 @@ impl WalManager for DiskWalManager {
     fn delete_all(&mut self) -> Result<(), WalError> {
         fs::remove_dir_all(&self.dir)?;
         Ok(())
-    }
-}
-
-fn record_to_batch(run_id: RunId, r: WalRecord) -> WireBatch {
-    WireBatch {
-        run_id,
-        sequence_number: r.sequence_number,
-        compressed_payload: r.compressed_payload,
-        crc32: r.batch_crc32,
-        created_at: r.created_at,
-        point_count: r.point_count,
-        uncompressed_size: r.uncompressed_size,
     }
 }
 

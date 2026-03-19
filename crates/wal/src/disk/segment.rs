@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use photon_core::types::batch::WireBatch;
+use photon_core::types::id::RunId;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
 use crate::ports::WalError;
@@ -51,6 +52,20 @@ pub struct WalRecord {
     pub created_at: SystemTime,
     pub point_count: usize,
     pub uncompressed_size: usize,
+}
+
+impl WalRecord {
+    pub fn into_wire_batch(self, run_id: RunId) -> WireBatch {
+        WireBatch {
+            run_id,
+            sequence_number: self.sequence_number,
+            compressed_payload: self.compressed_payload,
+            crc32: self.batch_crc32,
+            created_at: self.created_at,
+            point_count: self.point_count,
+            uncompressed_size: self.uncompressed_size,
+        }
+    }
 }
 
 impl Segment<Active> {
