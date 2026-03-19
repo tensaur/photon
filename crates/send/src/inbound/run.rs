@@ -1,12 +1,18 @@
+use std::time::Duration;
+
+use photon_core::types::ack::AckResult;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::SenderConfig;
 use photon_core::types::id::RunId;
+use photon_transport::ports::Transport;
 use photon_transport::TransportChoice;
 use photon_wal::WalManagerChoice;
 use tokio::sync::oneshot;
 
-use crate::domain::error::TransportError;
-use crate::domain::service::{SenderService, SenderStats};
+use super::connection::{ConnectionState, ReconnectResult, try_reconnect};
+use crate::domain::ack::SenderStats;
+use crate::domain::error::{SendError, TransportError};
+use crate::domain::service::{SenderService, Service};
 use crate::SenderThreadError;
 
 pub fn run_sender_thread(
@@ -29,11 +35,11 @@ pub fn run_sender_thread(
             .await
             .map_err(TransportError::from)?;
 
+        let mut service = Service::new(transport.clone(), wal.clone(), run_id);
+        service.recover().await?;
+
+        let mut conn = ConnectionState::new(&config);
         let tick_interval = config.idle_poll_interval;
-        let mut sender = SenderService::new(transport, wal, config, run_id);
-
-        sender.recover().await?;
-
         let mut shutdown_signaled = false;
 
         loop {
@@ -48,13 +54,65 @@ pub fn run_sender_thread(
 
             let had_work = batch.is_some() || shutdown_signaled;
 
-            if sender.step(batch, shutdown_signaled).await? {
-                return Ok(sender.stats());
+            if conn.is_shutdown() {
+                return Ok(service.stats());
             }
 
-            // Only sleep when genuinely idle — no batches flowing and not
-            // draining shutdown. The old Sender::run() only slept on the
-            // `!sent && !acked` path; this preserves that behavior.
+            if let Some(attempt) = conn.reconnect_due() {
+                match try_reconnect(&wal, &transport, conn.oldest_in_flight()).await {
+                    ReconnectResult::Ok => conn.reconnected(),
+                    ReconnectResult::Failed => conn.schedule_next_reconnect(attempt),
+                }
+                continue;
+            }
+
+            if let Some(batch) = batch {
+                if conn.can_send() {
+                    match service.send(&batch).await {
+                        Ok(()) => conn.record_sent(batch.sequence_number),
+                        Err(SendError::Transport(TransportError::ConnectionLost { .. })) => {
+                            conn.enter_reconnecting();
+                            continue;
+                        }
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+            }
+
+            let recv = <TransportChoice as Transport<WireBatch, AckResult>>::recv(&transport);
+            match tokio::time::timeout(Duration::from_millis(1), recv).await {
+                Err(_) => {}
+                Ok(Ok(ack)) => {
+                    conn.record_acked(ack.sequence_number);
+                    service.handle_ack(ack)?;
+                }
+                Ok(Err(e)) => {
+                    let err: TransportError = e.into();
+                    match &err {
+                        TransportError::ConnectionLost { .. } => {
+                            conn.enter_reconnecting();
+                            continue;
+                        }
+                        _ => return Err(SendError::from(err).into()),
+                    }
+                }
+            }
+
+            if conn.check_timeouts().is_some() {
+                continue;
+            }
+
+            if shutdown_signaled {
+                if conn.in_flight_empty() {
+                    service.sync()?;
+                    conn.shutdown();
+                } else if let Some(elapsed) = conn.check_drain_timeout() {
+                    return Err(SendError::ShutdownTimeout(elapsed).into());
+                }
+            } else {
+                conn.reset_drain();
+            }
+
             if !had_work {
                 tokio::time::sleep(tick_interval).await;
             }
