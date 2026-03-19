@@ -112,12 +112,12 @@ impl RunBuilder {
     pub fn start(self) -> Result<Run, StartError> {
         let run_id = self.run_id.unwrap_or_default();
 
-        let (appender, manager) = self.wal.open(self.wal_dir.as_deref(), run_id)?;
+        let (wal_appender, wal_manager) = self.wal.open(self.wal_dir.as_deref(), run_id)?;
 
         let interner = Arc::new(MetricKeyInterner::new());
         let (accumulator, rx) = Accumulator::new(self.channel_capacity);
 
-        let start_sequence = manager
+        let start_sequence = wal_manager
             .read_from(SequenceNumber::ZERO)
             .ok()
             .and_then(|batches: Vec<_>| batches.last().map(|b| b.sequence_number.next()))
@@ -125,9 +125,6 @@ impl RunBuilder {
 
         let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
 
-        let batch_config = self.batch;
-        let codec = self.codec;
-        let compressor = self.compressor;
         let batch_interner = Arc::clone(&interner);
         let batch_handle = std::thread::Builder::new()
             .name(format!("photon-batch-{run_id}"))
@@ -135,32 +132,29 @@ impl RunBuilder {
                 run_batch_thread(
                     run_id,
                     batch_interner,
-                    codec,
-                    compressor,
-                    appender,
+                    self.codec,
+                    self.compressor,
+                    wal_appender,
                     start_sequence,
                     rx,
                     batch_tx,
-                    batch_config,
+                    self.batch,
                 )
             })
             .expect("failed to spawn batch thread");
 
-        let endpoint = self.endpoint;
-        let transport = self.transport;
-        let uplink_manager = manager.clone();
-
-        let uplink_handle = endpoint.map(|endpoint| {
+        let uplink_wal = wal_manager.clone();
+        let uplink_handle = self.endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
             let handle = std::thread::Builder::new()
                 .name(format!("photon-uplink-{run_id}"))
                 .spawn(move || {
                     run_uplink_thread(
-                        transport,
+                        self.transport,
                         endpoint,
                         run_id,
-                        uplink_manager,
+                        uplink_wal,
                         UplinkConfig::default(),
                         shutdown_rx,
                         batch_rx,
@@ -180,7 +174,7 @@ impl RunBuilder {
             interner,
             batch_handle,
             uplink_handle,
-            manager,
+            wal_manager,
         ))
     }
 }
