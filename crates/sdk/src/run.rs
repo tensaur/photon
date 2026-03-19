@@ -3,8 +3,8 @@ use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use photon_core::types::id::RunId;
-use photon_flush::{FlushError, FlushStats, MetricKeyInterner, RawPoint};
-use photon_send::{SenderStats, SenderThreadError};
+use photon_batch::{BatchError, BatchStats, MetricKeyInterner, RawPoint};
+use photon_uplink::{UplinkStats, UplinkThreadError};
 use photon_wal::{WalManager, WalManagerChoice};
 use tokio::sync::oneshot;
 
@@ -23,17 +23,17 @@ pub struct RunStats {
     pub batches_rejected: u64,
 }
 
-pub(crate) struct SenderHandle {
+pub(crate) struct UplinkHandle {
     pub shutdown_tx: Option<oneshot::Sender<()>>,
-    pub handle: JoinHandle<Result<SenderStats, SenderThreadError>>,
+    pub handle: JoinHandle<Result<UplinkStats, UplinkThreadError>>,
 }
 
 pub struct Run {
     run_id: RunId,
     accumulator: Accumulator<RawPoint>,
     interner: Arc<MetricKeyInterner>,
-    flush_handle: JoinHandle<Result<FlushStats, FlushError>>,
-    sender_handle: Option<SenderHandle>,
+    batch_handle: JoinHandle<Result<BatchStats, BatchError>>,
+    uplink_handle: Option<UplinkHandle>,
     wal: WalManagerChoice,
     points_logged: u64,
 }
@@ -43,16 +43,16 @@ impl Run {
         run_id: RunId,
         accumulator: Accumulator<RawPoint>,
         interner: Arc<MetricKeyInterner>,
-        flush_handle: JoinHandle<Result<FlushStats, FlushError>>,
-        sender_handle: Option<SenderHandle>,
+        batch_handle: JoinHandle<Result<BatchStats, BatchError>>,
+        uplink_handle: Option<UplinkHandle>,
         wal: WalManagerChoice,
     ) -> Self {
         Self {
             run_id,
             accumulator,
             interner,
-            flush_handle,
-            sender_handle,
+            batch_handle,
+            uplink_handle,
             wal,
             points_logged: 0,
         }
@@ -95,51 +95,47 @@ impl Run {
         let points_logged = self.points_logged;
         let points_dropped = self.accumulator.points_dropped();
 
-        // Close the channel by dropping the real accumulator.
         let _old = std::mem::replace(&mut self.accumulator, {
             let (acc, _rx) = Accumulator::new(1);
             acc
         });
         drop(_old);
 
-        // Join flush thread.
-        let flush_stats = self
-            .flush_handle
+        let batch_stats = self
+            .batch_handle
             .join()
             .map_err(|_| FinishError::Panicked)?
-            .map_err(FinishError::Flush)?;
+            .map_err(FinishError::Batch)?;
 
-        // Signal sender shutdown and join.
-        let (batches_sent, batches_acked, batches_rejected) = match self.sender_handle {
+        let (batches_sent, batches_acked, batches_rejected) = match self.uplink_handle {
             Some(mut ctx) => {
                 drop(ctx.shutdown_tx.take());
 
-                let sender_stats = ctx
+                let uplink_stats = ctx
                     .handle
                     .join()
                     .map_err(|_| FinishError::Panicked)?
-                    .map_err(FinishError::Sender)?;
+                    .map_err(FinishError::Uplink)?;
 
                 (
-                    sender_stats.batches_sent,
-                    sender_stats.batches_acked,
-                    sender_stats.rejections_received,
+                    uplink_stats.batches_sent,
+                    uplink_stats.batches_acked,
+                    uplink_stats.rejections_received,
                 )
             }
             None => (0, 0, 0),
         };
 
-        // Clean shutdown: all batches acked → delete WAL.
-        if batches_acked == flush_stats.batches_flushed {
+        if batches_acked == batch_stats.batches_created {
             let _ = self.wal.delete_all();
         }
 
         Ok(RunStats {
             points: points_logged,
             points_dropped,
-            batches: flush_stats.batches_flushed,
-            bytes_compressed: flush_stats.bytes_compressed,
-            bytes_uncompressed: flush_stats.bytes_uncompressed,
+            batches: batch_stats.batches_created,
+            bytes_compressed: batch_stats.bytes_compressed,
+            bytes_uncompressed: batch_stats.bytes_uncompressed,
             batches_sent,
             batches_acked,
             batches_rejected,

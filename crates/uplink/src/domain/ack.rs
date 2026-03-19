@@ -4,7 +4,7 @@ use photon_core::types::ack::{AckResult, AckStatus};
 use photon_core::types::sequence::SequenceNumber;
 
 #[derive(Clone, Debug, Default)]
-pub struct SenderStats {
+pub struct UplinkStats {
     pub batches_sent: u64,
     pub batches_acked: u64,
     pub batches_retried: u64,
@@ -14,15 +14,11 @@ pub struct SenderStats {
     pub segments_truncated: u64,
 }
 
-/// Result of processing an ack through the tracker
 pub struct AckOutcome {
-    /// If the watermark advanced, the new committed sequence
     pub new_watermark: Option<SequenceNumber>,
-    /// Whether the WAL metadata should be flushed to disk
     pub should_sync: bool,
 }
 
-/// Tracks ack state and advances the committed watermark
 pub struct AckTracker {
     committed: SequenceNumber,
     pending: BTreeSet<SequenceNumber>,
@@ -44,8 +40,7 @@ impl AckTracker {
         self.committed
     }
 
-    /// Process an ack result
-    pub fn track(&mut self, ack: AckResult, stats: &mut SenderStats) -> AckOutcome {
+    pub fn track(&mut self, ack: AckResult, stats: &mut UplinkStats) -> AckOutcome {
         let seq = ack.sequence_number;
 
         match ack.status {
@@ -65,7 +60,6 @@ impl AckTracker {
 
         self.pending.insert(seq);
 
-        // Advance watermark through contiguous acked sequence
         let before = self.committed;
         loop {
             let next = self.committed.next();

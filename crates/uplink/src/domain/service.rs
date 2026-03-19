@@ -7,10 +7,10 @@ use photon_core::types::sequence::SequenceNumber;
 use photon_transport::ports::Transport;
 use photon_wal::WalManager;
 
-use super::ack::{AckTracker, SenderStats};
-use super::error::{RecoveryError, SendError, TransportError};
+use super::ack::{AckTracker, UplinkStats};
+use super::error::{RecoveryError, UplinkError, TransportError};
 
-pub trait SenderService {
+pub trait UplinkService {
     fn recover(
         &mut self,
     ) -> impl Future<Output = Result<SequenceNumber, RecoveryError>> + Send;
@@ -18,13 +18,13 @@ pub trait SenderService {
     fn send(
         &mut self,
         batch: &WireBatch,
-    ) -> impl Future<Output = Result<(), SendError>> + Send;
+    ) -> impl Future<Output = Result<(), UplinkError>> + Send;
 
-    fn handle_ack(&mut self, ack: AckResult) -> Result<(), SendError>;
+    fn handle_ack(&mut self, ack: AckResult) -> Result<(), UplinkError>;
 
-    fn sync(&mut self) -> Result<(), SendError>;
+    fn sync(&mut self) -> Result<(), UplinkError>;
 
-    fn stats(&self) -> SenderStats;
+    fn stats(&self) -> UplinkStats;
 }
 
 pub struct Service<T, M>
@@ -36,7 +36,7 @@ where
     wal: M,
     run_id: RunId,
     tracker: AckTracker,
-    stats: SenderStats,
+    stats: UplinkStats,
 }
 
 impl<T, M> Service<T, M>
@@ -50,12 +50,12 @@ where
             wal,
             run_id,
             tracker: AckTracker::new(SequenceNumber::ZERO),
-            stats: SenderStats::default(),
+            stats: UplinkStats::default(),
         }
     }
 }
 
-impl<T, M> SenderService for Service<T, M>
+impl<T, M> UplinkService for Service<T, M>
 where
     T: Transport<WireBatch, AckResult> + Transport<RunId, SequenceNumber>,
     M: WalManager,
@@ -103,7 +103,7 @@ where
         Ok(effective)
     }
 
-    async fn send(&mut self, batch: &WireBatch) -> Result<(), SendError> {
+    async fn send(&mut self, batch: &WireBatch) -> Result<(), UplinkError> {
         self.transport
             .send(batch)
             .await
@@ -112,7 +112,7 @@ where
         Ok(())
     }
 
-    fn handle_ack(&mut self, ack: AckResult) -> Result<(), SendError> {
+    fn handle_ack(&mut self, ack: AckResult) -> Result<(), UplinkError> {
         let outcome = self.tracker.track(ack, &mut self.stats);
 
         if let Some(watermark) = outcome.new_watermark {
@@ -125,11 +125,11 @@ where
         Ok(())
     }
 
-    fn sync(&mut self) -> Result<(), SendError> {
+    fn sync(&mut self) -> Result<(), UplinkError> {
         self.wal.sync().map_err(Into::into)
     }
 
-    fn stats(&self) -> SenderStats {
+    fn stats(&self) -> UplinkStats {
         self.stats.clone()
     }
 }

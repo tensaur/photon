@@ -35,7 +35,7 @@ impl From<InfraTransportError> for TransportError {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum SendError {
+pub enum UplinkError {
     #[error("WAL operation failed")]
     Wal(#[from] WalError),
 
