@@ -9,7 +9,7 @@ use photon_transport::ports::Transport;
 use photon_wal::WalManagerChoice;
 use tokio::sync::oneshot;
 
-use super::connection::{ConnectionState, ReconnectResult, try_reconnect};
+use super::state::{ConnectionState, ReconnectResult, try_reconnect};
 use crate::UplinkThreadError;
 use crate::domain::ack::UplinkStats;
 use crate::domain::error::{TransportError, UplinkError};

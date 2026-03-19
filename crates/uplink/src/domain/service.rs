@@ -12,13 +12,9 @@ use super::error::{RecoveryError, TransportError, UplinkError};
 
 pub trait UplinkService {
     fn recover(&mut self) -> impl Future<Output = Result<SequenceNumber, RecoveryError>> + Send;
-
     fn send(&mut self, batch: &WireBatch) -> impl Future<Output = Result<(), UplinkError>> + Send;
-
     fn handle_ack(&mut self, ack: AckResult) -> Result<(), UplinkError>;
-
     fn sync(&mut self) -> Result<(), UplinkError>;
-
     fn stats(&self) -> UplinkStats;
 }
 
