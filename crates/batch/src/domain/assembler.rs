@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::types::RawPoint;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch, MetricKey, MetricKeyInterner, MetricPoint};
-use super::types::RawPoint;
 
 pub(crate) struct BatchAssembler {
     interner: Arc<MetricKeyInterner>,

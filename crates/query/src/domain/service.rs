@@ -6,10 +6,10 @@ use photon_core::types::query::{
     DataPoint, MetricQuery, MetricSeries, QueryRequest, QueryResponse, RangePoint, SeriesData,
 };
 use photon_downsample::ports::selector::Selector;
+use photon_store::ports::ReadError;
 use photon_store::ports::bucket::BucketReader;
 use photon_store::ports::compaction::CompactionCursor;
 use photon_store::ports::metric::MetricReader;
-use photon_store::ports::ReadError;
 
 use crate::domain::tier::{Resolution, TierSelector};
 

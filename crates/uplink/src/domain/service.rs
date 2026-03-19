@@ -8,17 +8,12 @@ use photon_transport::ports::Transport;
 use photon_wal::WalManager;
 
 use super::ack::{AckTracker, UplinkStats};
-use super::error::{RecoveryError, UplinkError, TransportError};
+use super::error::{RecoveryError, TransportError, UplinkError};
 
 pub trait UplinkService {
-    fn recover(
-        &mut self,
-    ) -> impl Future<Output = Result<SequenceNumber, RecoveryError>> + Send;
+    fn recover(&mut self) -> impl Future<Output = Result<SequenceNumber, RecoveryError>> + Send;
 
-    fn send(
-        &mut self,
-        batch: &WireBatch,
-    ) -> impl Future<Output = Result<(), UplinkError>> + Send;
+    fn send(&mut self, batch: &WireBatch) -> impl Future<Output = Result<(), UplinkError>> + Send;
 
     fn handle_ack(&mut self, ack: AckResult) -> Result<(), UplinkError>;
 

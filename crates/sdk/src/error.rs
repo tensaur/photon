@@ -1,5 +1,5 @@
-use photon_core::types::metric::MetricError;
 use photon_batch::BatchError;
+use photon_core::types::metric::MetricError;
 use photon_uplink::UplinkThreadError;
 use photon_wal::WalError;
 

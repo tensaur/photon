@@ -259,7 +259,6 @@ impl DiskWalManager {
         out.dedup_by_key(|b| b.sequence_number);
         Ok(out)
     }
-
 }
 
 impl WalManager for DiskWalManager {

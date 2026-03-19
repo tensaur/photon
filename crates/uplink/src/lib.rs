@@ -2,7 +2,7 @@ pub mod domain;
 pub mod inbound;
 
 pub use domain::ack::UplinkStats;
-pub use domain::error::{RecoveryError, UplinkError, TransportError};
+pub use domain::error::{RecoveryError, TransportError, UplinkError};
 pub use domain::service::UplinkService;
 pub use inbound::run::run_uplink_thread;
 
