@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use photon_core::types::ack::AckResult;
 use photon_core::types::batch::WireBatch;
-use photon_core::types::config::{RetryConfig, SenderConfig};
+use photon_core::types::config::{RetryConfig, UplinkConfig};
 use photon_core::types::sequence::SequenceNumber;
 use photon_transport::ports::Transport;
 use photon_wal::WalManager;
@@ -33,7 +33,7 @@ pub struct ConnectionState {
 }
 
 impl ConnectionState {
-    pub fn new(config: &SenderConfig) -> Self {
+    pub fn new(config: &UplinkConfig) -> Self {
         Self {
             phase: Phase::Connected,
             in_flight: BTreeMap::new(),
