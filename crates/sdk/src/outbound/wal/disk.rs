@@ -62,8 +62,7 @@ pub fn open_disk_wal(
         recover_segments(&dir, &existing, cap)?
     };
 
-    let bytes_used_val =
-        active.bytes_used() + sealed.iter().map(|s| s.bytes_used()).sum::<u64>();
+    let bytes_used_val = active.bytes_used() + sealed.iter().map(|s| s.bytes_used()).sum::<u64>();
 
     let next_segment = sealed
         .iter()
@@ -246,8 +245,7 @@ impl DiskWalManager {
         // The appender may be concurrently writing, but we read only flushed data.
         let active_segments = segment::list_segments(&self.dir)?;
         if let Some((idx, _)) = active_segments.last() {
-            let active =
-                Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
+            let active = Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
             for r in active.read_records()? {
                 if r.sequence_number > seq {
                     out.push(record_to_batch(run_id, r));
@@ -276,8 +274,7 @@ impl DiskWalManager {
 
         let active_segments = segment::list_segments(&self.dir)?;
         if let Some((idx, _)) = active_segments.last() {
-            let active =
-                Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
+            let active = Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
             if let Some(r) = active.read_first_record_after(seq)? {
                 return Ok(Some(record_to_batch(run_id, r)));
             }

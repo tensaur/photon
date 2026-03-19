@@ -29,8 +29,7 @@ impl WalChoice {
                 Ok((WalAppenderChoice::Memory(a), WalManagerChoice::Memory(m)))
             }
             Self::Disk => {
-                let (a, m) =
-                    disk::open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
+                let (a, m) = disk::open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
                 Ok((WalAppenderChoice::Disk(a), WalManagerChoice::Disk(m)))
             }
         }
