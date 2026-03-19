@@ -12,10 +12,10 @@ use photon_protocol::ports::compress::Compressor;
 use photon_wal::WalAppender;
 
 use crate::domain::interner::MetricKeyInterner;
-use crate::domain::service::{FlushError, FlushService, Service};
-use crate::domain::types::{FlushStats, RawPoint};
+use crate::domain::service::{BatchError, BatchService, Service};
+use crate::domain::types::{BatchStats, RawPoint};
 
-pub fn run_flush_thread<K, C, A>(
+pub fn run_batch_thread<K, C, A>(
     run_id: RunId,
     interner: Arc<MetricKeyInterner>,
     codec: K,
@@ -25,7 +25,7 @@ pub fn run_flush_thread<K, C, A>(
     rx: Receiver<RawPoint>,
     batch_tx: Sender<WireBatch>,
     config: BatchConfig,
-) -> Result<FlushStats, FlushError>
+) -> Result<BatchStats, BatchError>
 where
     K: Codec<MetricBatch>,
     C: Compressor,
@@ -34,7 +34,7 @@ where
     let mut service = Service::new(run_id, interner, codec, compressor, wal, start_sequence);
     let ticker = tick(config.flush_interval);
     let mut pending: Vec<RawPoint> = Vec::with_capacity(config.max_points);
-    let mut stats = FlushStats::default();
+    let mut stats = BatchStats::default();
 
     loop {
         select! {
@@ -51,14 +51,14 @@ where
                         }
 
                         if pending.len() >= config.max_points {
-                            let wire = service.flush(&pending, &mut stats)?;
+                            let wire = service.batch(&pending, &mut stats)?;
                             let _ = batch_tx.send(wire);
                             pending.clear();
                         }
                     }
                     Err(_) => {
                         if !pending.is_empty() {
-                            let wire = service.flush(&pending, &mut stats)?;
+                            let wire = service.batch(&pending, &mut stats)?;
                             let _ = batch_tx.send(wire);
                             pending.clear();
                         }
@@ -70,7 +70,7 @@ where
 
             recv(ticker) -> _ => {
                 if !pending.is_empty() {
-                    let wire = service.flush(&pending, &mut stats)?;
+                    let wire = service.batch(&pending, &mut stats)?;
                     let _ = batch_tx.send(wire);
                     pending.clear();
                 }

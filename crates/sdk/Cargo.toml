@@ -19,8 +19,8 @@ photon-core = { path = "../core", version = "0.0.0" }
 photon-protocol = { path = "../protocol", version = "0.0.0" }
 photon-transport = { path = "../transport" }
 photon-wal = { path = "../wal", version = "0.0.0" }
-photon-flush = { path = "../flush", version = "0.0.0" }
-photon-send = { path = "../send", version = "0.0.0" }
+photon-batch = { path = "../batch", version = "0.0.0" }
+photon-uplink = { path = "../uplink", version = "0.0.0" }
 
 crossbeam-channel.workspace = true
 tokio.workspace = true

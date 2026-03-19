@@ -14,10 +14,10 @@ use photon_wal::ports::WalError;
 
 use super::assembler::BatchAssembler;
 use super::interner::MetricKeyInterner;
-use super::types::{FlushStats, RawPoint};
+use super::types::{BatchStats, RawPoint};
 
 #[derive(Debug, thiserror::Error)]
-pub enum FlushError {
+pub enum BatchError {
     #[error("WAL write failed")]
     Wal(#[from] WalError),
 
@@ -28,12 +28,12 @@ pub enum FlushError {
     Codec(#[from] CodecError),
 }
 
-pub trait FlushService {
-    fn flush(
+pub trait BatchService {
+    fn batch(
         &mut self,
         points: &[RawPoint],
-        stats: &mut FlushStats,
-    ) -> Result<WireBatch, FlushError>;
+        stats: &mut BatchStats,
+    ) -> Result<WireBatch, BatchError>;
 }
 
 pub struct Service<K, C, A>
@@ -79,17 +79,17 @@ where
     }
 }
 
-impl<K, C, A> FlushService for Service<K, C, A>
+impl<K, C, A> BatchService for Service<K, C, A>
 where
     K: Codec<MetricBatch>,
     C: Compressor,
     A: WalAppender,
 {
-    fn flush(
+    fn batch(
         &mut self,
         points: &[RawPoint],
-        stats: &mut FlushStats,
-    ) -> Result<WireBatch, FlushError> {
+        stats: &mut BatchStats,
+    ) -> Result<WireBatch, BatchError> {
         let point_count = points.len();
 
         let batch = self.assembler.assemble(self.run_id, points);
@@ -120,8 +120,8 @@ where
         self.wal.append(&wire)?;
         self.next_sequence = self.next_sequence.next();
 
-        stats.batches_flushed += 1;
-        stats.points_flushed += point_count as u64;
+        stats.batches_created += 1;
+        stats.points_batched += point_count as u64;
         stats.bytes_compressed += wire.compressed_size() as u64;
         stats.bytes_uncompressed += uncompressed_size as u64;
 

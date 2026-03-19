@@ -1,7 +1,7 @@
 [package]
-name = "photon-send"
+name = "photon-uplink"
 version = "0.0.0"
-description = "Send hexagon for Photon SDK"
+description = "Uplink hexagon for Photon SDK"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

@@ -1,6 +1,6 @@
 use photon_core::types::metric::MetricError;
-use photon_flush::FlushError;
-use photon_send::SenderThreadError;
+use photon_batch::BatchError;
+use photon_uplink::UplinkThreadError;
 use photon_wal::WalError;
 
 #[derive(Debug, thiserror::Error)]
@@ -23,10 +23,10 @@ pub enum LogError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FinishError {
-    #[error("flush failed")]
-    Flush(#[from] FlushError),
-    #[error("sender failed")]
-    Sender(#[from] SenderThreadError),
+    #[error("batch failed")]
+    Batch(#[from] BatchError),
+    #[error("uplink failed")]
+    Uplink(#[from] UplinkThreadError),
     #[error("pipeline thread panicked")]
     Panicked,
 }

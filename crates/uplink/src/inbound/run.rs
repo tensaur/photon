@@ -10,12 +10,12 @@ use photon_wal::WalManagerChoice;
 use tokio::sync::oneshot;
 
 use super::connection::{ConnectionState, ReconnectResult, try_reconnect};
-use crate::domain::ack::SenderStats;
-use crate::domain::error::{SendError, TransportError};
-use crate::domain::service::{SenderService, Service};
-use crate::SenderThreadError;
+use crate::domain::ack::UplinkStats;
+use crate::domain::error::{UplinkError, TransportError};
+use crate::domain::service::{UplinkService, Service};
+use crate::UplinkThreadError;
 
-pub fn run_sender_thread(
+pub fn run_uplink_thread(
     transport: TransportChoice,
     endpoint: String,
     run_id: RunId,
@@ -23,11 +23,11 @@ pub fn run_sender_thread(
     config: SenderConfig,
     mut shutdown_rx: oneshot::Receiver<()>,
     batch_rx: crossbeam_channel::Receiver<WireBatch>,
-) -> Result<SenderStats, SenderThreadError> {
+) -> Result<UplinkStats, UplinkThreadError> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(SenderThreadError::Runtime)?;
+        .map_err(UplinkThreadError::Runtime)?;
 
     rt.block_on(async move {
         transport
@@ -70,7 +70,7 @@ pub fn run_sender_thread(
                 if conn.can_send() {
                     match service.send(&batch).await {
                         Ok(()) => conn.record_sent(batch.sequence_number),
-                        Err(SendError::Transport(TransportError::ConnectionLost { .. })) => {
+                        Err(UplinkError::Transport(TransportError::ConnectionLost { .. })) => {
                             conn.enter_reconnecting();
                             continue;
                         }
@@ -93,7 +93,7 @@ pub fn run_sender_thread(
                             conn.enter_reconnecting();
                             continue;
                         }
-                        _ => return Err(SendError::from(err).into()),
+                        _ => return Err(UplinkError::from(err).into()),
                     }
                 }
             }
@@ -107,7 +107,7 @@ pub fn run_sender_thread(
                     service.sync()?;
                     conn.shutdown();
                 } else if let Some(elapsed) = conn.check_drain_timeout() {
-                    return Err(SendError::ShutdownTimeout(elapsed).into());
+                    return Err(UplinkError::ShutdownTimeout(elapsed).into());
                 }
             } else {
                 conn.reset_drain();

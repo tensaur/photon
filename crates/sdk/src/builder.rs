@@ -7,16 +7,16 @@ use tokio::sync::oneshot;
 use photon_core::types::config::{BatchConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
-use photon_flush::{MetricKeyInterner, run_flush_thread};
+use photon_batch::{MetricKeyInterner, run_batch_thread};
 use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::CompressorChoice;
-use photon_send::run_sender_thread;
+use photon_uplink::run_uplink_thread;
 use photon_transport::TransportChoice;
 use photon_wal::{WalChoice, WalManager};
 
 use crate::accumulator::Accumulator;
 use crate::error::StartError;
-use crate::run::{Run, SenderHandle};
+use crate::run::{Run, UplinkHandle};
 
 /// Configure and start a [`Run`].
 ///
@@ -111,36 +111,31 @@ impl RunBuilder {
     pub fn start(self) -> Result<Run, StartError> {
         let run_id = self.run_id.unwrap_or_default();
 
-        // 1. Open WAL
         let (appender, manager) = self
             .wal
             .open(self.wal_dir.as_deref(), run_id)?;
 
-        // 2. Create accumulator + interner
         let interner = Arc::new(MetricKeyInterner::new());
         let (accumulator, rx) = Accumulator::new(self.channel_capacity);
 
-        // 3. Compute start sequence from WAL
         let start_sequence = manager
             .read_from(SequenceNumber::ZERO)
             .ok()
             .and_then(|batches: Vec<_>| batches.last().map(|b| b.sequence_number.next()))
             .unwrap_or_else(|| SequenceNumber::ZERO.next());
 
-        // 4. Create batch channel
         let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
 
-        // 5. Spawn flush thread
         let batch_config = self.batch;
         let codec = self.codec;
         let compressor = self.compressor;
-        let flush_interner = Arc::clone(&interner);
-        let flush_handle = std::thread::Builder::new()
-            .name(format!("photon-flush-{run_id}"))
+        let batch_interner = Arc::clone(&interner);
+        let batch_handle = std::thread::Builder::new()
+            .name(format!("photon-batch-{run_id}"))
             .spawn(move || {
-                run_flush_thread(
+                run_batch_thread(
                     run_id,
-                    flush_interner,
+                    batch_interner,
                     codec,
                     compressor,
                     appender,
@@ -150,32 +145,31 @@ impl RunBuilder {
                     batch_config,
                 )
             })
-            .expect("failed to spawn flush thread");
+            .expect("failed to spawn batch thread");
 
-        // 7. Spawn sender thread (if endpoint configured)
         let endpoint = self.endpoint;
         let transport = self.transport;
-        let sender_manager = manager.clone();
+        let uplink_manager = manager.clone();
 
-        let sender_handle = endpoint.map(|endpoint| {
+        let uplink_handle = endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
             let handle = std::thread::Builder::new()
-                .name(format!("photon-sender-{run_id}"))
+                .name(format!("photon-uplink-{run_id}"))
                 .spawn(move || {
-                    run_sender_thread(
+                    run_uplink_thread(
                         transport,
                         endpoint,
                         run_id,
-                        sender_manager,
+                        uplink_manager,
                         SenderConfig::default(),
                         shutdown_rx,
                         batch_rx,
                     )
                 })
-                .expect("failed to spawn sender thread");
+                .expect("failed to spawn uplink thread");
 
-            SenderHandle {
+            UplinkHandle {
                 shutdown_tx: Some(shutdown_tx),
                 handle,
             }
@@ -185,8 +179,8 @@ impl RunBuilder {
             run_id,
             accumulator,
             interner,
-            flush_handle,
-            sender_handle,
+            batch_handle,
+            uplink_handle,
             manager,
         ))
     }
