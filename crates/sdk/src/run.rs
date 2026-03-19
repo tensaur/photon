@@ -69,7 +69,7 @@ impl Run {
     pub fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), LogError> {
         Metric::new(key)?;
         let spur = self.interner.get_or_intern(key);
-        let metric_key = MetricKey::new(spur);
+        let metric_key = MetricKey::new(lasso::Key::into_usize(spur));
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
