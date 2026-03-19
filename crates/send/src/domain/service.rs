@@ -10,13 +10,10 @@ use photon_core::types::config::{RetryConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 use photon_transport::ports::Transport;
+use photon_wal::WalManager;
 
-use crate::domain::ports::error::TransportError;
-use crate::domain::ports::wal::{WalError, WalManager};
-
-// ---------------------------------------------------------------------------
-// Error types
-// ---------------------------------------------------------------------------
+use super::error::TransportError;
+use photon_wal::ports::WalError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SendError {
@@ -38,10 +35,6 @@ pub enum RecoveryError {
     #[error("transport error during recovery")]
     Transport(#[from] TransportError),
 }
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SenderState {
@@ -66,10 +59,6 @@ pub struct SenderStats {
     pub watermark_advances: u64,
     pub segments_truncated: u64,
 }
-
-// ---------------------------------------------------------------------------
-// SenderService
-// ---------------------------------------------------------------------------
 
 pub struct SenderService<T, M>
 where
@@ -222,10 +211,6 @@ where
         Ok(self.state == SenderState::Shutdown)
     }
 
-    // -----------------------------------------------------------------------
-    // Transport helpers
-    // -----------------------------------------------------------------------
-
     async fn send_batch(&mut self, batch: &WireBatch) -> Result<(), SendError> {
         match self
             .transport
@@ -271,10 +256,6 @@ where
             }
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Ack handling (absorbed AckTracker)
-    // -----------------------------------------------------------------------
 
     fn handle_ack(&mut self, ack: AckResult) -> Result<(), SendError> {
         let seq = ack.sequence_number;
@@ -322,10 +303,6 @@ where
 
         Ok(())
     }
-
-    // -----------------------------------------------------------------------
-    // Timeout / reconnection
-    // -----------------------------------------------------------------------
 
     fn check_in_flight_timeouts(&mut self) {
         if self.in_flight.is_empty() {
@@ -410,10 +387,6 @@ where
         };
     }
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 fn backoff_delay(config: &RetryConfig, attempt: u32) -> Duration {
     let base = config.base_delay.as_secs_f64();

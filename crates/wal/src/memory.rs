@@ -5,7 +5,7 @@ use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
 use photon_core::types::sequence::SequenceNumber;
 
-use crate::domain::ports::wal::{WalAppender, WalError, WalManager};
+use crate::ports::{WalAppender, WalError, WalManager};
 
 type SharedBatches = Arc<Mutex<BTreeMap<SequenceNumber, WireBatch>>>;
 

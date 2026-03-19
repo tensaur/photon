@@ -7,17 +7,16 @@ use tokio::sync::oneshot;
 use photon_core::types::config::{BatchConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
+use photon_flush::{FlushService, MetricKeyInterner, run_flush_thread};
 use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::CompressorChoice;
+use photon_send::run_sender_thread;
 use photon_transport::TransportChoice;
+use photon_wal::{WalChoice, WalManager};
 
-use crate::domain::flush::FlushService;
-use crate::domain::interner::MetricKeyInterner;
-use crate::domain::ports::wal::WalManager;
-use crate::inbound::accumulator::Accumulator;
-use crate::inbound::error::SdkError;
-use crate::inbound::run::{self, Run, SenderHandle};
-use crate::outbound::wal::WalChoice;
+use crate::accumulator::Accumulator;
+use crate::error::StartError;
+use crate::run::{Run, SenderHandle};
 
 /// Configure and start a [`Run`].
 ///
@@ -109,14 +108,13 @@ impl RunBuilder {
     }
 
     /// Pick adapters and start the pipeline.
-    pub fn start(self) -> Result<Run, SdkError> {
+    pub fn start(self) -> Result<Run, StartError> {
         let run_id = self.run_id.unwrap_or_default();
 
         // 1. Open WAL
         let (appender, manager) = self
             .wal
-            .open(self.wal_dir.as_deref(), run_id)
-            .map_err(SdkError::WalRecoveryFailed)?;
+            .open(self.wal_dir.as_deref(), run_id)?;
 
         // 2. Create accumulator + interner
         let interner = Arc::new(MetricKeyInterner::new());
@@ -146,7 +144,7 @@ impl RunBuilder {
         let batch_config = self.batch;
         let flush_handle = std::thread::Builder::new()
             .name(format!("photon-flush-{run_id}"))
-            .spawn(move || run::run_flush_thread(flush_service, rx, batch_tx, batch_config))
+            .spawn(move || run_flush_thread(flush_service, rx, batch_tx, batch_config))
             .expect("failed to spawn flush thread");
 
         // 7. Spawn sender thread (if endpoint configured)
@@ -160,7 +158,7 @@ impl RunBuilder {
             let handle = std::thread::Builder::new()
                 .name(format!("photon-sender-{run_id}"))
                 .spawn(move || {
-                    run::run_sender_thread(
+                    run_sender_thread(
                         transport,
                         endpoint,
                         run_id,

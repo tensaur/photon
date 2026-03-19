@@ -8,9 +8,11 @@ use photon_core::types::config::{WalConfig, WalMeta, WalSyncPolicy};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
-use super::segment::{self, Active, RECORD_OVERHEAD, Sealed, Segment, WalRecord};
+pub(crate) mod segment;
 
-use crate::domain::ports::wal::{WalAppender, WalError, WalManager};
+use self::segment::{Active, RECORD_OVERHEAD, Sealed, Segment, WalRecord};
+
+use crate::ports::{WalAppender, WalError, WalManager};
 
 #[derive(Clone, Debug)]
 pub struct DiskWalConfig {
