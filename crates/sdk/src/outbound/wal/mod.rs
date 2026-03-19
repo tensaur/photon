@@ -78,13 +78,6 @@ impl WalManager for WalManagerChoice {
         }
     }
 
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
-        match self {
-            Self::Disk(inner) => inner.read_next(after),
-            Self::Memory(inner) => inner.read_next(after),
-        }
-    }
-
     fn read_meta(&self) -> Result<WalMeta, WalError> {
         match self {
             Self::Disk(inner) => inner.read_meta(),
@@ -96,13 +89,6 @@ impl WalManager for WalManagerChoice {
         match self {
             Self::Disk(inner) => inner.delete_all(),
             Self::Memory(inner) => inner.delete_all(),
-        }
-    }
-
-    fn total_bytes(&self) -> u64 {
-        match self {
-            Self::Disk(inner) => inner.total_bytes(),
-            Self::Memory(inner) => inner.total_bytes(),
         }
     }
 }

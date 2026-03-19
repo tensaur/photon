@@ -4,9 +4,8 @@ use photon_core::types::metric::MetricError;
 use photon_core::types::sequence::SequenceNumber;
 use photon_transport::ports::TransportError as InfraTransportError;
 
-use crate::domain::pipeline::pipeline::PipelineError;
-use crate::domain::pipeline::recovery::RecoveryError;
-use crate::domain::pipeline::sender::SenderError;
+use crate::domain::flush::FlushError;
+use crate::domain::send::{RecoveryError, SendError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LogError {
@@ -16,8 +15,8 @@ pub enum LogError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FinishError {
-    #[error("pipeline failed")]
-    Pipeline(#[from] PipelineError),
+    #[error("flush failed")]
+    Flush(#[from] FlushError),
     #[error("sender failed")]
     Sender(#[from] SenderThreadError),
     #[error("pipeline thread panicked")]
@@ -33,7 +32,7 @@ pub enum SenderThreadError {
     #[error("WAL recovery failed")]
     Recovery(#[from] RecoveryError),
     #[error("sender run loop failed")]
-    Sender(#[from] SenderError),
+    Sender(#[from] SendError),
 }
 
 /// SDK-specific transport error with domain variants.
