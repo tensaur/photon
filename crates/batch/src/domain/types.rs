@@ -1,4 +1,4 @@
-use super::interner::MetricKey;
+use photon_core::types::metric::MetricKey;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RawPoint {
