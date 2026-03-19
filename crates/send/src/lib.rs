@@ -1,8 +1,9 @@
 pub mod domain;
 pub mod inbound;
 
-pub use domain::error::TransportError;
-pub use domain::service::{RecoveryError, SendError, SenderService, SenderStats};
+pub use domain::ack::SenderStats;
+pub use domain::error::{RecoveryError, SendError, TransportError};
+pub use domain::service::SenderService;
 pub use inbound::run::run_sender_thread;
 
 /// Orchestration-level error for the sender thread.

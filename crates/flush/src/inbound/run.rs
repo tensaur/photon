@@ -1,17 +1,27 @@
+use std::sync::Arc;
+
 use crossbeam_channel::{Receiver, Sender, select, tick};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::BatchConfig;
+use photon_core::types::id::RunId;
 use photon_core::types::metric::MetricBatch;
+use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_wal::WalAppender;
 
-use crate::domain::service::{FlushError, FlushService};
+use crate::domain::interner::MetricKeyInterner;
+use crate::domain::service::{FlushError, FlushService, Service};
 use crate::domain::types::{FlushStats, RawPoint};
 
 pub fn run_flush_thread<K, C, A>(
-    mut service: FlushService<K, C, A>,
+    run_id: RunId,
+    interner: Arc<MetricKeyInterner>,
+    codec: K,
+    compressor: C,
+    wal: A,
+    start_sequence: SequenceNumber,
     rx: Receiver<RawPoint>,
     batch_tx: Sender<WireBatch>,
     config: BatchConfig,
@@ -21,6 +31,7 @@ where
     C: Compressor,
     A: WalAppender,
 {
+    let mut service = Service::new(run_id, interner, codec, compressor, wal, start_sequence);
     let ticker = tick(config.flush_interval);
     let mut pending: Vec<RawPoint> = Vec::with_capacity(config.max_points);
     let mut stats = FlushStats::default();

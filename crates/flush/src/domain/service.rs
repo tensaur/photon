@@ -16,7 +16,27 @@ use super::assembler::BatchAssembler;
 use super::interner::MetricKeyInterner;
 use super::types::{FlushStats, RawPoint};
 
-pub struct FlushService<K, C, A>
+#[derive(Debug, thiserror::Error)]
+pub enum FlushError {
+    #[error("WAL write failed")]
+    Wal(#[from] WalError),
+
+    #[error("compression failed")]
+    Compression(#[from] CompressionError),
+
+    #[error("batch encoding failed")]
+    Codec(#[from] CodecError),
+}
+
+pub trait FlushService {
+    fn flush(
+        &mut self,
+        points: &[RawPoint],
+        stats: &mut FlushStats,
+    ) -> Result<WireBatch, FlushError>;
+}
+
+pub struct Service<K, C, A>
 where
     K: Codec<MetricBatch>,
     C: Compressor,
@@ -32,7 +52,7 @@ where
     compress_buf: BytesMut,
 }
 
-impl<K, C, A> FlushService<K, C, A>
+impl<K, C, A> Service<K, C, A>
 where
     K: Codec<MetricBatch>,
     C: Compressor,
@@ -57,8 +77,15 @@ where
             compress_buf: BytesMut::new(),
         }
     }
+}
 
-    pub fn flush(
+impl<K, C, A> FlushService for Service<K, C, A>
+where
+    K: Codec<MetricBatch>,
+    C: Compressor,
+    A: WalAppender,
+{
+    fn flush(
         &mut self,
         points: &[RawPoint],
         stats: &mut FlushStats,
@@ -100,16 +127,4 @@ where
 
         Ok(wire)
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum FlushError {
-    #[error("WAL write failed")]
-    Wal(#[from] WalError),
-
-    #[error("compression failed")]
-    Compression(#[from] CompressionError),
-
-    #[error("batch encoding failed")]
-    Codec(#[from] CodecError),
 }

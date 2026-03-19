@@ -7,7 +7,7 @@ use tokio::sync::oneshot;
 use photon_core::types::config::{BatchConfig, SenderConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
-use photon_flush::{FlushService, MetricKeyInterner, run_flush_thread};
+use photon_flush::{MetricKeyInterner, run_flush_thread};
 use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::CompressorChoice;
 use photon_send::run_sender_thread;
@@ -127,24 +127,29 @@ impl RunBuilder {
             .and_then(|batches: Vec<_>| batches.last().map(|b| b.sequence_number.next()))
             .unwrap_or_else(|| SequenceNumber::ZERO.next());
 
-        // 4. Create FlushService
-        let flush_service = FlushService::new(
-            run_id,
-            Arc::clone(&interner),
-            self.codec,
-            self.compressor,
-            appender,
-            start_sequence,
-        );
-
-        // 5. Create batch channel
+        // 4. Create batch channel
         let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
 
-        // 6. Spawn flush thread
+        // 5. Spawn flush thread
         let batch_config = self.batch;
+        let codec = self.codec;
+        let compressor = self.compressor;
+        let flush_interner = Arc::clone(&interner);
         let flush_handle = std::thread::Builder::new()
             .name(format!("photon-flush-{run_id}"))
-            .spawn(move || run_flush_thread(flush_service, rx, batch_tx, batch_config))
+            .spawn(move || {
+                run_flush_thread(
+                    run_id,
+                    flush_interner,
+                    codec,
+                    compressor,
+                    appender,
+                    start_sequence,
+                    rx,
+                    batch_tx,
+                    batch_config,
+                )
+            })
             .expect("failed to spawn flush thread");
 
         // 7. Spawn sender thread (if endpoint configured)
