@@ -88,14 +88,14 @@ impl MetricBatch {
 
 /// Compact handle for an interned metric key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct MetricKey(lasso::Spur);
+pub struct MetricKey(usize);
 
 impl MetricKey {
-    pub fn new(spur: lasso::Spur) -> Self {
-        Self(spur)
+    pub fn new(index: usize) -> Self {
+        Self(index)
     }
 
-    pub fn spur(self) -> lasso::Spur {
+    pub fn index(self) -> usize {
         self.0
     }
 }

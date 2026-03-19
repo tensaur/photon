@@ -996,7 +996,6 @@ version = "0.0.0"
 dependencies = [
  "bytes",
  "chrono",
- "lasso",
  "serde",
  "thiserror",
  "uuid",

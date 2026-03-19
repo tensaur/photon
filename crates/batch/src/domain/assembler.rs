@@ -31,7 +31,8 @@ impl BatchAssembler {
         for p in pending {
             let key_index = *self.key_map.entry(p.key).or_insert_with(|| {
                 let idx = self.keys.len() as u32;
-                let s = self.interner.resolve(&p.key.spur());
+                let spur = lasso::Key::try_from_usize(p.key.index()).unwrap();
+                let s = self.interner.resolve(&spur);
                 // Key was validated on intern
                 self.keys.push(Metric::new_unchecked(s));
                 idx
