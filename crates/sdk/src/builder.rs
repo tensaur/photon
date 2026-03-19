@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
-use photon_core::types::config::{BatchConfig, SenderConfig};
+use photon_core::types::config::{BatchConfig, UplinkConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 use photon_batch::run_batch_thread;
@@ -76,8 +76,8 @@ impl RunBuilder {
         self
     }
 
-    pub fn flush_interval(mut self, interval: Duration) -> Self {
-        self.batch.flush_interval = interval;
+    pub fn batch_interval(mut self, interval: Duration) -> Self {
+        self.batch.batch_interval = interval;
         self
     }
 
@@ -163,7 +163,7 @@ impl RunBuilder {
                         endpoint,
                         run_id,
                         uplink_manager,
-                        SenderConfig::default(),
+                        UplinkConfig::default(),
                         shutdown_rx,
                         batch_rx,
                     )

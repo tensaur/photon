@@ -33,7 +33,7 @@ where
     A: WalAppender,
 {
     let mut service = Service::new(run_id, interner, codec, compressor, wal, start_sequence);
-    let ticker = tick(config.flush_interval);
+    let ticker = tick(config.batch_interval);
     let mut pending: Vec<RawPoint> = Vec::with_capacity(config.max_points);
     let mut stats = BatchStats::default();
 

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use photon_core::types::ack::AckResult;
 use photon_core::types::batch::WireBatch;
-use photon_core::types::config::SenderConfig;
+use photon_core::types::config::UplinkConfig;
 use photon_core::types::id::RunId;
 use photon_transport::ports::Transport;
 use photon_transport::TransportChoice;
@@ -20,7 +20,7 @@ pub fn run_uplink_thread(
     endpoint: String,
     run_id: RunId,
     wal: WalManagerChoice,
-    config: SenderConfig,
+    config: UplinkConfig,
     mut shutdown_rx: oneshot::Receiver<()>,
     batch_rx: crossbeam_channel::Receiver<WireBatch>,
 ) -> Result<UplinkStats, UplinkThreadError> {

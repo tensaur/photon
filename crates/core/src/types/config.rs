@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use super::sequence::SequenceNumber;
 
-/// Configuration for the batch builder's flush behaviour.
+/// Configuration for the batch builder.
 #[derive(Clone, Debug)]
 pub struct BatchConfig {
     pub max_points: usize,
     pub max_bytes: usize,
-    pub flush_interval: Duration,
+    pub batch_interval: Duration,
 }
 
 impl Default for BatchConfig {
@@ -15,14 +15,14 @@ impl Default for BatchConfig {
         Self {
             max_points: 10_000,
             max_bytes: 1_048_576, // 1MB
-            flush_interval: Duration::from_millis(100),
+            batch_interval: Duration::from_millis(100),
         }
     }
 }
 
-/// Configuration for the sender's in-flight window and retry behaviour.
+/// Configuration for the uplink's in-flight window and retry behaviour.
 #[derive(Clone, Debug)]
-pub struct SenderConfig {
+pub struct UplinkConfig {
     pub max_in_flight: usize,
     pub max_streams: usize,
     pub retry: RetryConfig,
@@ -32,7 +32,7 @@ pub struct SenderConfig {
     pub drain_poll_interval: Duration,
 }
 
-impl Default for SenderConfig {
+impl Default for UplinkConfig {
     fn default() -> Self {
         Self {
             max_in_flight: 64,
