@@ -1,7 +1,7 @@
 use super::interner::MetricKey;
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RawPoint {
+pub struct RawPoint {
     pub key: MetricKey,
     pub value: f64,
     pub step: u64,

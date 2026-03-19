@@ -6,10 +6,10 @@ use photon_core::types::metric::{Metric, MetricError};
 
 /// Compact handle for an interned metric key
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct MetricKey(u32);
+pub struct MetricKey(u32);
 
 /// Thread-safe bidirectional map between string keys and a MetricKey
-pub(crate) struct MetricKeyInterner {
+pub struct MetricKeyInterner {
     forward: DashMap<String, MetricKey>,
     reverse: RwLock<Vec<Metric>>,
 }

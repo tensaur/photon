@@ -18,15 +18,12 @@ path = "examples/with_server.rs"
 photon-core = { path = "../core", version = "0.0.0" }
 photon-protocol = { path = "../protocol", version = "0.0.0" }
 photon-transport = { path = "../transport" }
+photon-wal = { path = "../wal", version = "0.0.0" }
+photon-flush = { path = "../flush", version = "0.0.0" }
+photon-send = { path = "../send", version = "0.0.0" }
 
-dashmap.workspace = true
-thiserror.workspace = true
-anyhow.workspace = true
-bytes.workspace = true
 crossbeam-channel.workspace = true
 tokio.workspace = true
-tokio-stream.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-crc32fast.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
 tracing.workspace = true

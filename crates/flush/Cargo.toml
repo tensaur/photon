@@ -1,0 +1,18 @@
+[package]
+name = "photon-flush"
+version = "0.0.0"
+description = "Flush hexagon for Photon SDK"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+photon-core = { path = "../core", version = "0.0.0" }
+photon-protocol = { path = "../protocol", version = "0.0.0" }
+photon-wal = { path = "../wal", version = "0.0.0" }
+
+bytes.workspace = true
+dashmap.workspace = true
+crc32fast.workspace = true
+crossbeam-channel.workspace = true
+thiserror.workspace = true

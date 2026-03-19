@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use photon_core::types::batch::WireBatch;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
-use crate::domain::ports::wal::WalError;
+use crate::ports::WalError;
 
 const MAGIC: &[u8; 4] = b"PHTN";
 const HEADER_SIZE: usize = 36;

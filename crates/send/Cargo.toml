@@ -1,0 +1,18 @@
+[package]
+name = "photon-send"
+version = "0.0.0"
+description = "Send hexagon for Photon SDK"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+photon-core = { path = "../core", version = "0.0.0" }
+photon-transport = { path = "../transport" }
+photon-wal = { path = "../wal", version = "0.0.0" }
+
+thiserror.workspace = true
+anyhow.workspace = true
+crossbeam-channel.workspace = true
+tokio.workspace = true
+tracing.workspace = true

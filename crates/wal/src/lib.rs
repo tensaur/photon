@@ -1,16 +1,15 @@
-mod disk;
-mod memory;
-mod segment;
+pub mod ports;
+pub mod disk;
+pub mod memory;
 
-pub(crate) use self::disk::{DiskWalAppender, DiskWalConfig, DiskWalManager};
-pub(crate) use self::memory::{InMemoryWalAppender, InMemoryWalManager};
+pub use self::disk::{DiskWalAppender, DiskWalConfig, DiskWalManager, open_disk_wal};
+pub use self::memory::{InMemoryWalAppender, InMemoryWalManager, open_in_memory_wal};
+pub use self::ports::{WalAppender, WalError, WalManager};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
-
-use crate::domain::ports::wal::{WalAppender, WalError, WalManager};
 
 pub enum WalChoice {
     Disk,
@@ -18,18 +17,18 @@ pub enum WalChoice {
 }
 
 impl WalChoice {
-    pub(crate) fn open(
+    pub fn open(
         self,
         wal_dir: Option<&std::path::Path>,
         run_id: RunId,
     ) -> Result<(WalAppenderChoice, WalManagerChoice), WalError> {
         match self {
             Self::Memory => {
-                let (a, m) = memory::open_in_memory_wal();
+                let (a, m) = open_in_memory_wal();
                 Ok((WalAppenderChoice::Memory(a), WalManagerChoice::Memory(m)))
             }
             Self::Disk => {
-                let (a, m) = disk::open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
+                let (a, m) = open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
                 Ok((WalAppenderChoice::Disk(a), WalManagerChoice::Disk(m)))
             }
         }
