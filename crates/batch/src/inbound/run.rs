@@ -11,7 +11,8 @@ use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_wal::WalAppender;
 
-use crate::domain::interner::MetricKeyInterner;
+use photon_core::types::metric::MetricKeyInterner;
+
 use crate::domain::service::{BatchError, BatchService, Service};
 use crate::domain::types::{BatchStats, RawPoint};
 

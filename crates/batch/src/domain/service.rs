@@ -12,8 +12,9 @@ use photon_protocol::ports::compress::{CompressionError, Compressor};
 use photon_wal::WalAppender;
 use photon_wal::ports::WalError;
 
+use photon_core::types::metric::MetricKeyInterner;
+
 use super::assembler::BatchAssembler;
-use super::interner::MetricKeyInterner;
 use super::types::{BatchStats, RawPoint};
 
 #[derive(Debug, thiserror::Error)]
