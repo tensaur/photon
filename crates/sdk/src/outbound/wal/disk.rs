@@ -258,30 +258,6 @@ impl DiskWalManager {
         Ok(out)
     }
 
-    fn read_next_after(&self, seq: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
-        let run_id = self.run_id;
-
-        let sealed = self.sealed.lock().unwrap();
-        for seg in sealed.iter() {
-            if seg.last_sequence().map(|l| l <= seq).unwrap_or(true) {
-                continue;
-            }
-            if let Some(r) = seg.read_first_record_after(seq)? {
-                return Ok(Some(record_to_batch(run_id, r)));
-            }
-        }
-        drop(sealed);
-
-        let active_segments = segment::list_segments(&self.dir)?;
-        if let Some((idx, _)) = active_segments.last() {
-            let active = Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
-            if let Some(r) = active.read_first_record_after(seq)? {
-                return Ok(Some(record_to_batch(run_id, r)));
-            }
-        }
-
-        Ok(None)
-    }
 }
 
 impl WalManager for DiskWalManager {
@@ -314,10 +290,6 @@ impl WalManager for DiskWalManager {
         self.read_after(seq)
     }
 
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
-        self.read_next_after(after)
-    }
-
     fn read_meta(&self) -> Result<WalMeta, WalError> {
         Ok(WalMeta {
             committed_sequence: *self.committed.lock().unwrap(),
@@ -327,10 +299,6 @@ impl WalManager for DiskWalManager {
     fn delete_all(&mut self) -> Result<(), WalError> {
         fs::remove_dir_all(&self.dir)?;
         Ok(())
-    }
-
-    fn total_bytes(&self) -> u64 {
-        self.bytes_used.load(Ordering::Relaxed)
     }
 }
 

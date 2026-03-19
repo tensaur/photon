@@ -11,15 +11,13 @@ use photon_protocol::codec::CodecChoice;
 use photon_protocol::compressor::CompressorChoice;
 use photon_transport::TransportChoice;
 
-use crate::domain::pipeline::accumulator::Accumulator;
-use crate::domain::pipeline::interner::MetricKeyInterner;
-use crate::domain::pipeline::pipeline::Pipeline;
-use crate::domain::pipeline::sender;
+use crate::domain::flush::FlushService;
+use crate::domain::interner::MetricKeyInterner;
 use crate::domain::ports::wal::WalManager;
-use crate::domain::service::{SenderHandle, Service};
+use crate::inbound::accumulator::Accumulator;
 use crate::inbound::error::SdkError;
-use crate::inbound::run::Run;
-use crate::outbound::wal::{WalChoice, WalManagerChoice};
+use crate::inbound::run::{self, Run, SenderHandle};
+use crate::outbound::wal::WalChoice;
 
 /// Configure and start a [`Run`].
 ///
@@ -32,7 +30,6 @@ pub struct RunBuilder {
     wal_dir: Option<PathBuf>,
     wal: WalChoice,
     channel_capacity: usize,
-    spill_capacity: usize,
     batch: BatchConfig,
     endpoint: Option<String>,
     transport: TransportChoice,
@@ -47,7 +44,6 @@ impl Default for RunBuilder {
             wal_dir: None,
             wal: WalChoice::Disk,
             channel_capacity: 65_536,
-            spill_capacity: 16_384,
             batch: BatchConfig::default(),
             endpoint: None,
             transport: TransportChoice::default(),
@@ -113,7 +109,7 @@ impl RunBuilder {
     }
 
     /// Pick adapters and start the pipeline.
-    pub fn start(self) -> Result<Run<Service<WalManagerChoice>>, SdkError> {
+    pub fn start(self) -> Result<Run, SdkError> {
         let run_id = self.run_id.unwrap_or_default();
 
         // 1. Open WAL
@@ -124,7 +120,7 @@ impl RunBuilder {
 
         // 2. Create accumulator + interner
         let interner = Arc::new(MetricKeyInterner::new());
-        let (accumulator, rx) = Accumulator::new(self.channel_capacity, self.spill_capacity);
+        let (accumulator, rx) = Accumulator::new(self.channel_capacity);
 
         // 3. Compute start sequence from WAL
         let start_sequence = manager
@@ -133,33 +129,39 @@ impl RunBuilder {
             .and_then(|batches: Vec<_>| batches.last().map(|b| b.sequence_number.next()))
             .unwrap_or_else(|| SequenceNumber::ZERO.next());
 
-        // 4. Create channel from builder → sender
-        let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
-
-        // 5. Spawn pipeline thread (appender moved in, not cloned)
-        let pipeline_handle = Pipeline::new(
+        // 4. Create FlushService
+        let flush_service = FlushService::new(
             run_id,
-            rx,
             Arc::clone(&interner),
             self.codec,
-            appender,
             self.compressor,
-            self.batch,
+            appender,
             start_sequence,
-            batch_tx,
-        )
-        .spawn();
+        );
 
-        // 6. Spawn sender thread (if endpoint configured)
+        // 5. Create batch channel
+        let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
+
+        // 6. Spawn flush thread
+        let batch_config = self.batch;
+        let flush_handle = std::thread::Builder::new()
+            .name(format!("photon-flush-{run_id}"))
+            .spawn(move || run::run_flush_thread(flush_service, rx, batch_tx, batch_config))
+            .expect("failed to spawn flush thread");
+
+        // 7. Spawn sender thread (if endpoint configured)
+        let endpoint = self.endpoint;
+        let transport = self.transport;
         let sender_manager = manager.clone();
-        let sender_handle = self.endpoint.map(|endpoint| {
+
+        let sender_handle = endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
             let handle = std::thread::Builder::new()
                 .name(format!("photon-sender-{run_id}"))
                 .spawn(move || {
-                    sender::run_thread(
-                        self.transport,
+                    run::run_sender_thread(
+                        transport,
                         endpoint,
                         run_id,
                         sender_manager,
@@ -176,16 +178,13 @@ impl RunBuilder {
             }
         });
 
-        // 7. Assemble service from pre-built parts
-        let service = Service::new(
+        Ok(Run::new(
             run_id,
             accumulator,
             interner,
-            pipeline_handle,
+            flush_handle,
             sender_handle,
             manager,
-        );
-
-        Ok(Run { service })
+        ))
     }
 }

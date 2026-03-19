@@ -5,7 +5,7 @@ use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
 
 use super::interner::{MetricKey, MetricKeyInterner};
-use super::pipeline::RawPoint;
+use super::types::RawPoint;
 
 pub(crate) struct BatchAssembler {
     interner: Arc<MetricKeyInterner>,

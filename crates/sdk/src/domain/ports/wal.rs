@@ -14,16 +14,9 @@ pub trait WalManager: Send + Clone + 'static {
     /// Read all batches with sequence gt the given watermark.
     fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<WireBatch>, WalError>;
 
-    /// Read the first batch with sequence gt the given watermark.
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
-        Ok(self.read_from(after)?.into_iter().next())
-    }
-
     fn read_meta(&self) -> Result<WalMeta, WalError>;
 
     fn delete_all(&mut self) -> Result<(), WalError>;
-
-    fn total_bytes(&self) -> u64;
 }
 
 #[derive(Debug, thiserror::Error)]

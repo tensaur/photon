@@ -67,16 +67,6 @@ impl WalManager for InMemoryWalManager {
             .collect())
     }
 
-    fn read_next(&self, after: SequenceNumber) -> Result<Option<WireBatch>, WalError> {
-        Ok(self
-            .batches
-            .lock()
-            .unwrap()
-            .range(after.next()..)
-            .next()
-            .map(|(_, batch)| batch.clone()))
-    }
-
     fn read_meta(&self) -> Result<WalMeta, WalError> {
         Ok(WalMeta {
             committed_sequence: self.committed,
@@ -87,14 +77,5 @@ impl WalManager for InMemoryWalManager {
         self.batches.lock().unwrap().clear();
         self.committed = SequenceNumber::ZERO;
         Ok(())
-    }
-
-    fn total_bytes(&self) -> u64 {
-        self.batches
-            .lock()
-            .unwrap()
-            .values()
-            .map(|b| b.compressed_size() as u64)
-            .sum()
     }
 }
