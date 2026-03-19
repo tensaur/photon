@@ -1,12 +1,15 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use photon_batch::{BatchError, BatchStats, RawPoint};
+use lasso::ThreadedRodeo;
+
+use photon_batch::{BatchError, BatchStats};
 use photon_core::types::id::RunId;
-use photon_core::types::metric::MetricKeyInterner;
+use photon_core::types::metric::{Metric, MetricKey, RawPoint};
 use photon_uplink::{UplinkStats, UplinkThreadError};
-use photon_wal::{WalManager, WalManagerChoice};
+use photon_wal::WalChoice;
 use tokio::sync::oneshot;
 
 use crate::accumulator::Accumulator;
@@ -32,10 +35,11 @@ pub(crate) struct UplinkHandle {
 pub struct Run {
     run_id: RunId,
     accumulator: Accumulator<RawPoint>,
-    interner: Arc<MetricKeyInterner>,
+    interner: Arc<ThreadedRodeo>,
     batch_handle: JoinHandle<Result<BatchStats, BatchError>>,
     uplink_handle: Option<UplinkHandle>,
-    wal: WalManagerChoice,
+    wal_choice: WalChoice,
+    wal_dir: Option<PathBuf>,
     points_logged: u64,
 }
 
@@ -43,10 +47,11 @@ impl Run {
     pub(crate) fn new(
         run_id: RunId,
         accumulator: Accumulator<RawPoint>,
-        interner: Arc<MetricKeyInterner>,
+        interner: Arc<ThreadedRodeo>,
         batch_handle: JoinHandle<Result<BatchStats, BatchError>>,
         uplink_handle: Option<UplinkHandle>,
-        wal: WalManagerChoice,
+        wal_choice: WalChoice,
+        wal_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             run_id,
@@ -54,14 +59,17 @@ impl Run {
             interner,
             batch_handle,
             uplink_handle,
-            wal,
+            wal_choice,
+            wal_dir,
             points_logged: 0,
         }
     }
 
     /// Log a single metric data point.
     pub fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), LogError> {
-        let metric_key = self.interner.get_or_intern(key)?;
+        Metric::new(key)?;
+        let spur = self.interner.get_or_intern(key);
+        let metric_key = MetricKey::new(spur);
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -128,7 +136,7 @@ impl Run {
         };
 
         if batches_acked == batch_stats.batches_created {
-            let _ = self.wal.delete_all();
+            let _ = self.wal_choice.close(self.wal_dir.as_deref(), self.run_id);
         }
 
         Ok(RunStats {

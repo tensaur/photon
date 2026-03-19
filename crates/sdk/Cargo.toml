@@ -23,6 +23,7 @@ photon-batch = { path = "../batch", version = "0.0.0" }
 photon-uplink = { path = "../uplink", version = "0.0.0" }
 
 crossbeam-channel.workspace = true
+lasso.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
