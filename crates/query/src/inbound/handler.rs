@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use crate::domain::message::{QueryMessage, QueryResult};
+use photon_core::types::query::{QueryMessage, QueryResult};
 use photon_transport::ports::{Transport, TransportError};
 
-use crate::domain::service::QueryService;
+use crate::domain::service::{QueryService, dispatch};
 
 /// Transport-agnostic query handler.
 pub async fn handle_request<S, T>(service: &Arc<S>, transport: &T)
 where
-    S: QueryService + Send + Sync + 'static,
+    S: QueryService,
     T: Transport<QueryResult, QueryMessage>,
 {
     loop {
@@ -21,20 +21,7 @@ where
             }
         };
 
-        let result = match msg {
-            QueryMessage::ListMetrics(run_id) => match service.list_metrics(&run_id).await {
-                Ok(metrics) => QueryResult::Metrics(metrics),
-                Err(e) => QueryResult::Error(e.to_string()),
-            },
-            QueryMessage::Query(query) => match service.query(&query).await {
-                Ok(series) => QueryResult::Series(series),
-                Err(e) => QueryResult::Error(e.to_string()),
-            },
-            QueryMessage::QueryBatch(request) => match service.query_batch(&request).await {
-                Ok(response) => QueryResult::BatchResponse(response),
-                Err(e) => QueryResult::Error(e.to_string()),
-            },
-        };
+        let result = dispatch(&**service, msg).await;
 
         if transport.send(&result).await.is_err() {
             break;

@@ -36,7 +36,7 @@ pub enum IngestError {
     MetricWrite(#[source] photon_store::ports::WriteError),
 }
 
-pub trait IngestService {
+pub trait IngestService: Send + Sync + 'static {
     fn ingest(
         &self,
         batch: &WireBatch,

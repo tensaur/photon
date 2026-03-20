@@ -42,6 +42,10 @@ impl MetricWriter for InMemoryMetricStore {
 }
 
 impl MetricReader for InMemoryMetricStore {
+    async fn list_runs(&self) -> Result<Vec<RunId>, ReadError> {
+        Ok(self.data.iter().map(|entry| *entry.key()).collect())
+    }
+
     async fn read_points(
         &self,
         run_id: &RunId,

@@ -3,7 +3,8 @@ use std::future::Future;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{
-    DataPoint, MetricQuery, MetricSeries, QueryRequest, QueryResponse, RangePoint, SeriesData,
+    DataPoint, MetricQuery, MetricSeries, QueryMessage, QueryRequest, QueryResponse, QueryResult,
+    RangePoint, SeriesData,
 };
 use photon_downsample::ports::selector::Selector;
 use photon_store::ports::ReadError;
@@ -19,7 +20,14 @@ pub enum QueryError {
     Read(#[from] ReadError),
 }
 
-pub trait QueryService {
+pub trait QueryService: Send + Sync + 'static {
+    fn list_runs(&self) -> impl Future<Output = Result<Vec<RunId>, QueryError>> + Send;
+
+    fn list_metrics(
+        &self,
+        run_id: &RunId,
+    ) -> impl Future<Output = Result<Vec<Metric>, QueryError>> + Send;
+
     fn query(
         &self,
         q: &MetricQuery,
@@ -29,11 +37,28 @@ pub trait QueryService {
         &self,
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryError>> + Send;
+}
 
-    fn list_metrics(
-        &self,
-        run_id: &RunId,
-    ) -> impl Future<Output = Result<Vec<Metric>, QueryError>> + Send;
+/// Map a query message to a result using the given service.
+pub async fn dispatch<S: QueryService>(service: &S, msg: QueryMessage) -> QueryResult {
+    match msg {
+        QueryMessage::ListRuns => match service.list_runs().await {
+            Ok(runs) => QueryResult::Runs(runs),
+            Err(e) => QueryResult::Error(e.to_string()),
+        },
+        QueryMessage::ListMetrics(run_id) => match service.list_metrics(&run_id).await {
+            Ok(metrics) => QueryResult::Metrics(metrics),
+            Err(e) => QueryResult::Error(e.to_string()),
+        },
+        QueryMessage::Query(query) => match service.query(&query).await {
+            Ok(series) => QueryResult::Series(series),
+            Err(e) => QueryResult::Error(e.to_string()),
+        },
+        QueryMessage::QueryBatch(request) => match service.query_batch(&request).await {
+            Ok(response) => QueryResult::BatchResponse(response),
+            Err(e) => QueryResult::Error(e.to_string()),
+        },
+    }
 }
 
 pub struct Service<S, B, M, C>
@@ -81,6 +106,14 @@ where
     M: MetricReader,
     C: CompactionCursor,
 {
+    async fn list_runs(&self) -> Result<Vec<RunId>, QueryError> {
+        Ok(self.metric_reader.list_runs().await?)
+    }
+
+    async fn list_metrics(&self, run_id: &RunId) -> Result<Vec<Metric>, QueryError> {
+        Ok(self.metric_reader.list_metrics(run_id).await?)
+    }
+
     async fn query(&self, q: &MetricQuery) -> Result<MetricSeries, QueryError> {
         let point_count = self
             .metric_reader
@@ -206,16 +239,8 @@ where
     }
 
     async fn query_batch(&self, request: &QueryRequest) -> Result<QueryResponse, QueryError> {
-        let mut series = Vec::with_capacity(request.queries.len());
-
-        for q in &request.queries {
-            series.push(self.query(q).await?);
-        }
-
+        let futures: Vec<_> = request.queries.iter().map(|q| self.query(q)).collect();
+        let series = futures_util::future::try_join_all(futures).await?;
         Ok(QueryResponse { series })
-    }
-
-    async fn list_metrics(&self, run_id: &RunId) -> Result<Vec<Metric>, QueryError> {
-        Ok(self.metric_reader.list_metrics(run_id).await?)
     }
 }

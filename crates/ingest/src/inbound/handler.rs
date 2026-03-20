@@ -9,7 +9,7 @@ use crate::domain::service::IngestService;
 /// Transport-agnostic ingest handler.
 pub async fn handle_stream<S, T>(service: &Arc<S>, transport: &T)
 where
-    S: IngestService + Send + Sync + 'static,
+    S: IngestService,
     T: Transport<AckResult, WireBatch>,
 {
     loop {
