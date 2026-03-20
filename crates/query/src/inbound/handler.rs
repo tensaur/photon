@@ -6,7 +6,7 @@ use photon_transport::ports::{Transport, TransportError};
 use crate::domain::service::{QueryService, dispatch};
 
 /// Transport-agnostic query handler.
-pub async fn handle_request<S, T>(service: &Arc<S>, transport: &T)
+pub async fn handle<S, T>(service: &Arc<S>, transport: &T)
 where
     S: QueryService,
     T: Transport<QueryResult, QueryMessage>,

@@ -16,7 +16,7 @@ use crate::domain::error::{TransportError, UplinkError};
 use crate::domain::service::{Service, UplinkService};
 
 pub fn run_uplink_thread(
-    transport: TransportChoice,
+    mut transport: TransportChoice,
     endpoint: String,
     run_id: RunId,
     wal: WalManagerChoice,

@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 
-use crate::ports::{Transport, TransportError};
+use crate::ports::{MaybeSend, MaybeSync, Transport, TransportError};
 
 struct TcpConnection {
     write: BufWriter<OwnedWriteHalf>,
@@ -16,7 +16,7 @@ struct TcpConnection {
 
 /// TCP transport adapter using length-prefixed frames.
 pub struct TcpTransport<C> {
-    codec: C,
+    pub(crate) codec: C,
     conn: Arc<Mutex<Option<TcpConnection>>>,
 }
 
@@ -30,7 +30,7 @@ impl<C: Clone> Clone for TcpTransport<C> {
 }
 
 impl<C> TcpTransport<C> {
-    /// Create an unconnected transport. Call `connect()` before use.
+    /// Create an unconnected transport. Call `connect` before use.
     pub fn new(codec: C) -> Self {
         Self {
             codec,
@@ -38,8 +38,8 @@ impl<C> TcpTransport<C> {
         }
     }
 
-    /// Wrap an already-accepted TCP stream. Ready to use immediately.
-    pub fn from_stream(stream: TcpStream, codec: C) -> Self {
+    /// Wrap an already-accepted TCP stream.
+    pub fn accept(stream: TcpStream, codec: C) -> Self {
         stream.set_nodelay(true).ok();
         let (read, write) = stream.into_split();
 
@@ -72,9 +72,9 @@ impl<C> TcpTransport<C> {
 
 impl<S, R, C> Transport<S, R> for TcpTransport<C>
 where
-    S: Send + Sync + 'static,
-    R: Send + 'static,
-    C: Codec<S> + Codec<R> + Send + Sync + Clone + 'static,
+    S: MaybeSend + MaybeSync + 'static,
+    R: MaybeSend + 'static,
+    C: Codec<S> + Codec<R> + MaybeSend + MaybeSync + Clone + 'static,
 {
     async fn send(&self, msg: &S) -> Result<(), TransportError> {
         let mut buf = BytesMut::new();

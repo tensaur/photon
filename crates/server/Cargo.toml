@@ -14,7 +14,6 @@ name = "wire"
 path = "examples/wire.rs"
 
 [dependencies]
-photon-core = { path = "../core" }
 photon-protocol = { path = "../protocol" }
 photon-store = { path = "../store" }
 photon-downsample = { path = "../downsample" }
@@ -22,10 +21,16 @@ photon-ingest = { path = "../ingest" }
 photon-query = { path = "../query" }
 photon-transport = { path = "../transport" }
 photon-hook = { path = "../hook" }
-photon = { path = "../sdk" }
 
 tokio.workspace = true
-tokio-stream.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+axum = { workspace = true, optional = true }
+rust-embed = { workspace = true, optional = true, features = ["mime-guess"] }
+
+[dev-dependencies]
+photon = { path = "../sdk" }
+
+[features]
+dashboard = ["axum", "rust-embed"]

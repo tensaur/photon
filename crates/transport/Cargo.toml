@@ -7,12 +7,21 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-photon-core = { path = "../core", version = "0.0.0" }
 photon-protocol = { path = "../protocol", version = "0.0.0" }
 
+async-channel.workspace = true
 bytes.workspace = true
+futures-util.workspace = true
 reqwest.workspace = true
-serde.workspace = true
-tokio.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
+tracing.workspace = true
+httparse.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-net.workspace = true
+wasm-bindgen-futures.workspace = true

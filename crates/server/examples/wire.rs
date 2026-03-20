@@ -10,7 +10,7 @@ use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecChoice;
-use photon_protocol::compressor::zstd::ZstdCompressor;
+use photon_protocol::compressor::CompressorChoice;
 use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
 use photon_transport::tcp::TcpTransport;
@@ -23,12 +23,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let watermark_store = InMemoryWatermarkStore::new();
     let metric_store = InMemoryMetricStore::new();
-    let compressor = ZstdCompressor::default();
     let ingest_service = Arc::new(IngestService::new(
         watermark_store,
         metric_store,
         NoOpHook,
-        compressor,
+        CompressorChoice::default(),
         CodecChoice::default(),
     ));
 
@@ -38,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         loop {
             let (stream, _) = listener.accept().await.expect("accept failed");
-            let transport = TcpTransport::from_stream(stream, wire_codec.clone());
+            let transport = TcpTransport::accept(stream, wire_codec.clone());
             let service = Arc::clone(&ingest_service);
 
             tokio::spawn(async move {
