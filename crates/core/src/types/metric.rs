@@ -45,6 +45,10 @@ impl Metric {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn leaf_name(&self) -> &str {
+        self.0.rsplit('/').next().unwrap_or(&self.0)
+    }
 }
 
 impl<'de> Deserialize<'de> for Metric {

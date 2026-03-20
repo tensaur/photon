@@ -5,7 +5,9 @@ use uuid::Uuid;
 
 macro_rules! define_id {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(
+            Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+        )]
         pub struct $name(Uuid);
 
         impl $name {
@@ -49,6 +51,13 @@ macro_rules! define_id {
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}", self.0)
+            }
+        }
+
+        impl $name {
+            /// First 8 hex characters of the UUID for compact display.
+            pub fn short(&self) -> String {
+                self.0.simple().to_string()[..8].to_owned()
             }
         }
     };
