@@ -16,7 +16,10 @@ use photon_store::memory::bucket::InMemoryBucketStore;
 use photon_store::memory::compaction::InMemoryCompactionCursor;
 use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
-use photon_transport::tcp::TcpTransport;
+use photon_transport::{TransportChoice, serve};
+
+#[cfg(feature = "dashboard")]
+mod dashboard;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +31,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ingest_addr = "[::1]:50051";
     let query_addr = "[::1]:50052";
-    let wire_codec = CodecChoice::default();
 
     // Shared stores
     let metric_store = InMemoryMetricStore::new();
@@ -54,49 +56,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         TierSelector::default(),
     ));
 
-    // Ingest listener
+    // Ingest (TCP)
     let ingest_listener = TcpListener::bind(ingest_addr).await?;
     tracing::info!("ingest listening on {ingest_addr}");
 
-    let ingest_wire = wire_codec.clone();
-    let ingest_svc = Arc::clone(&ingest_service);
-    tokio::spawn(async move {
-        loop {
-            let (stream, peer) = ingest_listener.accept().await.expect("accept failed");
-            tracing::debug!("ingest connection from {peer}");
+    tokio::spawn(serve(
+        ingest_listener,
+        TransportChoice::tcp(CodecChoice::default()),
+        ingest_service,
+        |svc, t| async move { ingest_handler::handle_stream(&svc, &t).await },
+    ));
 
-            let transport = TcpTransport::from_stream(stream, ingest_wire.clone());
-            let service = Arc::clone(&ingest_svc);
-
-            tokio::spawn(async move {
-                ingest_handler::handle_stream(&service, &transport).await;
-                tracing::debug!("ingest connection from {peer} closed");
-            });
-        }
-    });
-
-    // Query listener
+    // Query (HTTP)
     let query_listener = TcpListener::bind(query_addr).await?;
-    tracing::info!("query listening on {query_addr}");
+    tracing::info!("query listening on http://{query_addr}/query");
 
-    let query_wire = wire_codec.clone();
-    let query_svc = Arc::clone(&query_service);
-    tokio::spawn(async move {
-        loop {
-            let (stream, peer) = query_listener.accept().await.expect("accept failed");
-            tracing::debug!("query connection from {peer}");
+    tokio::spawn(serve(
+        query_listener,
+        TransportChoice::http(CodecChoice::default()),
+        query_service,
+        |svc, t| async move { query_handler::handle(&svc, &t).await },
+    ));
 
-            let transport = TcpTransport::from_stream(stream, query_wire.clone());
-            let service = Arc::clone(&query_svc);
+    // Dashboard
+    #[cfg(feature = "dashboard")]
+    {
+        let dashboard_listener = TcpListener::bind("[::1]:50053").await?;
+        tracing::info!("dashboard at http://[::1]:50053");
+        tokio::spawn(dashboard::serve(dashboard_listener));
+    }
 
-            tokio::spawn(async move {
-                query_handler::handle_request(&service, &transport).await;
-                tracing::debug!("query connection from {peer} closed");
-            });
-        }
-    });
-
-    // Wait for shutdown
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");
 
