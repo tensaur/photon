@@ -2,111 +2,40 @@ pub mod disk;
 pub mod memory;
 pub mod ports;
 
-pub use self::disk::{DiskWalAppender, DiskWalConfig, DiskWalManager, open_disk_wal};
+pub use self::disk::{
+    DiskWalAppender, DiskWalConfig, DiskWalManager, default_wal_dir, open_disk_wal,
+};
 pub use self::memory::{InMemoryWalAppender, InMemoryWalManager, open_in_memory_wal};
-pub use self::ports::{WalAppender, WalError, WalManager};
+pub use self::ports::{Wal, WalAppender, WalError};
 
-use photon_core::types::batch::WireBatch;
-use photon_core::types::config::WalMeta;
+use std::path::Path;
+
 use photon_core::types::id::RunId;
-use photon_core::types::sequence::SequenceNumber;
 
-pub enum WalChoice {
+/// WAL backend selection. Call [`open`](Self::open) to create appender and manager.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum WalKind {
+    #[default]
     Disk,
     Memory,
 }
 
-impl WalChoice {
+impl WalKind {
     pub fn open(
-        &self,
-        wal_dir: Option<&std::path::Path>,
+        self,
+        dir: Option<&Path>,
         run_id: RunId,
-    ) -> Result<(WalAppenderChoice, WalManagerChoice), WalError> {
+        config: DiskWalConfig,
+    ) -> Result<(Box<dyn WalAppender>, Box<dyn Wal>), WalError> {
         match self {
+            Self::Disk => {
+                let (a, m) = open_disk_wal(dir, run_id, config)?;
+                Ok((Box::new(a), Box::new(m)))
+            }
             Self::Memory => {
                 let (a, m) = open_in_memory_wal();
-                Ok((WalAppenderChoice::Memory(a), WalManagerChoice::Memory(m)))
+                Ok((Box::new(a), Box::new(m)))
             }
-            Self::Disk => {
-                let (a, m) = open_disk_wal(wal_dir, run_id, DiskWalConfig::default())?;
-                Ok((WalAppenderChoice::Disk(a), WalManagerChoice::Disk(m)))
-            }
-        }
-    }
-
-    pub fn close(
-        &self,
-        wal_dir: Option<&std::path::Path>,
-        run_id: RunId,
-    ) -> Result<(), WalError> {
-        match self {
-            Self::Memory => Ok(()),
-            Self::Disk => {
-                let dir = wal_dir
-                    .map(|d| d.join(run_id.to_string()))
-                    .unwrap_or_else(|| disk::default_wal_dir(&run_id));
-                if dir.exists() {
-                    std::fs::remove_dir_all(&dir)?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-pub enum WalAppenderChoice {
-    Disk(DiskWalAppender),
-    Memory(InMemoryWalAppender),
-}
-
-#[derive(Clone)]
-pub enum WalManagerChoice {
-    Disk(DiskWalManager),
-    Memory(InMemoryWalManager),
-}
-
-impl WalAppender for WalAppenderChoice {
-    fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
-        match self {
-            Self::Disk(inner) => inner.append(batch),
-            Self::Memory(inner) => inner.append(batch),
-        }
-    }
-}
-
-impl WalManager for WalManagerChoice {
-    fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError> {
-        match self {
-            Self::Disk(inner) => inner.truncate_through(sequence),
-            Self::Memory(inner) => inner.truncate_through(sequence),
-        }
-    }
-
-    fn sync(&self) -> Result<(), WalError> {
-        match self {
-            Self::Disk(inner) => inner.sync(),
-            Self::Memory(inner) => inner.sync(),
-        }
-    }
-
-    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
-        match self {
-            Self::Disk(inner) => inner.read_from(sequence),
-            Self::Memory(inner) => inner.read_from(sequence),
-        }
-    }
-
-    fn read_meta(&self) -> Result<WalMeta, WalError> {
-        match self {
-            Self::Disk(inner) => inner.read_meta(),
-            Self::Memory(inner) => inner.read_meta(),
-        }
-    }
-
-    fn delete_all(&mut self) -> Result<(), WalError> {
-        match self {
-            Self::Disk(inner) => inner.delete_all(),
-            Self::Memory(inner) => inner.delete_all(),
         }
     }
 }

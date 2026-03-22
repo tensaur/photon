@@ -1,157 +1,102 @@
-use std::sync::Mutex;
-
 use async_channel::{Receiver, Sender};
-use bytes::BytesMut;
-use photon_protocol::ports::codec::Codec;
+use async_trait::async_trait;
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::io::{AsyncRead, AsyncWrite};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::net::TcpStream;
 
-use crate::ports::{MaybeSend, MaybeSync, Transport, TransportError};
+use crate::ports::{ByteTransport, TransportError};
 
 const CHANNEL_CAPACITY: usize = 64;
 
-struct WsConnection {
+/// WebSocket transport backed by async channels.
+#[derive(Clone)]
+pub struct WebSocketTransport {
     outgoing: Sender<Vec<u8>>,
     incoming: Receiver<Result<Vec<u8>, String>>,
 }
 
-/// WebSocket transport backed by async channels.
-pub struct WebSocketTransport<C> {
-    pub(crate) codec: C,
-    conn: Mutex<Option<WsConnection>>,
-}
-
-impl<C: Clone> Clone for WebSocketTransport<C> {
-    fn clone(&self) -> Self {
-        let conn = self.conn.lock().unwrap();
-        Self {
-            codec: self.codec.clone(),
-            conn: Mutex::new(conn.as_ref().map(|c| WsConnection {
-                outgoing: c.outgoing.clone(),
-                incoming: c.incoming.clone(),
-            })),
-        }
-    }
-}
-
-impl<C> WebSocketTransport<C> {
-    /// Create an unconnected WebSocket transport.
-    pub fn new(codec: C) -> Self {
-        Self {
-            codec,
-            conn: Mutex::new(None),
-        }
-    }
-
-    fn set_conn(&self, outgoing: Sender<Vec<u8>>, incoming: Receiver<Result<Vec<u8>, String>>) {
-        *self.conn.lock().unwrap() = Some(WsConnection { outgoing, incoming });
-    }
-
+impl WebSocketTransport {
     /// Create a transport from pre-built channels.
     pub fn from_channels(
-        codec: C,
         outgoing: Sender<Vec<u8>>,
         incoming: Receiver<Result<Vec<u8>, String>>,
     ) -> Self {
-        Self {
-            codec,
-            conn: Mutex::new(Some(WsConnection { outgoing, incoming })),
-        }
+        Self { outgoing, incoming }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn connect(&self, url: &str) -> Result<(), TransportError> {
+    pub async fn connect(url: &str) -> Result<Self, TransportError> {
         let (ws, _) = tokio_tungstenite::connect_async(url)
             .await
             .map_err(|e| TransportError::Connection(e.to_string()))?;
 
         let (outgoing, incoming) = spawn_native_bridge(ws);
-        self.set_conn(outgoing, incoming);
-        Ok(())
+        Ok(Self { outgoing, incoming })
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn connect(&self, url: &str) -> Result<(), TransportError> {
+    pub async fn connect(url: &str) -> Result<Self, TransportError> {
         use gloo_net::websocket::futures::WebSocket;
-
         let ws = WebSocket::open(url).map_err(|e| TransportError::Connection(e.to_string()))?;
 
         let (outgoing, incoming) = spawn_wasm_bridge(ws);
-        self.set_conn(outgoing, incoming);
-        Ok(())
+        Ok(Self { outgoing, incoming })
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn accept(stream: tokio::net::TcpStream, codec: C) -> Result<Self, TransportError> {
+    pub async fn accept(stream: TcpStream) -> Result<Self, TransportError> {
         let ws = tokio_tungstenite::accept_async(stream)
             .await
             .map_err(|e| TransportError::Connection(e.to_string()))?;
 
         let (outgoing, incoming) = spawn_native_bridge(ws);
-        Ok(Self {
-            codec,
-            conn: Mutex::new(Some(WsConnection { outgoing, incoming })),
-        })
+        Ok(Self { outgoing, incoming })
     }
 }
 
-impl<S, R, C> Transport<S, R> for WebSocketTransport<C>
-where
-    S: MaybeSend + MaybeSync + 'static,
-    R: MaybeSend + 'static,
-    C: Codec<S> + Codec<R> + MaybeSend + MaybeSync + Clone + 'static,
-{
-    async fn send(&self, msg: &S) -> Result<(), TransportError> {
-        let mut buf = BytesMut::new();
-        Codec::<S>::encode(&self.codec, msg, &mut buf)
-            .map_err(|e| TransportError::Request(e.to_string()))?;
-
-        let outgoing = {
-            let guard = self.conn.lock().unwrap();
-            guard
-                .as_ref()
-                .ok_or_else(|| TransportError::Connection("not connected".into()))?
-                .outgoing
-                .clone()
-        };
-
-        outgoing
-            .send(buf.to_vec())
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl ByteTransport for WebSocketTransport {
+    async fn send_bytes(&self, bytes: &[u8]) -> Result<(), TransportError> {
+        self.outgoing
+            .send(bytes.to_vec())
             .await
             .map_err(|_| TransportError::StreamClosed("outgoing channel closed".into()))
     }
 
-    async fn recv(&self) -> Result<R, TransportError> {
-        let incoming = {
-            let guard = self.conn.lock().unwrap();
-            guard
-                .as_ref()
-                .ok_or_else(|| TransportError::Connection("not connected".into()))?
-                .incoming
-                .clone()
-        };
-
-        let data = incoming
+    async fn recv_bytes(&self) -> Result<Vec<u8>, TransportError> {
+        self.incoming
             .recv()
             .await
             .map_err(|_| TransportError::StreamClosed("incoming channel closed".into()))?
-            .map_err(TransportError::StreamClosed)?;
-
-        Codec::<R>::decode(&self.codec, &data).map_err(|e| TransportError::Request(e.to_string()))
+            .map_err(TransportError::StreamClosed)
     }
 }
 
+fn bridge_channels() -> (
+    Sender<Vec<u8>>,
+    Receiver<Vec<u8>>,
+    Sender<Result<Vec<u8>, String>>,
+    Receiver<Result<Vec<u8>, String>>,
+) {
+    let (out_tx, out_rx) = async_channel::bounded(CHANNEL_CAPACITY);
+    let (in_tx, in_rx) = async_channel::bounded(CHANNEL_CAPACITY);
+    (out_tx, out_rx, in_tx, in_rx)
+}
+
+/// Bridge a native (tokio) WebSocket to async channels.
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn_native_bridge<S>(
     ws: tokio_tungstenite::WebSocketStream<S>,
 ) -> (Sender<Vec<u8>>, Receiver<Result<Vec<u8>, String>>)
 where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message;
 
-    let (out_tx, out_rx) = async_channel::bounded::<Vec<u8>>(CHANNEL_CAPACITY);
-    let (in_tx, in_rx) = async_channel::bounded::<Result<Vec<u8>, String>>(CHANNEL_CAPACITY);
-
+    let (out_tx, out_rx, in_tx, in_rx) = bridge_channels();
     let (mut sink, mut stream) = ws.split();
 
     tokio::spawn(async move {
@@ -184,6 +129,7 @@ where
     (out_tx, in_rx)
 }
 
+/// Bridge a WASM (gloo-net) WebSocket to async channels.
 #[cfg(target_arch = "wasm32")]
 fn spawn_wasm_bridge(
     ws: gloo_net::websocket::futures::WebSocket,
@@ -191,9 +137,7 @@ fn spawn_wasm_bridge(
     use futures_util::{SinkExt, StreamExt};
     use gloo_net::websocket::Message;
 
-    let (out_tx, out_rx) = async_channel::bounded::<Vec<u8>>(CHANNEL_CAPACITY);
-    let (in_tx, in_rx) = async_channel::bounded::<Result<Vec<u8>, String>>(CHANNEL_CAPACITY);
-
+    let (out_tx, out_rx, in_tx, in_rx) = bridge_channels();
     let (mut sink, mut stream) = ws.split();
 
     wasm_bindgen_futures::spawn_local(async move {

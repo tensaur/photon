@@ -1,24 +1,26 @@
 pub mod adapter;
+pub mod codec;
 pub mod ports;
 
-pub use adapter::TransportChoice;
+pub use adapter::TransportKind;
 pub use adapter::http;
 #[cfg(not(target_arch = "wasm32"))]
 pub use adapter::tcp;
 pub use adapter::websocket;
-pub use ports::{MaybeSend, MaybeSync};
+pub use ports::{ByteTransport, Transport};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::future::Future;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Arc;
 
 /// Accept connections and dispatch each to a handler.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn serve<S, H, Fut>(
-    listener: tokio::net::TcpListener,
-    transport: TransportChoice,
-    service: std::sync::Arc<S>,
-    handler: H,
-) where
+pub async fn serve<S, F, Fut>(listener: tokio::net::TcpListener, service: Arc<S>, on_connection: F)
+where
     S: Send + Sync + 'static,
-    H: Fn(std::sync::Arc<S>, TransportChoice) -> Fut + Send + Sync + Clone + 'static,
-    Fut: std::future::Future<Output = ()> + Send,
+    F: Fn(Arc<S>, tokio::net::TcpStream) -> Fut + Send + Sync + Clone + 'static,
+    Fut: Future<Output = ()> + Send,
 {
     loop {
         let (stream, peer) = match listener.accept().await {
@@ -29,15 +31,12 @@ pub async fn serve<S, H, Fut>(
             }
         };
 
-        let transport = transport.clone();
         let service = service.clone();
-        let handler = handler.clone();
+        let on_connection = on_connection.clone();
 
         tokio::spawn(async move {
-            match transport.accept(stream).await {
-                Ok(t) => handler(service, t).await,
-                Err(e) => tracing::warn!("transport error from {peer}: {e}"),
-            }
+            tracing::trace!("accepted connection from {peer}");
+            on_connection(service, stream).await;
         });
     }
 }

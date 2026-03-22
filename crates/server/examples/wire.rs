@@ -9,10 +9,11 @@ use tokio::net::TcpListener;
 use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
-use photon_protocol::codec::CodecChoice;
-use photon_protocol::compressor::CompressorChoice;
+use photon_protocol::codec::CodecKind;
+use photon_protocol::compressor::CompressorKind;
 use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
+use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
 
 #[tokio::main]
@@ -21,23 +22,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = listener.local_addr()?;
     println!("Server listening on {addr}");
 
+    let codec = CodecKind::default();
+    let compressor = CompressorKind::default();
+
     let watermark_store = InMemoryWatermarkStore::new();
     let metric_store = InMemoryMetricStore::new();
+
     let ingest_service = Arc::new(IngestService::new(
         watermark_store,
         metric_store,
         NoOpHook,
-        CompressorChoice::default(),
-        CodecChoice::default(),
+        compressor,
+        codec,
     ));
-
-    let wire_codec = CodecChoice::default();
 
     // Spawn server in background
     tokio::spawn(async move {
         loop {
             let (stream, _) = listener.accept().await.expect("accept failed");
-            let transport = TcpTransport::accept(stream, wire_codec.clone());
+            let bt = TcpTransport::accept(stream);
+            let transport = CodecTransport::new(codec, bt);
             let service = Arc::clone(&ingest_service);
 
             tokio::spawn(async move {

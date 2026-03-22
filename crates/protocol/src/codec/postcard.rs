@@ -4,7 +4,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::ports::codec::{Codec, CodecError};
 
 /// Serde-based codec using postcard's compact binary format.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct PostcardCodec;
 
 impl<T> Codec<T> for PostcardCodec

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use tokio::sync::oneshot;
@@ -10,11 +11,12 @@ use photon_batch::run_batch_thread;
 use photon_core::types::config::{BatchConfig, UplinkConfig};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
-use photon_protocol::codec::CodecChoice;
-use photon_protocol::compressor::CompressorChoice;
-use photon_transport::TransportChoice;
-use photon_uplink::run_uplink_thread;
-use photon_wal::{WalChoice, WalManager};
+use photon_protocol::codec::CodecKind;
+use photon_protocol::compressor::CompressorKind;
+use photon_transport::TransportKind;
+use photon_transport::codec::CodecTransport;
+use photon_uplink::{TransportError as UplinkTransportError, UplinkThreadError, run_uplink};
+use photon_wal::{DiskWalConfig, Wal, WalKind};
 
 use crate::accumulator::Accumulator;
 use crate::error::StartError;
@@ -29,13 +31,13 @@ use crate::run::{Run, UplinkHandle};
 pub struct RunBuilder {
     run_id: Option<RunId>,
     wal_dir: Option<PathBuf>,
-    wal: WalChoice,
+    wal: WalKind,
     channel_capacity: usize,
     batch: BatchConfig,
     endpoint: Option<String>,
-    transport: TransportChoice,
-    codec: CodecChoice,
-    compressor: CompressorChoice,
+    transport: TransportKind,
+    codec: CodecKind,
+    compressor: CompressorKind,
 }
 
 impl Default for RunBuilder {
@@ -43,19 +45,18 @@ impl Default for RunBuilder {
         Self {
             run_id: None,
             wal_dir: None,
-            wal: WalChoice::Disk,
+            wal: WalKind::default(),
             channel_capacity: 65_536,
             batch: BatchConfig::default(),
             endpoint: None,
-            transport: TransportChoice::default(),
-            codec: CodecChoice::default(),
-            compressor: CompressorChoice::default(),
+            transport: TransportKind::default(),
+            codec: CodecKind::default(),
+            compressor: CompressorKind::default(),
         }
     }
 }
 
 impl RunBuilder {
-    /// Use a specific run ID instead of generating one.
     pub fn run_id(mut self, id: RunId) -> Self {
         self.run_id = Some(id);
         self
@@ -66,12 +67,11 @@ impl RunBuilder {
         self
     }
 
-    pub fn wal(mut self, wal: WalChoice) -> Self {
+    pub fn wal(mut self, wal: WalKind) -> Self {
         self.wal = wal;
         self
     }
 
-    /// Maximum points per batch before a flush is triggered.
     pub fn max_points_per_batch(mut self, n: usize) -> Self {
         self.batch.max_points = n;
         self
@@ -87,38 +87,37 @@ impl RunBuilder {
         self
     }
 
-    pub fn codec(mut self, codec: CodecChoice) -> Self {
+    pub fn codec(mut self, codec: CodecKind) -> Self {
         self.codec = codec;
         self
     }
 
-    pub fn compressor(mut self, compressor: CompressorChoice) -> Self {
+    pub fn compressor(mut self, compressor: CompressorKind) -> Self {
         self.compressor = compressor;
         self
     }
 
-    /// Select the transport adapter. Defaults to TCP.
-    pub fn transport(mut self, transport: TransportChoice) -> Self {
+    pub fn transport(mut self, transport: TransportKind) -> Self {
         self.transport = transport;
         self
     }
 
-    /// Connect to a remote photon server for metric ingestion.
     pub fn endpoint(mut self, url: impl Into<String>) -> Self {
         self.endpoint = Some(url.into());
         self
     }
 
-    /// Pick adapters and start the pipeline.
     pub fn start(self) -> Result<Run, StartError> {
         let run_id = self.run_id.unwrap_or_default();
 
-        let (wal_appender, wal_manager) = self.wal.open(self.wal_dir.as_deref(), run_id)?;
+        let (wal_appender, wal) =
+            self.wal
+                .open(self.wal_dir.as_deref(), run_id, DiskWalConfig::default())?;
 
         let interner = Arc::new(ThreadedRodeo::default());
         let (accumulator, rx) = Accumulator::new(self.channel_capacity);
 
-        let start_sequence = wal_manager
+        let start_sequence = wal
             .read_from(SequenceNumber::ZERO)
             .ok()
             .and_then(|batches: Vec<_>| batches.last().map(|b| b.sequence_number.next()))
@@ -126,8 +125,9 @@ impl RunBuilder {
 
         let (batch_tx, batch_rx) = crossbeam_channel::bounded(64);
 
+        let codec = self.codec;
         let batch_interner = Arc::clone(&interner);
-        let batch_handle = std::thread::Builder::new()
+        let batch_handle = thread::Builder::new()
             .name(format!("photon-batch-{run_id}"))
             .spawn(move || {
                 run_batch_thread(
@@ -144,22 +144,38 @@ impl RunBuilder {
             })
             .expect("failed to spawn batch thread");
 
-        let uplink_wal = wal_manager;
         let uplink_handle = self.endpoint.map(|endpoint| {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
+            let uplink_wal = wal.clone();
+            let uplink_config = UplinkConfig::default();
+            let transport_kind = self.transport;
 
-            let handle = std::thread::Builder::new()
+            let handle = thread::Builder::new()
                 .name(format!("photon-uplink-{run_id}"))
                 .spawn(move || {
-                    run_uplink_thread(
-                        self.transport,
-                        endpoint,
-                        run_id,
-                        uplink_wal,
-                        UplinkConfig::default(),
-                        shutdown_rx,
-                        batch_rx,
-                    )
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .map_err(UplinkThreadError::Runtime)?;
+
+                    rt.block_on(async {
+                        let bt = transport_kind
+                            .connect(&endpoint)
+                            .await
+                            .map_err(UplinkTransportError::from)?;
+
+                        let transport = CodecTransport::new(codec, bt);
+
+                        run_uplink(
+                            transport,
+                            run_id,
+                            uplink_wal,
+                            uplink_config,
+                            shutdown_rx,
+                            batch_rx,
+                        )
+                        .await
+                    })
                 })
                 .expect("failed to spawn uplink thread");
 
@@ -175,8 +191,7 @@ impl RunBuilder {
             interner,
             batch_handle,
             uplink_handle,
-            self.wal,
-            self.wal_dir,
+            wal,
         ))
     }
 }
