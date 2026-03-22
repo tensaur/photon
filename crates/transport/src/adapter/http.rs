@@ -6,7 +6,10 @@ use reqwest::Client;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 #[cfg(not(target_arch = "wasm32"))]
-use tokio::net::{TcpStream, tcp::{OwnedReadHalf, OwnedWriteHalf}};
+use tokio::net::{
+    TcpStream,
+    tcp::{OwnedReadHalf, OwnedWriteHalf},
+};
 
 use crate::ports::{ByteTransport, TransportError};
 

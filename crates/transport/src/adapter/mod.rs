@@ -4,9 +4,9 @@ pub mod websocket;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tcp;
 
+use self::http::HttpTransport;
 #[cfg(not(target_arch = "wasm32"))]
 use self::tcp::TcpTransport;
-use self::http::HttpTransport;
 use self::websocket::WebSocketTransport;
 use crate::ports::{ByteTransport, TransportError};
 
