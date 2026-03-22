@@ -59,6 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .endpoint(endpoint)
             .max_points_per_batch(10_000)
             .channel_capacity(1_000_000)
+            .compressor(compressor)
+            .codec(codec)
             .start()
             .expect("failed to start run");
 
