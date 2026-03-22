@@ -26,6 +26,21 @@ impl Default for CompressorKind {
     }
 }
 
+impl CompressorKind {
+    pub fn name(&self) -> &'static str {
+        Compressor::name(self)
+    }
+
+    pub fn all_variants() -> Vec<Self> {
+        vec![
+            Self::Zstd { level: 3 },
+            Self::Lz4,
+            Self::Brotli { quality: 4 },
+            Self::Noop,
+        ]
+    }
+}
+
 impl Compressor for CompressorKind {
     fn compress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
         match self {

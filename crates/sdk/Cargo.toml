@@ -10,10 +10,6 @@ repository.workspace = true
 name = "rust_api"
 path = "examples/rust_api.rs"
 
-[[example]]
-name = "with_server"
-path = "examples/with_server.rs"
-
 [dependencies]
 photon-core = { path = "../core", version = "0.0.0" }
 photon-protocol = { path = "../protocol", version = "0.0.0" }
@@ -28,3 +24,10 @@ tokio.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
+
+[lib]
+bench = false
+
+[[bench]]
+name = "throughput"
+harness = false

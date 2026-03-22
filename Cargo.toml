@@ -62,3 +62,4 @@ tracing-web = "0.1"
 httparse = "1"
 async-trait = "0.1"
 dyn-clone = "1"
+criterion = { version = "0.5", features = ["html_reports"] }

@@ -13,6 +13,18 @@ pub enum CodecKind {
     Postcard,
 }
 
+impl CodecKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Postcard => "postcard",
+        }
+    }
+
+    pub fn all_variants() -> Vec<Self> {
+        vec![Self::Postcard]
+    }
+}
+
 impl<T> Codec<T> for CodecKind
 where
     T: Serialize + DeserializeOwned + Send + Sync,
