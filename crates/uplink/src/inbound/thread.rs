@@ -4,9 +4,9 @@ use photon_core::types::ack::AckResult;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::UplinkConfig;
 use photon_core::types::id::RunId;
-use photon_transport::TransportChoice;
+use photon_core::types::sequence::SequenceNumber;
 use photon_transport::ports::Transport;
-use photon_wal::WalManagerChoice;
+use photon_wal::Wal;
 use tokio::sync::oneshot;
 
 use super::state::{ConnectionState, ReconnectResult, try_reconnect};
@@ -15,107 +15,101 @@ use crate::domain::ack::UplinkStats;
 use crate::domain::error::{TransportError, UplinkError};
 use crate::domain::service::{Service, UplinkService};
 
-pub fn run_uplink_thread(
-    mut transport: TransportChoice,
-    endpoint: String,
+/// Run the uplink event loop. The transport must already be connected.
+pub async fn run_uplink<T, M>(
+    transport: T,
     run_id: RunId,
-    wal: WalManagerChoice,
+    wal: M,
     config: UplinkConfig,
     mut shutdown_rx: oneshot::Receiver<()>,
     batch_rx: crossbeam_channel::Receiver<WireBatch>,
-) -> Result<UplinkStats, UplinkThreadError> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(UplinkThreadError::Runtime)?;
+) -> Result<UplinkStats, UplinkThreadError>
+where
+    T: Transport<WireBatch, AckResult> + Transport<RunId, SequenceNumber>,
+    M: Wal + Clone,
+{
+    let mut service = Service::new(transport.clone(), wal.clone(), run_id);
+    service.recover().await?;
 
-    rt.block_on(async move {
-        transport
-            .connect(&endpoint)
-            .await
-            .map_err(TransportError::from)?;
+    let mut conn = ConnectionState::new(&config);
+    let tick_interval = config.idle_poll_interval;
+    let mut shutdown_signaled = false;
 
-        let mut service = Service::new(transport.clone(), wal.clone(), run_id);
-        service.recover().await?;
+    loop {
+        let batch = batch_rx.try_recv().ok();
 
-        let mut conn = ConnectionState::new(&config);
-        let tick_interval = config.idle_poll_interval;
-        let mut shutdown_signaled = false;
+        if !shutdown_signaled {
+            shutdown_signaled = !matches!(
+                shutdown_rx.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            );
+        }
 
-        loop {
-            let batch = batch_rx.try_recv().ok();
+        let had_work = batch.is_some() || shutdown_signaled;
 
-            if !shutdown_signaled {
-                shutdown_signaled = !matches!(
-                    shutdown_rx.try_recv(),
-                    Err(oneshot::error::TryRecvError::Empty)
-                );
+        if conn.is_shutdown() {
+            return Ok(service.stats());
+        }
+
+        if let Some(attempt) = conn.reconnect_due() {
+            match try_reconnect(&wal, &transport, conn.oldest_in_flight()).await {
+                ReconnectResult::Ok => conn.reconnected(),
+                ReconnectResult::Failed => conn.schedule_next_reconnect(attempt),
             }
 
-            let had_work = batch.is_some() || shutdown_signaled;
+            continue;
+        }
 
-            if conn.is_shutdown() {
-                return Ok(service.stats());
-            }
-
-            if let Some(attempt) = conn.reconnect_due() {
-                match try_reconnect(&wal, &transport, conn.oldest_in_flight()).await {
-                    ReconnectResult::Ok => conn.reconnected(),
-                    ReconnectResult::Failed => conn.schedule_next_reconnect(attempt),
-                }
-                continue;
-            }
-
-            if let Some(batch) = batch {
-                if conn.can_send() {
-                    match service.send(&batch).await {
-                        Ok(()) => conn.record_sent(batch.sequence_number),
-                        Err(UplinkError::Transport(TransportError::ConnectionLost { .. })) => {
-                            conn.enter_reconnecting();
-                            continue;
-                        }
-                        Err(e) => return Err(e.into()),
+        if let Some(batch) = batch {
+            if conn.can_send() {
+                match service.send(&batch).await {
+                    Ok(()) => conn.record_sent(batch.sequence_number),
+                    Err(UplinkError::Transport(TransportError::ConnectionLost { .. })) => {
+                        conn.enter_reconnecting();
+                        continue;
                     }
+                    Err(e) => return Err(e.into()),
                 }
-            }
-
-            let recv = <TransportChoice as Transport<WireBatch, AckResult>>::recv(&transport);
-            match tokio::time::timeout(Duration::from_millis(1), recv).await {
-                Err(_) => {}
-                Ok(Ok(ack)) => {
-                    conn.record_acked(ack.sequence_number);
-                    service.handle_ack(ack)?;
-                }
-                Ok(Err(e)) => {
-                    let err: TransportError = e.into();
-                    match &err {
-                        TransportError::ConnectionLost { .. } => {
-                            conn.enter_reconnecting();
-                            continue;
-                        }
-                        _ => return Err(UplinkError::from(err).into()),
-                    }
-                }
-            }
-
-            if conn.check_timeouts().is_some() {
-                continue;
-            }
-
-            if shutdown_signaled {
-                if conn.in_flight_empty() {
-                    service.sync()?;
-                    conn.shutdown();
-                } else if let Some(elapsed) = conn.check_drain_timeout() {
-                    return Err(UplinkError::ShutdownTimeout(elapsed).into());
-                }
-            } else {
-                conn.reset_drain();
-            }
-
-            if !had_work {
-                tokio::time::sleep(tick_interval).await;
             }
         }
-    })
+
+        let recv = <T as Transport<WireBatch, AckResult>>::recv(&transport);
+
+        match tokio::time::timeout(Duration::from_millis(1), recv).await {
+            Err(_) => {}
+            Ok(Ok(ack)) => {
+                conn.record_acked(ack.sequence_number);
+                service.handle_ack(ack)?;
+            }
+            Ok(Err(e)) => {
+                let err: TransportError = e.into();
+                match &err {
+                    TransportError::ConnectionLost { .. } => {
+                        conn.enter_reconnecting();
+                        continue;
+                    }
+                    _ => return Err(UplinkError::from(err).into()),
+                }
+            }
+        }
+
+        if conn.check_timeouts().is_some() {
+            continue;
+        }
+
+        if shutdown_signaled {
+            if conn.in_flight_empty() {
+                service.sync()?;
+                conn.shutdown();
+            } else if let Some(elapsed) = conn.check_drain_timeout() {
+                return Err(UplinkError::ShutdownTimeout(elapsed).into());
+            }
+        } else {
+            conn.reset_drain();
+        }
+
+        if !had_work {
+            tokio::time::sleep(tick_interval).await;
+        }
+    }
 }

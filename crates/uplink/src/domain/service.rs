@@ -5,7 +5,7 @@ use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 use photon_transport::ports::Transport;
-use photon_wal::WalManager;
+use photon_wal::Wal;
 
 use super::ack::{AckTracker, UplinkStats};
 use super::error::{RecoveryError, TransportError, UplinkError};
@@ -21,7 +21,7 @@ pub trait UplinkService {
 pub struct Service<T, M>
 where
     T: Transport<WireBatch, AckResult>,
-    M: WalManager,
+    M: Wal + Clone,
 {
     transport: T,
     wal: M,
@@ -33,7 +33,7 @@ where
 impl<T, M> Service<T, M>
 where
     T: Transport<WireBatch, AckResult>,
-    M: WalManager,
+    M: Wal + Clone,
 {
     pub fn new(transport: T, wal: M, run_id: RunId) -> Self {
         Self {
@@ -49,7 +49,7 @@ where
 impl<T, M> UplinkService for Service<T, M>
 where
     T: Transport<WireBatch, AckResult> + Transport<RunId, SequenceNumber>,
-    M: WalManager,
+    M: Wal + Clone,
 {
     async fn recover(&mut self) -> Result<SequenceNumber, RecoveryError> {
         let meta = self.wal.read_meta()?;

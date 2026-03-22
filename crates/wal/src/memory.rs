@@ -5,7 +5,7 @@ use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
 use photon_core::types::sequence::SequenceNumber;
 
-use crate::ports::{WalAppender, WalError, WalManager};
+use crate::ports::{Wal, WalAppender, WalError};
 
 type SharedBatches = Arc<Mutex<BTreeMap<SequenceNumber, WireBatch>>>;
 
@@ -14,7 +14,7 @@ pub struct InMemoryWalAppender {
     batches: SharedBatches,
 }
 
-/// In-memory WAL manager for testing.
+/// In-memory WAL for testing.
 #[derive(Clone)]
 pub struct InMemoryWalManager {
     batches: SharedBatches,
@@ -44,7 +44,11 @@ impl WalAppender for InMemoryWalAppender {
     }
 }
 
-impl WalManager for InMemoryWalManager {
+impl Wal for InMemoryWalManager {
+    fn close(&self) -> Result<(), WalError> {
+        Ok(())
+    }
+
     fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError> {
         let mut batches = self.batches.lock().unwrap();
         let keep = batches.split_off(&sequence.next());

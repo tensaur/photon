@@ -12,7 +12,7 @@ pub(crate) mod segment;
 
 use self::segment::{Active, RECORD_OVERHEAD, Sealed, Segment};
 
-use crate::ports::{WalAppender, WalError, WalManager};
+use crate::ports::{Wal, WalAppender, WalError};
 
 #[derive(Clone, Debug)]
 pub struct DiskWalConfig {
@@ -261,7 +261,14 @@ impl DiskWalManager {
     }
 }
 
-impl WalManager for DiskWalManager {
+impl Wal for DiskWalManager {
+    fn close(&self) -> Result<(), WalError> {
+        if self.dir.exists() {
+            fs::remove_dir_all(&self.dir)?;
+        }
+        Ok(())
+    }
+
     fn truncate_through(&mut self, seq: SequenceNumber) -> Result<(), WalError> {
         *self.committed.lock().unwrap() = seq;
 

@@ -1,4 +1,4 @@
-use std::future::Future;
+use async_trait::async_trait;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
@@ -16,31 +16,43 @@ pub enum TransportError {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub trait MaybeSend: Send {}
-#[cfg(not(target_arch = "wasm32"))]
-impl<T: Send> MaybeSend for T {}
+impl TransportError {
+    pub(crate) fn from_io(e: std::io::Error) -> Self {
+        use std::io::ErrorKind;
+        match e.kind() {
+            ErrorKind::UnexpectedEof
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe => Self::StreamClosed(e.to_string()),
+            _ => Self::Connection(e.to_string()),
+        }
+    }
+}
 
-#[cfg(target_arch = "wasm32")]
-pub trait MaybeSend {}
-#[cfg(target_arch = "wasm32")]
-impl<T> MaybeSend for T {}
+/// Byte-level transport port — adapters implement only framing.
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait ByteTransport: Send + Sync + 'static {
+    async fn send_bytes(&self, bytes: &[u8]) -> Result<(), TransportError>;
+    async fn recv_bytes(&self) -> Result<Vec<u8>, TransportError>;
+}
 
-#[cfg(not(target_arch = "wasm32"))]
-pub trait MaybeSync: Sync {}
-#[cfg(not(target_arch = "wasm32"))]
-impl<T: Sync> MaybeSync for T {}
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl ByteTransport for Box<dyn ByteTransport> {
+    async fn send_bytes(&self, bytes: &[u8]) -> Result<(), TransportError> {
+        (**self).send_bytes(bytes).await
+    }
 
-#[cfg(target_arch = "wasm32")]
-pub trait MaybeSync {}
-#[cfg(target_arch = "wasm32")]
-impl<T> MaybeSync for T {}
+    async fn recv_bytes(&self) -> Result<Vec<u8>, TransportError> {
+        (**self).recv_bytes().await
+    }
+}
 
-/// Port for network communication, generic over message types.
-pub trait Transport<S, R>: MaybeSend + MaybeSync + 'static
-where
-    S: MaybeSend + MaybeSync,
-    R: MaybeSend,
-{
-    fn send(&self, msg: &S) -> impl Future<Output = Result<(), TransportError>> + MaybeSend;
-    fn recv(&self) -> impl Future<Output = Result<R, TransportError>> + MaybeSend;
+/// Typed transport port — send/recv domain messages.
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+pub trait Transport<S, R>: Clone + Send + Sync + 'static {
+    async fn send(&self, msg: &S) -> Result<(), TransportError>;
+    async fn recv(&self) -> Result<R, TransportError>;
 }

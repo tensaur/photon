@@ -1,25 +1,19 @@
 pub mod postcard;
 
+pub use self::postcard::PostcardCodec;
+
 use bytes::BytesMut;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::ports::codec::{Codec, CodecError};
 
-use self::postcard::PostcardCodec;
-
-#[derive(Clone, Debug, Default)]
-pub enum CodecChoice {
+#[derive(Clone, Copy, Debug, Default)]
+pub enum CodecKind {
     #[default]
     Postcard,
 }
 
-impl CodecChoice {
-    pub fn postcard() -> Self {
-        Self::Postcard
-    }
-}
-
-impl<T> Codec<T> for CodecChoice
+impl<T> Codec<T> for CodecKind
 where
     T: Serialize + DeserializeOwned + Send + Sync,
 {

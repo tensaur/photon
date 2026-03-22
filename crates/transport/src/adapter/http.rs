@@ -1,66 +1,72 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use bytes::BytesMut;
-use photon_protocol::ports::codec::Codec;
+use async_trait::async_trait;
 use reqwest::Client;
 
-use crate::ports::{MaybeSend, MaybeSync, Transport, TransportError};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::net::{TcpStream, tcp::{OwnedReadHalf, OwnedWriteHalf}};
 
-pub struct HttpTransport<C> {
-    pub(crate) codec: C,
-    client: Option<Client>,
-    url: Option<String>,
-    pending: Mutex<Option<Vec<u8>>>,
-    #[cfg(not(target_arch = "wasm32"))]
-    writer: Mutex<Option<tokio::io::BufWriter<tokio::net::tcp::OwnedWriteHalf>>>,
+use crate::ports::{ByteTransport, TransportError};
+
+#[derive(Clone)]
+pub struct HttpTransport {
+    inner: HttpInner,
 }
 
-impl<C: Clone> Clone for HttpTransport<C> {
-    fn clone(&self) -> Self {
-        Self {
-            codec: self.codec.clone(),
-            client: self.client.clone(),
-            url: self.url.clone(),
-            pending: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            writer: Mutex::new(None),
-        }
-    }
+#[derive(Clone)]
+enum HttpInner {
+    Client {
+        client: Client,
+        url: String,
+        pending: Arc<Mutex<Option<Vec<u8>>>>,
+    },
+    #[cfg(not(target_arch = "wasm32"))]
+    Server {
+        pending: Arc<Mutex<Option<Vec<u8>>>>,
+        writer: Arc<Mutex<Option<BufWriter<OwnedWriteHalf>>>>,
+    },
 }
 
-impl<C> HttpTransport<C> {
-    /// Create an unconnected HTTP transport
-    pub fn new(codec: C) -> Self {
+impl HttpTransport {
+    /// Create a client-mode HTTP transport.
+    pub fn connect(url: impl Into<String>) -> Self {
         Self {
-            codec,
-            client: None,
-            url: None,
-            pending: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            writer: Mutex::new(None),
+            inner: HttpInner::Client {
+                client: Client::new(),
+                url: url.into(),
+                pending: Arc::new(Mutex::new(None)),
+            },
         }
     }
 
-    /// Set the target URL and create the HTTP client
-    pub fn connect(&mut self, url: impl Into<String>) {
-        self.url = Some(url.into());
-        self.client = Some(Client::new());
-    }
-
-    /// Accept an HTTP request from a raw TCP stream
+    /// Accept an HTTP request from a raw TCP stream.
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn accept(stream: tokio::net::TcpStream, codec: C) -> Result<Self, TransportError> {
-        use tokio::io::{AsyncReadExt, BufWriter};
-
+    pub async fn accept(stream: TcpStream) -> Result<Self, TransportError> {
         let (mut reader, writer) = stream.into_split();
+        let body = Self::read_http_body(&mut reader, 16 * 1024 * 1024).await?;
 
+        Ok(Self {
+            inner: HttpInner::Server {
+                pending: Arc::new(Mutex::new(Some(body))),
+                writer: Arc::new(Mutex::new(Some(BufWriter::new(writer)))),
+            },
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn read_http_body(
+        reader: &mut OwnedReadHalf,
+        max_body_size: usize,
+    ) -> Result<Vec<u8>, TransportError> {
         let mut buf = Vec::with_capacity(8192);
         loop {
             let mut chunk = [0u8; 4096];
             let n = reader
                 .read(&mut chunk)
                 .await
-                .map_err(|e| TransportError::Connection(e.to_string()))?;
+                .map_err(TransportError::from_io)?;
             if n == 0 {
                 return Err(TransportError::StreamClosed("connection closed".into()));
             }
@@ -70,8 +76,6 @@ impl<C> HttpTransport<C> {
             let mut req = httparse::Request::new(&mut headers);
             match req.parse(&buf) {
                 Ok(httparse::Status::Complete(header_len)) => {
-                    const MAX_BODY_SIZE: usize = 16 * 1024 * 1024;
-
                     let content_length = req
                         .headers
                         .iter()
@@ -80,9 +84,9 @@ impl<C> HttpTransport<C> {
                         .and_then(|s| s.parse::<usize>().ok())
                         .unwrap_or(0);
 
-                    if content_length > MAX_BODY_SIZE {
+                    if content_length > max_body_size {
                         return Err(TransportError::Request(format!(
-                            "body too large: {content_length} bytes (max {MAX_BODY_SIZE})"
+                            "body too large: {content_length} bytes (max {max_body_size})"
                         )));
                     }
 
@@ -92,18 +96,10 @@ impl<C> HttpTransport<C> {
                         reader
                             .read_exact(&mut buf[header_len + body_so_far..])
                             .await
-                            .map_err(|e| TransportError::Connection(e.to_string()))?;
+                            .map_err(TransportError::from_io)?;
                     }
 
-                    let body = buf[header_len..header_len + content_length].to_vec();
-
-                    return Ok(Self {
-                        codec,
-                        client: None,
-                        url: None,
-                        pending: Mutex::new(Some(body)),
-                        writer: Mutex::new(Some(BufWriter::new(writer))),
-                    });
+                    return Ok(buf[header_len..header_len + content_length].to_vec());
                 }
                 Ok(httparse::Status::Partial) => continue,
                 Err(e) => {
@@ -114,83 +110,68 @@ impl<C> HttpTransport<C> {
     }
 }
 
-impl<S, R, C> Transport<S, R> for HttpTransport<C>
-where
-    S: MaybeSend + MaybeSync + 'static,
-    R: MaybeSend + 'static,
-    C: Codec<S> + Codec<R> + MaybeSend + MaybeSync + Clone + 'static,
-{
-    async fn send(&self, msg: &S) -> Result<(), TransportError> {
-        let mut buf = BytesMut::new();
-        Codec::<S>::encode(&self.codec, msg, &mut buf)
-            .map_err(|e| TransportError::Request(e.to_string()))?;
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+impl ByteTransport for HttpTransport {
+    async fn send_bytes(&self, bytes: &[u8]) -> Result<(), TransportError> {
+        match &self.inner {
+            HttpInner::Client {
+                client,
+                url,
+                pending,
+            } => {
+                let resp = client
+                    .post(url)
+                    .body(bytes.to_vec())
+                    .send()
+                    .await
+                    .map_err(|e| TransportError::Connection(e.to_string()))?;
 
-        // Client: POST and stash response for next recv
-        if let (Some(client), Some(url)) = (&self.client, &self.url) {
-            let resp = client
-                .post(url)
-                .body(buf.freeze())
-                .send()
-                .await
-                .map_err(|e| TransportError::Connection(e.to_string()))?;
+                if !resp.status().is_success() {
+                    return Err(TransportError::Request(format!("HTTP {}", resp.status())));
+                }
 
-            if !resp.status().is_success() {
-                return Err(TransportError::Request(format!("HTTP {}", resp.status())));
+                let resp_bytes = resp
+                    .bytes()
+                    .await
+                    .map_err(|e| TransportError::Connection(e.to_string()))?;
+
+                *pending.lock().unwrap() = Some(resp_bytes.to_vec());
+                Ok(())
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            HttpInner::Server { writer, .. } => {
+                let mut w = writer
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .ok_or_else(|| TransportError::StreamClosed("already sent".into()))?;
 
-            let bytes = resp
-                .bytes()
-                .await
-                .map_err(|e| TransportError::Request(e.to_string()))?;
-
-            *self.pending.lock().unwrap() = Some(bytes.to_vec());
-            return Ok(());
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\n\r\n",
+                    bytes.len()
+                );
+                w.write_all(header.as_bytes())
+                    .await
+                    .map_err(TransportError::from_io)?;
+                w.write_all(bytes).await.map_err(TransportError::from_io)?;
+                w.flush().await.map_err(TransportError::from_io)?;
+                Ok(())
+            }
         }
-
-        // Server: write HTTP response to stream
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use tokio::io::AsyncWriteExt;
-
-            let mut writer = self
-                .writer
-                .lock()
-                .unwrap()
-                .take()
-                .ok_or_else(|| TransportError::StreamClosed("already sent".into()))?;
-
-            let body = buf.to_vec();
-            let header = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\n\r\n",
-                body.len()
-            );
-            writer
-                .write_all(header.as_bytes())
-                .await
-                .map_err(|e| TransportError::Connection(e.to_string()))?;
-            writer
-                .write_all(&body)
-                .await
-                .map_err(|e| TransportError::Connection(e.to_string()))?;
-            writer
-                .flush()
-                .await
-                .map_err(|e| TransportError::Connection(e.to_string()))?;
-            return Ok(());
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        Err(TransportError::Connection("not connected".into()))
     }
 
-    async fn recv(&self) -> Result<R, TransportError> {
-        let bytes = self
-            .pending
+    async fn recv_bytes(&self) -> Result<Vec<u8>, TransportError> {
+        let pending = match &self.inner {
+            HttpInner::Client { pending, .. } => pending,
+            #[cfg(not(target_arch = "wasm32"))]
+            HttpInner::Server { pending, .. } => pending,
+        };
+
+        pending
             .lock()
             .unwrap()
             .take()
-            .ok_or_else(|| TransportError::StreamClosed("no pending data".into()))?;
-
-        Codec::<R>::decode(&self.codec, &bytes).map_err(|e| TransportError::Request(e.to_string()))
+            .ok_or_else(|| TransportError::StreamClosed("no pending data".into()))
     }
 }

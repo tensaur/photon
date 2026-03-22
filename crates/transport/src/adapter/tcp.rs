@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use bytes::BytesMut;
-use photon_protocol::ports::codec::Codec;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 
-use crate::ports::{MaybeSend, MaybeSync, Transport, TransportError};
+use async_trait::async_trait;
+
+use crate::ports::{ByteTransport, TransportError};
 
 struct TcpConnection {
     write: BufWriter<OwnedWriteHalf>,
@@ -15,115 +15,76 @@ struct TcpConnection {
 }
 
 /// TCP transport adapter using length-prefixed frames.
-pub struct TcpTransport<C> {
-    pub(crate) codec: C,
-    conn: Arc<Mutex<Option<TcpConnection>>>,
+#[derive(Clone)]
+pub struct TcpTransport {
+    conn: Arc<Mutex<TcpConnection>>,
 }
 
-impl<C: Clone> Clone for TcpTransport<C> {
-    fn clone(&self) -> Self {
-        Self {
-            codec: self.codec.clone(),
-            conn: Arc::clone(&self.conn),
-        }
-    }
-}
-
-impl<C> TcpTransport<C> {
-    /// Create an unconnected transport. Call `connect` before use.
-    pub fn new(codec: C) -> Self {
-        Self {
-            codec,
-            conn: Arc::new(Mutex::new(None)),
-        }
-    }
-
+impl TcpTransport {
     /// Wrap an already-accepted TCP stream.
-    pub fn accept(stream: TcpStream, codec: C) -> Self {
+    pub fn accept(stream: TcpStream) -> Self {
         stream.set_nodelay(true).ok();
         let (read, write) = stream.into_split();
 
         Self {
-            codec,
-            conn: Arc::new(Mutex::new(Some(TcpConnection {
+            conn: Arc::new(Mutex::new(TcpConnection {
                 write: BufWriter::new(write),
                 read: BufReader::new(read),
-            }))),
+            })),
         }
     }
 
     /// Establish a TCP connection to the given endpoint.
-    pub async fn connect(&self, addr: &str) -> Result<(), TransportError> {
+    pub async fn connect(addr: &str) -> Result<Self, TransportError> {
         let stream = TcpStream::connect(addr)
             .await
             .map_err(|e| TransportError::Connection(e.to_string()))?;
 
         stream.set_nodelay(true).ok();
-
-        let (read, write) = stream.into_split();
-        *self.conn.lock().await = Some(TcpConnection {
-            write: BufWriter::new(write),
-            read: BufReader::new(read),
-        });
-
-        Ok(())
+        Ok(Self::accept(stream))
     }
 }
 
-impl<S, R, C> Transport<S, R> for TcpTransport<C>
-where
-    S: MaybeSend + MaybeSync + 'static,
-    R: MaybeSend + 'static,
-    C: Codec<S> + Codec<R> + MaybeSend + MaybeSync + Clone + 'static,
-{
-    async fn send(&self, msg: &S) -> Result<(), TransportError> {
-        let mut buf = BytesMut::new();
-        Codec::<S>::encode(&self.codec, msg, &mut buf)
-            .map_err(|e| TransportError::Request(e.to_string()))?;
-
-        let len = (buf.len() as u32).to_be_bytes();
+#[async_trait]
+impl ByteTransport for TcpTransport {
+    async fn send_bytes(&self, bytes: &[u8]) -> Result<(), TransportError> {
+        let len = (bytes.len() as u32).to_be_bytes();
 
         let mut guard = self.conn.lock().await;
-        let conn = guard
-            .as_mut()
-            .ok_or_else(|| TransportError::Connection("not connected".into()))?;
 
-        conn.write
+        guard
+            .write
             .write_all(&len)
             .await
-            .map_err(|e| TransportError::StreamClosed(e.to_string()))?;
-        conn.write
-            .write_all(&buf)
+            .map_err(TransportError::from_io)?;
+        guard
+            .write
+            .write_all(bytes)
             .await
-            .map_err(|e| TransportError::StreamClosed(e.to_string()))?;
-        conn.write
-            .flush()
-            .await
-            .map_err(|e| TransportError::StreamClosed(e.to_string()))?;
+            .map_err(TransportError::from_io)?;
+        guard.write.flush().await.map_err(TransportError::from_io)?;
 
         Ok(())
     }
 
-    async fn recv(&self) -> Result<R, TransportError> {
+    async fn recv_bytes(&self) -> Result<Vec<u8>, TransportError> {
         let mut guard = self.conn.lock().await;
-        let conn = guard
-            .as_mut()
-            .ok_or_else(|| TransportError::Connection("not connected".into()))?;
 
         let mut len_buf = [0u8; 4];
-        conn.read
+        guard
+            .read
             .read_exact(&mut len_buf)
             .await
-            .map_err(|e| TransportError::StreamClosed(e.to_string()))?;
+            .map_err(TransportError::from_io)?;
         let len = u32::from_be_bytes(len_buf) as usize;
 
         let mut payload = vec![0u8; len];
-        conn.read
+        guard
+            .read
             .read_exact(&mut payload)
             .await
-            .map_err(|e| TransportError::StreamClosed(e.to_string()))?;
+            .map_err(TransportError::from_io)?;
 
-        Codec::<R>::decode(&self.codec, &payload)
-            .map_err(|e| TransportError::Request(e.to_string()))
+        Ok(payload)
     }
 }

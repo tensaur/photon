@@ -4,7 +4,7 @@ pub mod inbound;
 pub use domain::ack::UplinkStats;
 pub use domain::error::{RecoveryError, TransportError, UplinkError};
 pub use domain::service::UplinkService;
-pub use inbound::thread::run_uplink_thread;
+pub use inbound::thread::run_uplink;
 
 /// Orchestration-level error for the uplink thread.
 #[derive(Debug, thiserror::Error)]

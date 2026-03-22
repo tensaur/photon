@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,7 +8,7 @@ use photon_batch::{BatchError, BatchStats};
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricKey, RawPoint};
 use photon_uplink::{UplinkStats, UplinkThreadError};
-use photon_wal::WalChoice;
+use photon_wal::Wal;
 use tokio::sync::oneshot;
 
 use crate::accumulator::Accumulator;
@@ -38,8 +37,7 @@ pub struct Run {
     interner: Arc<ThreadedRodeo>,
     batch_handle: JoinHandle<Result<BatchStats, BatchError>>,
     uplink_handle: Option<UplinkHandle>,
-    wal_choice: WalChoice,
-    wal_dir: Option<PathBuf>,
+    wal: Box<dyn Wal>,
     points_logged: u64,
 }
 
@@ -50,8 +48,7 @@ impl Run {
         interner: Arc<ThreadedRodeo>,
         batch_handle: JoinHandle<Result<BatchStats, BatchError>>,
         uplink_handle: Option<UplinkHandle>,
-        wal_choice: WalChoice,
-        wal_dir: Option<PathBuf>,
+        wal: Box<dyn Wal>,
     ) -> Self {
         Self {
             run_id,
@@ -59,8 +56,7 @@ impl Run {
             interner,
             batch_handle,
             uplink_handle,
-            wal_choice,
-            wal_dir,
+            wal,
             points_logged: 0,
         }
     }
@@ -104,11 +100,11 @@ impl Run {
         let points_logged = self.points_logged;
         let points_dropped = self.accumulator.points_dropped();
 
-        let _old = std::mem::replace(&mut self.accumulator, {
+        // Drop the accumulator to close the channel, signaling the batch thread to flush.
+        drop(std::mem::replace(&mut self.accumulator, {
             let (acc, _rx) = Accumulator::new(1);
             acc
-        });
-        drop(_old);
+        }));
 
         let batch_stats = self
             .batch_handle
@@ -136,7 +132,7 @@ impl Run {
         };
 
         if batches_acked == batch_stats.batches_created {
-            let _ = self.wal_choice.close(self.wal_dir.as_deref(), self.run_id);
+            let _ = self.wal.close();
         }
 
         Ok(RunStats {
