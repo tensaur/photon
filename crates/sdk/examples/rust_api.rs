@@ -1,5 +1,6 @@
 fn main() {
     let mut run = photon::Run::builder()
+        .endpoint("[::1]:50051")
         .max_points_per_batch(50)
         .start()
         .expect("failed to start run");
@@ -34,7 +35,7 @@ fn main() {
     println!("Acked:        {}", stats.batches_acked);
 
     assert!(stats.batches > 0);
-    assert_eq!(stats.points, 420); // 200 * 2 + 20 lr logs
+    assert_eq!(stats.points, 420);
     assert_eq!(stats.points_dropped, 0);
 
     println!("\nAll checks passed!");
