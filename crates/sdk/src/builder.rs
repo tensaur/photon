@@ -133,7 +133,7 @@ impl RunBuilder {
                 run_batch_thread(
                     run_id,
                     batch_interner,
-                    self.codec,
+                    codec,
                     self.compressor,
                     wal_appender,
                     start_sequence,

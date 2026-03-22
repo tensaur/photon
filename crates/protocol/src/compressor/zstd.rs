@@ -16,6 +16,8 @@ mod native {
     }
 
     impl ZstdCompressor {
+        pub const NAME: &str = "zstd";
+
         pub fn new(level: i32) -> Self {
             Self {
                 level,
@@ -63,7 +65,7 @@ mod native {
         }
 
         fn name(&self) -> &'static str {
-            "zstd"
+            Self::NAME
         }
     }
 }
@@ -83,6 +85,8 @@ mod wasm {
     }
 
     impl ZstdCompressor {
+        pub const NAME: &str = "zstd";
+
         pub fn new(level: i32) -> Self {
             Self { level }
         }
@@ -116,7 +120,7 @@ mod wasm {
         }
 
         fn name(&self) -> &'static str {
-            "zstd"
+            Self::NAME
         }
     }
 }

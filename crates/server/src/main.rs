@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         move |svc, stream| async move {
             let bt = TcpTransport::accept(stream);
             let transport = CodecTransport::new(codec, bt);
-            ingest_handler::handle_stream(&svc, &transport).await;
+            ingest_handler::handle(&svc, &transport).await;
         },
     ));
 

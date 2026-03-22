@@ -7,7 +7,7 @@ use photon_transport::ports::{Transport, TransportError};
 use crate::domain::service::IngestService;
 
 /// Transport-agnostic ingest handler.
-pub async fn handle_stream<S, T>(service: &Arc<S>, transport: &T)
+pub async fn handle<S, T>(service: &Arc<S>, transport: &T)
 where
     S: IngestService,
     T: Transport<AckResult, WireBatch>,

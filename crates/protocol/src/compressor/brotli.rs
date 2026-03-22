@@ -11,6 +11,8 @@ pub struct BrotliCompressor {
 }
 
 impl BrotliCompressor {
+    pub const NAME: &str = "brotli";
+
     pub fn new(quality: u32) -> Self {
         Self { quality }
     }
@@ -56,6 +58,6 @@ impl Compressor for BrotliCompressor {
     }
 
     fn name(&self) -> &'static str {
-        "brotli"
+        Self::NAME
     }
 }

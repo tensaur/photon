@@ -47,10 +47,10 @@ impl Compressor for CompressorKind {
 
     fn name(&self) -> &'static str {
         match self {
-            Self::Zstd { .. } => "zstd",
-            Self::Lz4 => "lz4",
-            Self::Brotli { .. } => "brotli",
-            Self::Noop => "noop",
+            Self::Zstd { .. } => ZstdCompressor::NAME,
+            Self::Lz4 => Lz4Compressor::NAME,
+            Self::Brotli { .. } => BrotliCompressor::NAME,
+            Self::Noop => NoopCompressor::NAME,
         }
     }
 }

@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let service = Arc::clone(&ingest_service);
 
             tokio::spawn(async move {
-                handler::handle_stream(&service, &transport).await;
+                handler::handle(&service, &transport).await;
             });
         }
     });

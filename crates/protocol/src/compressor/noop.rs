@@ -5,6 +5,10 @@ use crate::ports::compress::{CompressionError, Compressor};
 #[derive(Clone, Debug)]
 pub struct NoopCompressor;
 
+impl NoopCompressor {
+    pub const NAME: &str = "none";
+}
+
 impl Compressor for NoopCompressor {
     fn compress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
         output.extend_from_slice(input);
@@ -17,6 +21,6 @@ impl Compressor for NoopCompressor {
     }
 
     fn name(&self) -> &'static str {
-        "none"
+        Self::NAME
     }
 }

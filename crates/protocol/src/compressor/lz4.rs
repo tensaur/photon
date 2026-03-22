@@ -5,6 +5,10 @@ use crate::ports::compress::{CompressionError, Compressor};
 #[derive(Clone, Debug)]
 pub struct Lz4Compressor;
 
+impl Lz4Compressor {
+    pub const NAME: &str = "lz4";
+}
+
 impl Compressor for Lz4Compressor {
     fn compress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
         let compressed = lz4_flex::compress_prepend_size(input);
@@ -26,6 +30,6 @@ impl Compressor for Lz4Compressor {
     }
 
     fn name(&self) -> &'static str {
-        "lz4"
+        Self::NAME
     }
 }
