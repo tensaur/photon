@@ -6,7 +6,7 @@ use photon_protocol::ports::codec::Codec;
 
 use crate::ports::{ByteTransport, Transport, TransportError};
 
-/// Codec transport adapter — encodes/decodes once, delegates framing to a `ByteTransport`.
+/// Codec transport adapter - encodes/decodes once, delegates framing to a `ByteTransport`.
 pub struct CodecTransport<C, T: ?Sized> {
     codec: C,
     inner: Arc<T>,
