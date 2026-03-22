@@ -29,7 +29,6 @@ impl TransportError {
     }
 }
 
-/// Byte-level transport port — adapters implement only framing.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait ByteTransport: Send + Sync + 'static {
@@ -49,7 +48,6 @@ impl ByteTransport for Box<dyn ByteTransport> {
     }
 }
 
-/// Typed transport port — send/recv domain messages.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait Transport<S, R>: Clone + Send + Sync + 'static {
