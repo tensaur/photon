@@ -16,3 +16,13 @@ crc32fast.workspace = true
 lasso.workspace = true
 crossbeam-channel.workspace = true
 thiserror.workspace = true
+
+[lib]
+bench = false
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "service"
+harness = false
