@@ -11,7 +11,7 @@ use crate::ports::bucket::{BucketReader, BucketWriter};
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Row, Serialize, Deserialize)]
-struct BucketRow {
+struct BucketWriteRow {
     #[serde(with = "clickhouse::serde::uuid")]
     run_id: uuid::Uuid,
     key: String,
@@ -61,7 +61,7 @@ impl BucketWriter for ClickHouseBucketStore {
         let run_uuid: uuid::Uuid = (*run_id).into();
         for entry in entries {
             insert
-                .write(&BucketRow {
+                .write(&BucketWriteRow {
                     run_id: run_uuid,
                     key: entry.key.as_str().to_owned(),
                     tier: entry.tier as u32,

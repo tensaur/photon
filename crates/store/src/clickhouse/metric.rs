@@ -11,7 +11,7 @@ use crate::ports::metric::{MetricReader, MetricWriter};
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Debug, Clone, Row, Serialize, Deserialize)]
-pub(crate) struct MetricRow {
+pub(crate) struct MetricWriteRow {
     #[serde(with = "clickhouse::serde::uuid")]
     pub run_id: uuid::Uuid,
     pub key: String,
@@ -21,7 +21,7 @@ pub(crate) struct MetricRow {
 }
 
 #[derive(Row, Serialize, Deserialize)]
-struct StepValueRow {
+struct MetricReadRow {
     step: u64,
     value: f64,
 }
@@ -61,10 +61,10 @@ impl MetricWriter for ClickHouseMetricStore {
         }
 
         let run_uuid: uuid::Uuid = batch.run_id.into();
-        let rows: Vec<MetricRow> = batch
+        let rows: Vec<MetricWriteRow> = batch
             .points
             .iter()
-            .map(|point| MetricRow {
+            .map(|point| MetricWriteRow {
                 run_id: run_uuid,
                 key: batch.key(point).as_str().to_owned(),
                 step: point.step,
@@ -102,7 +102,7 @@ impl MetricReader for ClickHouseMetricStore {
     ) -> Result<Vec<(u64, f64)>, ReadError> {
         let run_uuid: uuid::Uuid = (*run_id).into();
 
-        let rows: Vec<StepValueRow> = self
+        let rows: Vec<MetricReadRow> = self
             .client
             .query(
                 "SELECT ?fields FROM metrics \

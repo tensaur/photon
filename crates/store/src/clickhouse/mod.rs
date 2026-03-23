@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::time::MissedTickBehavior;
 
-use self::metric::MetricRow;
+use self::metric::MetricWriteRow;
 use self::watermark::WatermarkRow;
 
 const MAX_CONCURRENT_FLUSHES: usize = 8;
@@ -17,7 +17,7 @@ const FLUSH_THRESHOLD: usize = 100_000;
 const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 
 pub(crate) enum WriteOp {
-    Metrics(Vec<MetricRow>),
+    Metrics(Vec<MetricWriteRow>),
     Watermark(WatermarkRow),
     Flush(oneshot::Sender<()>),
 }
@@ -176,7 +176,7 @@ async fn background_writer(
     mut rx: mpsc::UnboundedReceiver<WriteOp>,
     semaphore: Arc<Semaphore>,
 ) {
-    let mut metric_buf: Vec<MetricRow> = Vec::new();
+    let mut metric_buf: Vec<MetricWriteRow> = Vec::new();
     let mut watermark_buf: Vec<WatermarkRow> = Vec::new();
     let mut interval = tokio::time::interval(FLUSH_INTERVAL);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -218,7 +218,7 @@ async fn background_writer(
 async fn spawn_flush(
     client: &clickhouse::Client,
     semaphore: &Arc<Semaphore>,
-    metric_buf: &mut Vec<MetricRow>,
+    metric_buf: &mut Vec<MetricWriteRow>,
     watermark_buf: &mut Vec<WatermarkRow>,
 ) {
     if metric_buf.is_empty() && watermark_buf.is_empty() {
