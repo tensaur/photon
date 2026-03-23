@@ -7,7 +7,6 @@ use photon_core::types::bucket::{Bucket, BucketEntry};
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 
-use super::ClickHouseStore;
 use super::rows::BucketRow;
 use crate::ports::bucket::{BucketReader, BucketWriter};
 use crate::ports::{ReadError, WriteError};
@@ -21,7 +20,18 @@ struct BucketReadRow {
     max: f64,
 }
 
-impl BucketWriter for ClickHouseStore {
+#[derive(Clone)]
+pub struct ClickHouseBucketStore {
+    client: clickhouse::Client,
+}
+
+impl ClickHouseBucketStore {
+    pub fn new(client: clickhouse::Client) -> Self {
+        Self { client }
+    }
+}
+
+impl BucketWriter for ClickHouseBucketStore {
     async fn write_buckets(
         &self,
         run_id: &RunId,
@@ -62,7 +72,7 @@ impl BucketWriter for ClickHouseStore {
     }
 }
 
-impl BucketReader for ClickHouseStore {
+impl BucketReader for ClickHouseBucketStore {
     async fn read_buckets(
         &self,
         run_id: &RunId,

@@ -1,12 +1,22 @@
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 
-use super::ClickHouseStore;
 use super::rows::CompactionCursorRow;
 use crate::ports::compaction::CompactionCursor;
 use crate::ports::{ReadError, WriteError};
 
-impl CompactionCursor for ClickHouseStore {
+#[derive(Clone)]
+pub struct ClickHouseCompactionCursor {
+    client: clickhouse::Client,
+}
+
+impl ClickHouseCompactionCursor {
+    pub fn new(client: clickhouse::Client) -> Self {
+        Self { client }
+    }
+}
+
+impl CompactionCursor for ClickHouseCompactionCursor {
     async fn get(
         &self,
         run_id: &RunId,

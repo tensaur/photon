@@ -12,7 +12,11 @@ use photon_protocol::compressor::ZstdCompressor;
 use photon_query::domain::service::Service as QueryService;
 use photon_query::domain::tier::TierSelector;
 use photon_query::inbound::handler as query_handler;
-use photon_store::clickhouse::ClickHouseStore;
+use photon_store::clickhouse::bucket::ClickHouseBucketStore;
+use photon_store::clickhouse::compaction::ClickHouseCompactionCursor;
+use photon_store::clickhouse::metric::ClickHouseMetricStore;
+use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
+use photon_store::clickhouse::{client_from_env, BackgroundWriter};
 use photon_transport::codec::CodecTransport;
 use photon_transport::http::HttpTransport;
 use photon_transport::serve;
@@ -34,17 +38,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let codec = CodecKind::default();
 
-    let store = ClickHouseStore::from_env();
-    let watermark_store = store.clone();
-    let metric_writer = store.clone();
-    let bucket_reader = store.clone();
-    let metric_reader = store.clone();
-    let compaction_cursor = store.clone();
+    let client = client_from_env();
+    let writer = BackgroundWriter::new(client.clone());
+
+    let watermark_store = ClickHouseWatermarkStore::new(client.clone(), writer.clone());
+    let metric_store = ClickHouseMetricStore::new(client.clone(), writer.clone());
+    let bucket_store = ClickHouseBucketStore::new(client.clone());
+    let compaction_cursor = ClickHouseCompactionCursor::new(client);
 
     // Ingest service
     let ingest_service = Arc::new(IngestService::new(
         watermark_store,
-        metric_writer,
+        metric_store.clone(),
         NoOpHook,
         ZstdCompressor::default(),
         codec,
@@ -53,8 +58,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query service
     let query_service = Arc::new(QueryService::new(
         NoOpSelector,
-        bucket_reader,
-        metric_reader,
+        bucket_store,
+        metric_store,
         compaction_cursor,
         TierSelector::default(),
     ));
@@ -104,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");
-    store.flush().await;
+    writer.flush().await;
 
     Ok(())
 }

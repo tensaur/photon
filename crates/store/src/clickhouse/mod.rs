@@ -16,49 +16,24 @@ const MAX_CONCURRENT_FLUSHES: usize = 8;
 const FLUSH_THRESHOLD: usize = 100_000;
 const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 
-enum WriteOp {
+pub(crate) enum WriteOp {
     Metrics(Vec<MetricRow>),
     Watermark(WatermarkRow),
     Flush(oneshot::Sender<()>),
 }
 
+/// Shared background writer for batching inserts into ClickHouse.
 #[derive(Clone)]
-pub struct ClickHouseStore {
-    client: clickhouse::Client,
-    write_tx: mpsc::UnboundedSender<WriteOp>,
+pub struct BackgroundWriter {
+    pub(crate) write_tx: mpsc::UnboundedSender<WriteOp>,
 }
 
-impl ClickHouseStore {
+impl BackgroundWriter {
     pub fn new(client: clickhouse::Client) -> Self {
         let (write_tx, write_rx) = mpsc::unbounded_channel();
         let flush_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_FLUSHES));
-        tokio::spawn(background_writer(
-            client.clone(),
-            write_rx,
-            flush_semaphore.clone(),
-        ));
-        Self { client, write_tx }
-    }
-
-    pub fn from_env() -> Self {
-        let url =
-            std::env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".into());
-        let db =
-            std::env::var("CLICKHOUSE_DATABASE").unwrap_or_else(|_| "photon".into());
-        let user =
-            std::env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "default".into());
-        let password =
-            std::env::var("CLICKHOUSE_PASSWORD").unwrap_or_default();
-
-        let client = clickhouse::Client::default()
-            .with_url(&url)
-            .with_database(&db)
-            .with_user(&user)
-            .with_password(&password)
-            .with_option("async_insert", "1")
-            .with_option("wait_for_async_insert", "0");
-
-        Self::new(client)
+        tokio::spawn(background_writer(client, write_rx, flush_semaphore));
+        Self { write_tx }
     }
 
     pub async fn flush(&self) {
@@ -66,6 +41,21 @@ impl ClickHouseStore {
         let _ = self.write_tx.send(WriteOp::Flush(tx));
         let _ = rx.await;
     }
+}
+
+pub fn client_from_env() -> clickhouse::Client {
+    let url = std::env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".into());
+    let db = std::env::var("CLICKHOUSE_DATABASE").unwrap_or_else(|_| "photon".into());
+    let user = std::env::var("CLICKHOUSE_USER").unwrap_or_else(|_| "default".into());
+    let password = std::env::var("CLICKHOUSE_PASSWORD").unwrap_or_default();
+
+    clickhouse::Client::default()
+        .with_url(&url)
+        .with_database(&db)
+        .with_user(&user)
+        .with_password(&password)
+        .with_option("async_insert", "1")
+        .with_option("wait_for_async_insert", "0")
 }
 
 async fn background_writer(

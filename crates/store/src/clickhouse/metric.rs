@@ -7,7 +7,7 @@ use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch};
 
 use super::rows::MetricRow;
-use super::{ClickHouseStore, WriteOp};
+use super::{BackgroundWriter, WriteOp};
 use crate::ports::metric::{MetricReader, MetricWriter};
 use crate::ports::{ReadError, WriteError};
 
@@ -33,7 +33,19 @@ struct CountRow {
     count: u64,
 }
 
-impl MetricWriter for ClickHouseStore {
+#[derive(Clone)]
+pub struct ClickHouseMetricStore {
+    client: clickhouse::Client,
+    writer: BackgroundWriter,
+}
+
+impl ClickHouseMetricStore {
+    pub fn new(client: clickhouse::Client, writer: BackgroundWriter) -> Self {
+        Self { client, writer }
+    }
+}
+
+impl MetricWriter for ClickHouseMetricStore {
     async fn write_batch(&self, batch: &MetricBatch) -> Result<(), WriteError> {
         if batch.points.is_empty() {
             return Ok(());
@@ -52,7 +64,8 @@ impl MetricWriter for ClickHouseStore {
             })
             .collect();
 
-        self.write_tx
+        self.writer
+            .write_tx
             .send(WriteOp::Metrics(rows))
             .map_err(|_| WriteError::Unknown(anyhow::anyhow!("background writer stopped")))?;
 
@@ -60,7 +73,7 @@ impl MetricWriter for ClickHouseStore {
     }
 }
 
-impl MetricReader for ClickHouseStore {
+impl MetricReader for ClickHouseMetricStore {
     async fn list_runs(&self) -> Result<Vec<RunId>, ReadError> {
         let rows: Vec<RunIdRow> = self
             .client
