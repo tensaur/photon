@@ -16,7 +16,7 @@ use photon_store::clickhouse::bucket::ClickHouseBucketStore;
 use photon_store::clickhouse::compaction::ClickHouseCompactionCursor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
-use photon_store::clickhouse::{client_from_env, BackgroundWriter};
+use photon_store::clickhouse::{BackgroundWriter, ClientBuilder};
 use photon_transport::codec::CodecTransport;
 use photon_transport::http::HttpTransport;
 use photon_transport::serve;
@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let codec = CodecKind::default();
 
-    let client = client_from_env();
+    let client = ClientBuilder::new().with_env().build();
     let writer = BackgroundWriter::new(client.clone());
 
     let watermark_store = ClickHouseWatermarkStore::new(client.clone(), writer.clone());
