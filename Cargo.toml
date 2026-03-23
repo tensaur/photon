@@ -62,4 +62,5 @@ tracing-web = "0.1"
 httparse = "1"
 async-trait = "0.1"
 dyn-clone = "1"
+clickhouse = { version = "0.13", features = ["uuid", "inserter"] }
 criterion = { version = "0.5", features = ["html_reports"] }

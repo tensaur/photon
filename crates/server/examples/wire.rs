@@ -11,8 +11,7 @@ use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
-use photon_store::memory::metric::InMemoryMetricStore;
-use photon_store::memory::watermark::InMemoryWatermarkStore;
+use photon_store::clickhouse::ClickHouseStore;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
 
@@ -25,12 +24,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let codec = CodecKind::default();
     let compressor = CompressorKind::default();
 
-    let watermark_store = InMemoryWatermarkStore::new();
-    let metric_store = InMemoryMetricStore::new();
+    let store = ClickHouseStore::from_env();
 
     let ingest_service = Arc::new(IngestService::new(
-        watermark_store,
-        metric_store,
+        store.clone(),
+        store.clone(),
         NoOpHook,
         compressor,
         codec,
@@ -127,6 +125,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     client_handle.await?;
+
+    let t0 = std::time::Instant::now();
+    store.flush().await;
+    println!("ClickHouse flush: {:.2?}", t0.elapsed());
 
     Ok(())
 }
