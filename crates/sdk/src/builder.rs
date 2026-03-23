@@ -171,6 +171,7 @@ impl RunBuilder {
                             run_id,
                             uplink_wal,
                             uplink_config,
+                            start_sequence,
                             shutdown_rx,
                             batch_rx,
                         )

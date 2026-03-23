@@ -21,6 +21,7 @@ pub async fn run_uplink<T, M>(
     run_id: RunId,
     wal: M,
     config: UplinkConfig,
+    start_sequence: SequenceNumber,
     mut shutdown_rx: oneshot::Receiver<()>,
     batch_rx: crossbeam_channel::Receiver<WireBatch>,
 ) -> Result<UplinkStats, UplinkThreadError>
@@ -28,7 +29,7 @@ where
     T: Transport<WireBatch, AckResult> + Transport<RunId, SequenceNumber>,
     M: Wal + Clone,
 {
-    let mut service = Service::new(transport.clone(), wal.clone(), run_id);
+    let mut service = Service::new(transport.clone(), wal.clone(), run_id, start_sequence);
     service.recover().await?;
 
     let mut conn = ConnectionState::new(&config);
