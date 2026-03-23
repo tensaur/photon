@@ -12,10 +12,7 @@ use photon_protocol::compressor::ZstdCompressor;
 use photon_query::domain::service::Service as QueryService;
 use photon_query::domain::tier::TierSelector;
 use photon_query::inbound::handler as query_handler;
-use photon_store::memory::bucket::InMemoryBucketStore;
-use photon_store::memory::compaction::InMemoryCompactionCursor;
-use photon_store::memory::metric::InMemoryMetricStore;
-use photon_store::memory::watermark::InMemoryWatermarkStore;
+use photon_store::clickhouse::ClickHouseStore;
 use photon_transport::codec::CodecTransport;
 use photon_transport::http::HttpTransport;
 use photon_transport::serve;
@@ -37,16 +34,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let codec = CodecKind::default();
 
-    // Shared stores
-    let metric_store = InMemoryMetricStore::new();
-    let bucket_store = InMemoryBucketStore::new();
-    let compaction_cursor = InMemoryCompactionCursor::new();
-    let watermark_store = InMemoryWatermarkStore::new();
+    let store = ClickHouseStore::from_env();
+    let watermark_store = store.clone();
+    let metric_writer = store.clone();
+    let bucket_reader = store.clone();
+    let metric_reader = store.clone();
+    let compaction_cursor = store.clone();
 
     // Ingest service
     let ingest_service = Arc::new(IngestService::new(
         watermark_store,
-        metric_store.clone(),
+        metric_writer,
         NoOpHook,
         ZstdCompressor::default(),
         codec,
@@ -55,8 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Query service
     let query_service = Arc::new(QueryService::new(
         NoOpSelector,
-        bucket_store,
-        metric_store,
+        bucket_reader,
+        metric_reader,
         compaction_cursor,
         TierSelector::default(),
     ));
@@ -106,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");
+    store.flush().await;
 
     Ok(())
 }

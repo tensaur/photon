@@ -26,6 +26,7 @@ where
     transport: T,
     wal: M,
     run_id: RunId,
+    start_sequence: SequenceNumber,
     tracker: AckTracker,
     stats: UplinkStats,
 }
@@ -35,11 +36,12 @@ where
     T: Transport<WireBatch, AckResult>,
     M: Wal + Clone,
 {
-    pub fn new(transport: T, wal: M, run_id: RunId) -> Self {
+    pub fn new(transport: T, wal: M, run_id: RunId, start_sequence: SequenceNumber) -> Self {
         Self {
             transport,
             wal,
             run_id,
+            start_sequence,
             tracker: AckTracker::new(SequenceNumber::ZERO),
             stats: UplinkStats::default(),
         }
@@ -53,7 +55,12 @@ where
 {
     async fn recover(&mut self) -> Result<SequenceNumber, RecoveryError> {
         let meta = self.wal.read_meta()?;
-        let uncommitted = self.wal.read_from(meta.committed_sequence)?;
+        let uncommitted: Vec<_> = self
+            .wal
+            .read_from(meta.committed_sequence)?
+            .into_iter()
+            .filter(|b| b.sequence_number < self.start_sequence)
+            .collect();
 
         if uncommitted.is_empty() {
             tracing::debug!(run_id = %self.run_id, "clean WAL, skipping recovery");
