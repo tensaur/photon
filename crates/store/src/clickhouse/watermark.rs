@@ -1,10 +1,19 @@
+use clickhouse::Row;
+use serde::{Deserialize, Serialize};
+
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
-use super::rows::WatermarkRow;
 use super::{BackgroundWriter, WriteOp};
 use crate::ports::watermark::WatermarkStore;
 use crate::ports::{ReadError, WriteError};
+
+#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+pub(crate) struct WatermarkRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: uuid::Uuid,
+    pub sequence: u64,
+}
 
 #[derive(Clone)]
 pub struct ClickHouseWatermarkStore {

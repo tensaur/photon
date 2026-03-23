@@ -1,9 +1,20 @@
+use clickhouse::Row;
+use serde::{Deserialize, Serialize};
+
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 
-use super::rows::CompactionCursorRow;
 use crate::ports::compaction::CompactionCursor;
 use crate::ports::{ReadError, WriteError};
+
+#[derive(Row, Serialize, Deserialize)]
+struct CompactionCursorRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    run_id: uuid::Uuid,
+    key: String,
+    tier: u32,
+    offset: u64,
+}
 
 #[derive(Clone)]
 pub struct ClickHouseCompactionCursor {

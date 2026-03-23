@@ -1,7 +1,6 @@
 pub mod bucket;
 pub mod compaction;
 pub mod metric;
-pub mod rows;
 pub mod watermark;
 
 use std::sync::Arc;
@@ -10,7 +9,8 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::time::MissedTickBehavior;
 
-use self::rows::{MetricRow, WatermarkRow};
+use self::metric::MetricRow;
+use self::watermark::WatermarkRow;
 
 const MAX_CONCURRENT_FLUSHES: usize = 8;
 const FLUSH_THRESHOLD: usize = 100_000;

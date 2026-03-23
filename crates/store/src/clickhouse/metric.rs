@@ -6,13 +6,22 @@ use serde::{Deserialize, Serialize};
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch};
 
-use super::rows::MetricRow;
 use super::{BackgroundWriter, WriteOp};
 use crate::ports::metric::{MetricReader, MetricWriter};
 use crate::ports::{ReadError, WriteError};
 
+#[derive(Debug, Clone, Row, Serialize, Deserialize)]
+pub(crate) struct MetricRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: uuid::Uuid,
+    pub key: String,
+    pub step: u64,
+    pub value: f64,
+    pub timestamp_ms: u64,
+}
+
 #[derive(Row, Serialize, Deserialize)]
-struct StepValue {
+struct StepValueRow {
     step: u64,
     value: f64,
 }
@@ -93,7 +102,7 @@ impl MetricReader for ClickHouseMetricStore {
     ) -> Result<Vec<(u64, f64)>, ReadError> {
         let run_uuid: uuid::Uuid = (*run_id).into();
 
-        let rows: Vec<StepValue> = self
+        let rows: Vec<StepValueRow> = self
             .client
             .query(
                 "SELECT ?fields FROM metrics \

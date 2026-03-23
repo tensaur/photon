@@ -7,9 +7,21 @@ use photon_core::types::bucket::{Bucket, BucketEntry};
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 
-use super::rows::BucketRow;
 use crate::ports::bucket::{BucketReader, BucketWriter};
 use crate::ports::{ReadError, WriteError};
+
+#[derive(Row, Serialize, Deserialize)]
+struct BucketRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    run_id: uuid::Uuid,
+    key: String,
+    tier: u32,
+    step_start: u64,
+    step_end: u64,
+    value: f64,
+    min: f64,
+    max: f64,
+}
 
 #[derive(Row, Serialize, Deserialize)]
 struct BucketReadRow {
