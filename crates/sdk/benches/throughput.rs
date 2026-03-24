@@ -63,6 +63,12 @@ fn main() {
     eprintln!("Points dropped:     {}", stats.points_dropped);
     eprintln!("Log:                {log_elapsed:.2?}");
     eprintln!("Total:              {total_elapsed:.2?}");
-    eprintln!("Throughput (log):   {:.2} M pts/s", log_throughput / 1_000_000.0);
-    eprintln!("Throughput (total): {:.2} M pts/s", total_throughput / 1_000_000.0);
+    eprintln!(
+        "Throughput (log):   {:.2} M pts/s",
+        log_throughput / 1_000_000.0
+    );
+    eprintln!(
+        "Throughput (total): {:.2} M pts/s",
+        total_throughput / 1_000_000.0
+    );
 }

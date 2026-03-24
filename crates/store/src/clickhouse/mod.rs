@@ -3,57 +3,6 @@ pub mod compaction;
 pub mod metric;
 pub mod watermark;
 
-use std::sync::Arc;
-
-use tokio::sync::Semaphore;
-
-const MAX_CONCURRENT_WRITES: usize = 16;
-
-/// Spawns concurrent inserts into ClickHouse, bounded by a semaphore.
-#[derive(Clone)]
-pub struct BackgroundWriter {
-    client: clickhouse::Client,
-    semaphore: Arc<Semaphore>,
-}
-
-impl BackgroundWriter {
-    pub fn new(client: clickhouse::Client) -> Self {
-        Self {
-            client,
-            semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_WRITES)),
-        }
-    }
-
-    pub async fn write<T>(&self, table: &str, rows: Vec<T>)
-    where
-        T: clickhouse::Row + serde::Serialize + Send + Sync + 'static,
-    {
-        let permit = self
-            .semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("semaphore closed");
-
-        let client = self.client.clone();
-        let table = table.to_owned();
-
-        tokio::spawn(async move {
-            if let Err(e) = insert_rows(&client, &table, &rows).await {
-                tracing::error!(table, rows = rows.len(), "insert failed: {e}");
-            }
-            drop(permit);
-        });
-    }
-
-    pub async fn flush(&self) {
-        let _ = self
-            .semaphore
-            .acquire_many(MAX_CONCURRENT_WRITES as u32)
-            .await;
-    }
-}
-
 pub struct ClientBuilder {
     url: String,
     database: String,
@@ -113,8 +62,6 @@ impl ClientBuilder {
             .with_database(&self.database)
             .with_user(&self.user)
             .with_password(&self.password)
-            .with_option("async_insert", "1")
-            .with_option("wait_for_async_insert", "0")
     }
 }
 
@@ -181,18 +128,5 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
         .execute()
         .await?;
 
-    Ok(())
-}
-
-async fn insert_rows<T: clickhouse::Row + serde::Serialize>(
-    client: &clickhouse::Client,
-    table: &str,
-    rows: &[T],
-) -> Result<(), clickhouse::error::Error> {
-    let mut insert = client.insert(table)?;
-    for row in rows {
-        insert.write(row).await?;
-    }
-    insert.end().await?;
     Ok(())
 }

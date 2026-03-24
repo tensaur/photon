@@ -11,17 +11,18 @@ use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 use crate::ports::WalError;
 
 const MAGIC: &[u8; 4] = b"PHTN";
-const HEADER_SIZE: usize = 36;
+const HEADER_SIZE: usize = 52;
 const CRC_SIZE: usize = 4;
 pub(crate) const RECORD_OVERHEAD: usize = HEADER_SIZE + CRC_SIZE;
 
 const OFF_MAGIC: usize = 0;
 const OFF_PAYLOAD_LEN: usize = 4;
-const OFF_SEQUENCE: usize = 8;
-const OFF_BATCH_CRC: usize = 16;
-const OFF_CREATED_AT: usize = 20;
-const OFF_POINT_COUNT: usize = 28;
-const OFF_UNCOMPRESSED: usize = 32;
+const OFF_RUN_ID: usize = 8;
+const OFF_SEQUENCE: usize = 24;
+const OFF_BATCH_CRC: usize = 32;
+const OFF_CREATED_AT: usize = 36;
+const OFF_POINT_COUNT: usize = 44;
+const OFF_UNCOMPRESSED: usize = 48;
 
 pub trait SegmentPhase {}
 
@@ -46,6 +47,7 @@ pub struct Segment<S: SegmentPhase> {
 
 #[derive(Clone, Debug)]
 pub struct WalRecord {
+    pub run_id: RunId,
     pub sequence_number: SequenceNumber,
     pub compressed_payload: bytes::Bytes,
     pub batch_crc32: u32,
@@ -55,9 +57,9 @@ pub struct WalRecord {
 }
 
 impl WalRecord {
-    pub fn into_wire_batch(self, run_id: RunId) -> WireBatch {
+    pub fn into_wire_batch(self) -> WireBatch {
         WireBatch {
-            run_id,
+            run_id: self.run_id,
             sequence_number: self.sequence_number,
             compressed_payload: self.compressed_payload,
             crc32: self.batch_crc32,
@@ -123,10 +125,12 @@ impl Segment<Active> {
             });
         }
 
+        let run_uuid: uuid::Uuid = batch.run_id.into();
+
         let mut header = [0u8; HEADER_SIZE];
         header[OFF_MAGIC..OFF_PAYLOAD_LEN].copy_from_slice(MAGIC);
-        header[OFF_PAYLOAD_LEN..OFF_SEQUENCE]
-            .copy_from_slice(&(payload.len() as u32).to_le_bytes());
+        header[OFF_PAYLOAD_LEN..OFF_RUN_ID].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+        header[OFF_RUN_ID..OFF_SEQUENCE].copy_from_slice(run_uuid.as_bytes());
         header[OFF_SEQUENCE..OFF_BATCH_CRC]
             .copy_from_slice(&u64::from(batch.sequence_number).to_le_bytes());
         header[OFF_BATCH_CRC..OFF_CREATED_AT].copy_from_slice(&batch.crc32.to_le_bytes());
@@ -185,7 +189,7 @@ impl Segment<Active> {
             }
 
             let payload_len =
-                u32::from_le_bytes(header[OFF_PAYLOAD_LEN..OFF_SEQUENCE].try_into().unwrap())
+                u32::from_le_bytes(header[OFF_PAYLOAD_LEN..OFF_RUN_ID].try_into().unwrap())
                     as usize;
             let seq = SequenceNumber::from(u64::from_le_bytes(
                 header[OFF_SEQUENCE..OFF_BATCH_CRC].try_into().unwrap(),
@@ -251,11 +255,18 @@ impl<S: SegmentPhase> Segment<S> {
 
     /// Read all valid records from the segment.
     pub fn read_records(&self) -> Result<Vec<WalRecord>, WalError> {
+        let (records, _) = self.read_records_from(0)?;
+        Ok(records)
+    }
+
+    /// Read records starting at the given byte offset.
+    /// Returns the records and the byte offset after the last record read.
+    pub fn read_records_from(&self, start_offset: u64) -> Result<(Vec<WalRecord>, u64), WalError> {
         let mut reader = BufReader::new(&self.file);
-        reader.seek(SeekFrom::Start(0))?;
+        reader.seek(SeekFrom::Start(start_offset))?;
 
         let mut records = Vec::new();
-        let mut offset = 0u64;
+        let mut offset = start_offset;
 
         while offset < self.write_offset {
             let mut header = [0u8; HEADER_SIZE];
@@ -267,7 +278,7 @@ impl<S: SegmentPhase> Segment<S> {
             }
 
             let payload_len =
-                u32::from_le_bytes(header[OFF_PAYLOAD_LEN..OFF_SEQUENCE].try_into().unwrap())
+                u32::from_le_bytes(header[OFF_PAYLOAD_LEN..OFF_RUN_ID].try_into().unwrap())
                     as usize;
 
             let mut payload = vec![0u8; payload_len];
@@ -281,7 +292,10 @@ impl<S: SegmentPhase> Segment<S> {
                 break;
             }
 
+            let run_id_bytes: [u8; 16] = header[OFF_RUN_ID..OFF_SEQUENCE].try_into().unwrap();
+
             records.push(WalRecord {
+                run_id: RunId::from(uuid::Uuid::from_bytes(run_id_bytes)),
                 sequence_number: SequenceNumber::from(u64::from_le_bytes(
                     header[OFF_SEQUENCE..OFF_BATCH_CRC].try_into().unwrap(),
                 )),
@@ -305,7 +319,7 @@ impl<S: SegmentPhase> Segment<S> {
             offset += RECORD_OVERHEAD as u64 + payload_len as u64;
         }
 
-        Ok(records)
+        Ok((records, offset))
     }
 
     fn transition<N: SegmentPhase>(self) -> Segment<N> {

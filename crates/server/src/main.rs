@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
 use photon_downsample::selector::noop::NoOpSelector;
-use photon_hook::noop::NoOpHook;
-use photon_ingest::domain::service::Service as IngestService;
+use photon_flush::domain::service::FlushService;
+use photon_flush::inbound::thread as flush_thread;
+use photon_flush::inbound::thread::FlushConfig;
+use photon_ingest::domain::wal_service::WalService;
 use photon_ingest::inbound::handler as ingest_handler;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::ZstdCompressor;
@@ -16,11 +19,12 @@ use photon_store::clickhouse::bucket::ClickHouseBucketStore;
 use photon_store::clickhouse::compaction::ClickHouseCompactionCursor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
-use photon_store::clickhouse::{BackgroundWriter, ClientBuilder};
+use photon_store::clickhouse::{ClientBuilder, migrate};
 use photon_transport::codec::CodecTransport;
 use photon_transport::http::HttpTransport;
 use photon_transport::serve;
 use photon_transport::tcp::TcpTransport;
+use photon_wal::server::{self, ServerWalConfig};
 
 #[cfg(feature = "dashboard")]
 mod dashboard;
@@ -37,22 +41,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let query_addr = "[::1]:50052";
 
     let codec = CodecKind::default();
+    let cancel = CancellationToken::new();
 
+    // ClickHouse
     let client = ClientBuilder::new().with_env().build();
-    let writer = BackgroundWriter::new(client.clone());
+    migrate(&client).await?;
 
-    let watermark_store = ClickHouseWatermarkStore::new(client.clone(), writer.clone());
-    let metric_store = ClickHouseMetricStore::new(client.clone(), writer.clone());
+    let watermark_store = ClickHouseWatermarkStore::new(client.clone());
+    let metric_store = ClickHouseMetricStore::new(client.clone());
     let bucket_store = ClickHouseBucketStore::new(client.clone());
     let compaction_cursor = ClickHouseCompactionCursor::new(client);
 
-    // Ingest service
-    let ingest_service = Arc::new(IngestService::new(
-        watermark_store,
-        metric_store.clone(),
-        NoOpHook,
+    // Server WAL
+    let wal_dir = ".photon/server-wal";
+    let (wal_appender, wal_reader, notify) = server::open(wal_dir, ServerWalConfig::default())?;
+
+    // Ingest hexagon (WAL-backed)
+    let ingest_service = Arc::new(WalService::new(
+        watermark_store.clone(),
+        wal_appender,
+        notify.clone(),
+    ));
+
+    // Flush hexagon
+    let flush_service = FlushService::new(
         ZstdCompressor::default(),
         codec,
+        metric_store.clone(),
+        watermark_store,
+    );
+    let flush_handle = tokio::spawn(flush_thread::run(
+        wal_reader,
+        notify,
+        flush_service,
+        FlushConfig::default(),
+        cancel.clone(),
     ));
 
     // Query service
@@ -109,7 +132,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");
-    writer.flush().await;
+    cancel.cancel();
+    let _ = flush_handle.await;
 
     Ok(())
 }

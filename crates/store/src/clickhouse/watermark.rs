@@ -4,12 +4,11 @@ use serde::{Deserialize, Serialize};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
-use super::BackgroundWriter;
 use crate::ports::watermark::WatermarkStore;
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Debug, Clone, Row, Serialize, Deserialize)]
-pub(crate) struct WatermarkRow {
+pub struct WatermarkRow {
     #[serde(with = "clickhouse::serde::uuid")]
     pub run_id: uuid::Uuid,
     pub sequence: u64,
@@ -18,12 +17,11 @@ pub(crate) struct WatermarkRow {
 #[derive(Clone)]
 pub struct ClickHouseWatermarkStore {
     client: clickhouse::Client,
-    writer: BackgroundWriter,
 }
 
 impl ClickHouseWatermarkStore {
-    pub fn new(client: clickhouse::Client, writer: BackgroundWriter) -> Self {
-        Self { client, writer }
+    pub fn new(client: clickhouse::Client) -> Self {
+        Self { client }
     }
 }
 
@@ -43,15 +41,33 @@ impl WatermarkStore for ClickHouseWatermarkStore {
     }
 
     async fn advance(&self, run_id: &RunId, seq: SequenceNumber) -> Result<(), WriteError> {
-        self.writer
-            .write(
-                "watermarks",
-                vec![WatermarkRow {
+        self.advance_many(&[(*run_id, seq)]).await
+    }
+
+    async fn advance_many(&self, entries: &[(RunId, SequenceNumber)]) -> Result<(), WriteError> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let mut insert = self
+            .client
+            .insert("watermarks")
+            .map_err(|e| WriteError::Unknown(e.into()))?;
+
+        for (run_id, seq) in entries {
+            insert
+                .write(&WatermarkRow {
                     run_id: (*run_id).into(),
-                    sequence: seq.into(),
-                }],
-            )
-            .await;
+                    sequence: (*seq).into(),
+                })
+                .await
+                .map_err(|e| WriteError::Unknown(e.into()))?;
+        }
+
+        insert
+            .end()
+            .await
+            .map_err(|e| WriteError::Unknown(e.into()))?;
         Ok(())
     }
 }

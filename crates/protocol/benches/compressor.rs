@@ -1,5 +1,5 @@
 use bytes::BytesMut;
-use criterion::{BenchmarkId, BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};

@@ -11,6 +11,7 @@ photon-protocol = { path = "../protocol" }
 photon-transport = { path = "../transport" }
 photon-store = { path = "../store" }
 photon-hook = { path = "../hook" }
+photon-wal = { path = "../wal" }
 
 tokio.workspace = true
 tokio-stream.workspace = true

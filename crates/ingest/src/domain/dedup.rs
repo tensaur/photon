@@ -78,6 +78,12 @@ impl<W: WatermarkStore> DeduplicationTracker<W> {
         Ok(w)
     }
 
+    /// Advance the in-memory cache only, without persisting to the store.
+    /// Used on the server WAL path where the flush consumer handles store writes.
+    pub fn advance_local(&self, run_id: &RunId, seq: SequenceNumber) {
+        self.cache.insert(*run_id, seq);
+    }
+
     pub fn evict(&self, run_id: &RunId) {
         self.cache.remove(run_id);
     }

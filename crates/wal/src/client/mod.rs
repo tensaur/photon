@@ -8,14 +8,12 @@ use photon_core::types::config::{WalConfig, WalMeta, WalSyncPolicy};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 
-pub(crate) mod segment;
-
-use self::segment::{Active, RECORD_OVERHEAD, Sealed, Segment};
+use crate::segment::{Active, RECORD_OVERHEAD, Sealed, Segment};
 
 use crate::ports::{Wal, WalAppender, WalError};
 
 #[derive(Clone, Debug)]
-pub struct DiskWalConfig {
+pub struct ClientWalConfig {
     pub wal: WalConfig,
     /// Fraction of segment capacity that triggers rotation (0.0, 1.0)
     pub rotation_threshold: f64,
@@ -25,7 +23,7 @@ pub struct DiskWalConfig {
     pub hard_pressure_ratio: f64,
 }
 
-impl Default for DiskWalConfig {
+impl Default for ClientWalConfig {
     fn default() -> Self {
         Self {
             wal: WalConfig::default(),
@@ -44,18 +42,18 @@ pub fn default_wal_dir(run_id: &RunId) -> PathBuf {
 
 const META_FILENAME: &str = "wal.meta";
 
-pub fn open_disk_wal(
+pub fn open_client_wal(
     dir: Option<&Path>,
     run_id: RunId,
-    config: DiskWalConfig,
-) -> Result<(DiskWalAppender, DiskWalManager), WalError> {
+    config: ClientWalConfig,
+) -> Result<(ClientWalAppender, ClientWalManager), WalError> {
     let dir = dir
         .map(|d| d.join(run_id.to_string()))
         .unwrap_or_else(|| default_wal_dir(&run_id));
     fs::create_dir_all(&dir)?;
 
     let (committed, next_seg) = load_meta(&dir);
-    let existing = segment::list_segments(&dir)?;
+    let existing = crate::segment::list_segments(&dir)?;
     let cap = config.wal.segment_size;
 
     let (active, sealed) = if existing.is_empty() {
@@ -77,7 +75,7 @@ pub fn open_disk_wal(
     let sealed = Arc::new(Mutex::new(sealed));
     let bytes_used = Arc::new(AtomicU64::new(bytes_used_val));
 
-    let appender = DiskWalAppender {
+    let appender = ClientWalAppender {
         dir: dir.clone(),
         config: config.clone(),
         active,
@@ -87,7 +85,7 @@ pub fn open_disk_wal(
         batches_since_sync: 0,
     };
 
-    let manager = DiskWalManager {
+    let manager = ClientWalManager {
         sealed,
         committed: Arc::new(Mutex::new(committed)),
         dir,
@@ -99,9 +97,9 @@ pub fn open_disk_wal(
     Ok((appender, manager))
 }
 
-pub struct DiskWalAppender {
+pub struct ClientWalAppender {
     dir: PathBuf,
-    config: DiskWalConfig,
+    config: ClientWalConfig,
     active: Segment<Active>,
     sealed: Arc<Mutex<Vec<Segment<Sealed>>>>,
     bytes_used: Arc<AtomicU64>,
@@ -109,7 +107,7 @@ pub struct DiskWalAppender {
     batches_since_sync: u32,
 }
 
-impl DiskWalAppender {
+impl ClientWalAppender {
     fn rotate(&mut self) -> Result<SegmentIndex, WalError> {
         let idx = self.next_segment;
         let cap = self.config.wal.segment_size;
@@ -185,7 +183,7 @@ impl DiskWalAppender {
     }
 }
 
-impl WalAppender for DiskWalAppender {
+impl WalAppender for ClientWalAppender {
     fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
         self.enforce_budget()?;
 
@@ -205,16 +203,16 @@ impl WalAppender for DiskWalAppender {
 }
 
 #[derive(Clone)]
-pub struct DiskWalManager {
+pub struct ClientWalManager {
     sealed: Arc<Mutex<Vec<Segment<Sealed>>>>,
     committed: Arc<Mutex<SequenceNumber>>,
     dir: PathBuf,
     run_id: RunId,
-    config: DiskWalConfig,
+    config: ClientWalConfig,
     bytes_used: Arc<AtomicU64>,
 }
 
-impl DiskWalManager {
+impl ClientWalManager {
     fn persist_meta(&self, committed: SequenceNumber) -> Result<(), WalError> {
         let json = serde_json::to_string(&MetaFile {
             run_id: self.run_id.to_string(),
@@ -230,14 +228,13 @@ impl DiskWalManager {
     }
 
     fn read_after(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
-        let run_id = self.run_id;
         let mut out = Vec::new();
 
         let sealed = self.sealed.lock().unwrap();
         for seg in sealed.iter() {
             for r in seg.read_records()? {
                 if r.sequence_number > seq {
-                    out.push(r.into_wire_batch(run_id));
+                    out.push(r.into_wire_batch());
                 }
             }
         }
@@ -245,12 +242,12 @@ impl DiskWalManager {
 
         // Read the active segment by opening the latest segment file read-only.
         // The appender may be concurrently writing, but we read only flushed data.
-        let active_segments = segment::list_segments(&self.dir)?;
+        let active_segments = crate::segment::list_segments(&self.dir)?;
         if let Some((idx, _)) = active_segments.last() {
             let active = Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
             for r in active.read_records()? {
                 if r.sequence_number > seq {
-                    out.push(r.into_wire_batch(run_id));
+                    out.push(r.into_wire_batch());
                 }
             }
         }
@@ -261,7 +258,7 @@ impl DiskWalManager {
     }
 }
 
-impl Wal for DiskWalManager {
+impl Wal for ClientWalManager {
     fn close(&self) -> Result<(), WalError> {
         if self.dir.exists() {
             fs::remove_dir_all(&self.dir)?;

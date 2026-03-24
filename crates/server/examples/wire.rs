@@ -5,17 +5,22 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 
-use photon_hook::noop::NoOpHook;
-use photon_ingest::domain::service::Service as IngestService;
+use photon_flush::domain::service::FlushService;
+use photon_flush::inbound::thread as flush_thread;
+use photon_flush::inbound::thread::FlushConfig;
+use photon_ingest::domain::wal_service::WalService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
+use photon_protocol::compressor::ZstdCompressor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
-use photon_store::clickhouse::{migrate, BackgroundWriter, ClientBuilder};
+use photon_store::clickhouse::{ClientBuilder, migrate};
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
+use photon_wal::server::{self, ServerWalConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,20 +30,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let codec = CodecKind::default();
     let compressor = CompressorKind::default();
+    let cancel = CancellationToken::new();
 
+    // ClickHouse
     let client = ClientBuilder::new().with_env().build();
     migrate(&client).await?;
-    let writer = BackgroundWriter::new(client.clone());
 
-    let watermark_store = ClickHouseWatermarkStore::new(client.clone(), writer.clone());
-    let metric_store = ClickHouseMetricStore::new(client, writer.clone());
+    let watermark_store = ClickHouseWatermarkStore::new(client.clone());
+    let metric_store = ClickHouseMetricStore::new(client);
 
-    let ingest_service = Arc::new(IngestService::new(
-        watermark_store,
-        metric_store,
-        NoOpHook,
-        compressor,
+    // Server WAL
+    let wal_dir = tempfile::tempdir()?;
+    let wal_dir_path = wal_dir.path().to_owned();
+    let (wal_appender, wal_reader, notify) =
+        server::open(&wal_dir_path, ServerWalConfig::default())?;
+
+    // Ingest service (WAL-backed)
+    let ingest_service = Arc::new(WalService::new(
+        watermark_store.clone(),
+        wal_appender,
+        notify.clone(),
+    ));
+
+    // Flush consumer
+    let flush_service = FlushService::new(
+        ZstdCompressor::default(),
         codec,
+        metric_store,
+        watermark_store,
+    );
+    let flush_cancel = cancel.clone();
+    let flush_handle = tokio::spawn(flush_thread::run(
+        wal_reader,
+        notify,
+        flush_service,
+        FlushConfig::default(),
+        flush_cancel,
     ));
 
     // Spawn server in background
@@ -133,9 +160,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     client_handle.await?;
 
-    let t0 = std::time::Instant::now();
-    writer.flush().await;
-    println!("ClickHouse flush: {:.2?}", t0.elapsed());
+    cancel.cancel();
+    flush_handle.await?;
 
+    println!("Done.");
     Ok(())
 }

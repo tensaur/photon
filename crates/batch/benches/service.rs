@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use criterion::{BenchmarkId, BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use lasso::ThreadedRodeo;
 
 use photon_batch::domain::service::{BatchService, Service};
@@ -65,9 +65,7 @@ fn bench_service(c: &mut Criterion) {
                     let stats = BatchStats::default();
                     (service, stats)
                 },
-                |(mut service, mut stats)| {
-                    service.batch(points, &mut stats).unwrap()
-                },
+                |(mut service, mut stats)| service.batch(points, &mut stats).unwrap(),
                 BatchSize::SmallInput,
             );
         });

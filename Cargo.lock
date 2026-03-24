@@ -2810,6 +2810,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "photon-flush"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "photon-core",
+ "photon-protocol",
+ "photon-store",
+ "photon-wal",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "photon-hook"
 version = "0.0.0"
 dependencies = [
@@ -2830,6 +2846,7 @@ dependencies = [
  "photon-protocol",
  "photon-store",
  "photon-transport",
+ "photon-wal",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -2875,15 +2892,20 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "photon",
+ "photon-core",
  "photon-downsample",
+ "photon-flush",
  "photon-hook",
  "photon-ingest",
  "photon-protocol",
  "photon-query",
  "photon-store",
  "photon-transport",
+ "photon-wal",
  "rust-embed",
+ "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2949,7 +2971,9 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -4033,6 +4057,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

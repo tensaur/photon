@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use bytes::BytesMut;
-use criterion::{BenchmarkId, BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
@@ -95,17 +95,9 @@ fn bench_service(c: &mut Criterion) {
             b.iter_batched(
                 || {
                     let seq = seq_counter.fetch_add(1, Ordering::Relaxed);
-                    make_wire_batch(
-                        run_id,
-                        size,
-                        SequenceNumber::from(seq),
-                        &compressor,
-                        &codec,
-                    )
+                    make_wire_batch(run_id, size, SequenceNumber::from(seq), &compressor, &codec)
                 },
-                |wire_batch| {
-                    rt.block_on(service.ingest(&wire_batch)).unwrap()
-                },
+                |wire_batch| rt.block_on(service.ingest(&wire_batch)).unwrap(),
                 BatchSize::SmallInput,
             );
         });

@@ -114,8 +114,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Compression:        {compression_ratio:.2}x");
         eprintln!("Log:                {log_elapsed:.2?}");
         eprintln!("Total:              {total_elapsed:.2?}");
-        eprintln!("Throughput (log):   {:.2} M pts/s", log_throughput / 1_000_000.0);
-        eprintln!("Throughput (total): {:.2} M pts/s", total_throughput / 1_000_000.0);
+        eprintln!(
+            "Throughput (log):   {:.2} M pts/s",
+            log_throughput / 1_000_000.0
+        );
+        eprintln!(
+            "Throughput (total): {:.2} M pts/s",
+            total_throughput / 1_000_000.0
+        );
     })
     .await?;
 

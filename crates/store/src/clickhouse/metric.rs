@@ -6,12 +6,11 @@ use serde::{Deserialize, Serialize};
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch};
 
-use super::BackgroundWriter;
 use crate::ports::metric::{MetricReader, MetricWriter};
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Debug, Clone, Row, Serialize, Deserialize)]
-pub(crate) struct MetricWriteRow {
+pub struct MetricWriteRow {
     #[serde(with = "clickhouse::serde::uuid")]
     pub run_id: uuid::Uuid,
     pub key: String,
@@ -45,35 +44,50 @@ struct CountRow {
 #[derive(Clone)]
 pub struct ClickHouseMetricStore {
     client: clickhouse::Client,
-    writer: BackgroundWriter,
 }
 
 impl ClickHouseMetricStore {
-    pub fn new(client: clickhouse::Client, writer: BackgroundWriter) -> Self {
-        Self { client, writer }
+    pub fn new(client: clickhouse::Client) -> Self {
+        Self { client }
     }
 }
 
 impl MetricWriter for ClickHouseMetricStore {
     async fn write_batch(&self, batch: &MetricBatch) -> Result<(), WriteError> {
-        if batch.points.is_empty() {
+        self.write_batches(std::slice::from_ref(batch)).await
+    }
+
+    async fn write_batches(&self, batches: &[MetricBatch]) -> Result<(), WriteError> {
+        if batches.iter().all(MetricBatch::is_empty) {
             return Ok(());
         }
 
-        let run_uuid: uuid::Uuid = batch.run_id.into();
-        let rows: Vec<MetricWriteRow> = batch
-            .points
-            .iter()
-            .map(|point| MetricWriteRow {
-                run_id: run_uuid,
-                key: batch.key(point).as_str().to_owned(),
-                step: point.step,
-                value: point.value,
-                timestamp_ms: point.timestamp_ms,
-            })
-            .collect();
+        let mut insert = self
+            .client
+            .insert("metrics")
+            .map_err(|e| WriteError::Unknown(e.into()))?;
 
-        self.writer.write("metrics", rows).await;
+        for batch in batches {
+            let run_uuid: uuid::Uuid = batch.run_id.into();
+
+            for point in &batch.points {
+                insert
+                    .write(&MetricWriteRow {
+                        run_id: run_uuid,
+                        key: batch.key(point).as_str().to_owned(),
+                        step: point.step,
+                        value: point.value,
+                        timestamp_ms: point.timestamp_ms,
+                    })
+                    .await
+                    .map_err(|e| WriteError::Unknown(e.into()))?;
+            }
+        }
+
+        insert
+            .end()
+            .await
+            .map_err(|e| WriteError::Unknown(e.into()))?;
         Ok(())
     }
 }
