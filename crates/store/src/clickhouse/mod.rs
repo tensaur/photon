@@ -4,42 +4,53 @@ pub mod metric;
 pub mod watermark;
 
 use std::sync::Arc;
-use std::time::Duration;
 
-use tokio::sync::{mpsc, oneshot, Semaphore};
-use tokio::time::MissedTickBehavior;
+use tokio::sync::Semaphore;
 
-use self::metric::MetricWriteRow;
-use self::watermark::WatermarkRow;
+const MAX_CONCURRENT_WRITES: usize = 16;
 
-const MAX_CONCURRENT_FLUSHES: usize = 8;
-const FLUSH_THRESHOLD: usize = 100_000;
-const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
-
-pub(crate) enum WriteOp {
-    Metrics(Vec<MetricWriteRow>),
-    Watermark(WatermarkRow),
-    Flush(oneshot::Sender<()>),
-}
-
-/// Shared background writer for batching inserts into ClickHouse.
+/// Spawns concurrent inserts into ClickHouse, bounded by a semaphore.
 #[derive(Clone)]
 pub struct BackgroundWriter {
-    pub(crate) write_tx: mpsc::UnboundedSender<WriteOp>,
+    client: clickhouse::Client,
+    semaphore: Arc<Semaphore>,
 }
 
 impl BackgroundWriter {
     pub fn new(client: clickhouse::Client) -> Self {
-        let (write_tx, write_rx) = mpsc::unbounded_channel();
-        let flush_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_FLUSHES));
-        tokio::spawn(background_writer(client, write_rx, flush_semaphore));
-        Self { write_tx }
+        Self {
+            client,
+            semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_WRITES)),
+        }
+    }
+
+    pub async fn write<T>(&self, table: &str, rows: Vec<T>)
+    where
+        T: clickhouse::Row + serde::Serialize + Send + Sync + 'static,
+    {
+        let permit = self
+            .semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("semaphore closed");
+
+        let client = self.client.clone();
+        let table = table.to_owned();
+
+        tokio::spawn(async move {
+            if let Err(e) = insert_rows(&client, &table, &rows).await {
+                tracing::error!(table, rows = rows.len(), "insert failed: {e}");
+            }
+            drop(permit);
+        });
     }
 
     pub async fn flush(&self) {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.write_tx.send(WriteOp::Flush(tx));
-        let _ = rx.await;
+        let _ = self
+            .semaphore
+            .acquire_many(MAX_CONCURRENT_WRITES as u32)
+            .await;
     }
 }
 
@@ -122,6 +133,7 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
                 value Float64,
                 timestamp_ms UInt64
             ) ENGINE = MergeTree()
+            PARTITION BY run_id
             ORDER BY (run_id, key, step)",
         )
         .execute()
@@ -150,6 +162,7 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
                 min Float64,
                 max Float64
             ) ENGINE = MergeTree()
+            PARTITION BY run_id
             ORDER BY (run_id, key, tier, step_start)",
         )
         .execute()
@@ -171,87 +184,7 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
     Ok(())
 }
 
-async fn background_writer(
-    client: clickhouse::Client,
-    mut rx: mpsc::UnboundedReceiver<WriteOp>,
-    semaphore: Arc<Semaphore>,
-) {
-    let mut metric_buf: Vec<MetricWriteRow> = Vec::new();
-    let mut watermark_buf: Vec<WatermarkRow> = Vec::new();
-    let mut interval = tokio::time::interval(FLUSH_INTERVAL);
-    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-    loop {
-        tokio::select! {
-            biased;
-
-            msg = rx.recv() => {
-                match msg {
-                    Some(WriteOp::Metrics(rows)) => {
-                        metric_buf.extend(rows);
-                        if metric_buf.len() >= FLUSH_THRESHOLD {
-                            spawn_flush(&client, &semaphore, &mut metric_buf, &mut watermark_buf).await;
-                        }
-                    }
-                    Some(WriteOp::Watermark(row)) => {
-                        watermark_buf.push(row);
-                    }
-                    Some(WriteOp::Flush(done)) => {
-                        spawn_flush(&client, &semaphore, &mut metric_buf, &mut watermark_buf).await;
-                        wait_all(&semaphore).await;
-                        let _ = done.send(());
-                    }
-                    None => {
-                        spawn_flush(&client, &semaphore, &mut metric_buf, &mut watermark_buf).await;
-                        wait_all(&semaphore).await;
-                        break;
-                    }
-                }
-            }
-            _ = interval.tick() => {
-                spawn_flush(&client, &semaphore, &mut metric_buf, &mut watermark_buf).await;
-            }
-        }
-    }
-}
-
-async fn spawn_flush(
-    client: &clickhouse::Client,
-    semaphore: &Arc<Semaphore>,
-    metric_buf: &mut Vec<MetricWriteRow>,
-    watermark_buf: &mut Vec<WatermarkRow>,
-) {
-    if metric_buf.is_empty() && watermark_buf.is_empty() {
-        return;
-    }
-
-    let permit = semaphore.clone().acquire_owned().await;
-    let metrics = std::mem::take(metric_buf);
-    let watermarks = std::mem::take(watermark_buf);
-    let client = client.clone();
-
-    tokio::spawn(async move {
-        if !metrics.is_empty() {
-            if let Err(e) = flush_rows(&client, "metrics", &metrics).await {
-                tracing::error!("failed to flush metrics: {e}");
-            }
-        }
-        if !watermarks.is_empty() {
-            if let Err(e) = flush_rows(&client, "watermarks", &watermarks).await {
-                tracing::error!("failed to flush watermarks: {e}");
-            }
-        }
-        drop(permit);
-    });
-}
-
-async fn wait_all(semaphore: &Semaphore) {
-    let _ = semaphore
-        .acquire_many(MAX_CONCURRENT_FLUSHES as u32)
-        .await;
-}
-
-async fn flush_rows<T: clickhouse::Row + serde::Serialize>(
+async fn insert_rows<T: clickhouse::Row + serde::Serialize>(
     client: &clickhouse::Client,
     table: &str,
     rows: &[T],

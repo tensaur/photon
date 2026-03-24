@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
-use super::{BackgroundWriter, WriteOp};
+use super::BackgroundWriter;
 use crate::ports::watermark::WatermarkStore;
 use crate::ports::{ReadError, WriteError};
 
@@ -44,13 +44,14 @@ impl WatermarkStore for ClickHouseWatermarkStore {
 
     async fn advance(&self, run_id: &RunId, seq: SequenceNumber) -> Result<(), WriteError> {
         self.writer
-            .write_tx
-            .send(WriteOp::Watermark(WatermarkRow {
-                run_id: (*run_id).into(),
-                sequence: seq.into(),
-            }))
-            .map_err(|_| WriteError::Unknown(anyhow::anyhow!("background writer stopped")))?;
-
+            .write(
+                "watermarks",
+                vec![WatermarkRow {
+                    run_id: (*run_id).into(),
+                    sequence: seq.into(),
+                }],
+            )
+            .await;
         Ok(())
     }
 }

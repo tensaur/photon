@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch};
 
-use super::{BackgroundWriter, WriteOp};
+use super::BackgroundWriter;
 use crate::ports::metric::{MetricReader, MetricWriter};
 use crate::ports::{ReadError, WriteError};
 
@@ -73,11 +73,7 @@ impl MetricWriter for ClickHouseMetricStore {
             })
             .collect();
 
-        self.writer
-            .write_tx
-            .send(WriteOp::Metrics(rows))
-            .map_err(|_| WriteError::Unknown(anyhow::anyhow!("background writer stopped")))?;
-
+        self.writer.write("metrics", rows).await;
         Ok(())
     }
 }

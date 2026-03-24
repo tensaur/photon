@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let codec = CodecKind::default();
     let compressor = CompressorKind::default();
 
-    let client = ClientBuilder::new().build();
+    let client = ClientBuilder::new().with_env().build();
     migrate(&client).await?;
     let writer = BackgroundWriter::new(client.clone());
 
