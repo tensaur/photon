@@ -35,7 +35,6 @@ rust-embed = { workspace = true, optional = true, features = ["mime-guess"] }
 
 [dev-dependencies]
 photon = { path = "../sdk" }
-tempfile = "3"
 
 [[bench]]
 name = "throughput"

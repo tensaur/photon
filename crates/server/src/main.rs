@@ -8,7 +8,7 @@ use photon_downsample::selector::noop::NoOpSelector;
 use photon_flush::domain::service::FlushService;
 use photon_flush::inbound::thread as flush_thread;
 use photon_flush::inbound::thread::FlushConfig;
-use photon_ingest::domain::wal_service::WalService;
+use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler as ingest_handler;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::ZstdCompressor;
@@ -57,18 +57,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (wal_appender, wal_reader, notify) = server::open(wal_dir, ServerWalConfig::default())?;
 
     // Ingest hexagon (WAL-backed)
-    let ingest_service = Arc::new(WalService::new(
-        watermark_store.clone(),
+    let ingest_service = Arc::new(IngestService::new(
+        watermark_store,
         wal_appender,
         notify.clone(),
     ));
+    ingest_service.seed_watermarks(wal_reader.watermarks());
 
     // Flush hexagon
     let flush_service = FlushService::new(
         ZstdCompressor::default(),
         codec,
         metric_store.clone(),
-        watermark_store,
     );
     let flush_handle = tokio::spawn(flush_thread::run(
         wal_reader,

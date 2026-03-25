@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use photon_flush::domain::service::FlushService;
 use photon_flush::inbound::thread as flush_thread;
 use photon_flush::inbound::thread::FlushConfig;
-use photon_ingest::domain::wal_service::WalService;
+use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
@@ -24,6 +24,13 @@ use photon_wal::server::{self, ServerWalConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     let listener = TcpListener::bind("[::1]:0").await?;
     let addr: SocketAddr = listener.local_addr()?;
     println!("Server listening on {addr}");
@@ -40,24 +47,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metric_store = ClickHouseMetricStore::new(client);
 
     // Server WAL
-    let wal_dir = tempfile::tempdir()?;
-    let wal_dir_path = wal_dir.path().to_owned();
+    let wal_dir = ".photon/server-wal";
     let (wal_appender, wal_reader, notify) =
-        server::open(&wal_dir_path, ServerWalConfig::default())?;
+        server::open(wal_dir, ServerWalConfig::default())?;
 
     // Ingest service (WAL-backed)
-    let ingest_service = Arc::new(WalService::new(
-        watermark_store.clone(),
+    let ingest_service = Arc::new(IngestService::new(
+        watermark_store,
         wal_appender,
         notify.clone(),
     ));
+    ingest_service.seed_watermarks(wal_reader.watermarks());
 
     // Flush consumer
     let flush_service = FlushService::new(
         ZstdCompressor::default(),
         codec,
         metric_store,
-        watermark_store,
     );
     let flush_cancel = cancel.clone();
     let flush_handle = tokio::spawn(flush_thread::run(
@@ -101,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t0 = Instant::now();
 
         // Simulate a training loop
-        for step in 0..10_000_000u64 {
+        for step in 0..100_000_000u64 {
             let loss = 1.0 / (1.0 + step as f64 * 0.05);
             let accuracy = 1.0 - loss;
 

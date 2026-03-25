@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use bytes::BytesMut;
 
@@ -9,7 +10,6 @@ use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::metric::MetricWriter;
-use photon_store::ports::watermark::WatermarkStore;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FlushError {
@@ -21,58 +21,59 @@ pub enum FlushError {
 
     #[error("metric write failed")]
     MetricWrite(#[source] photon_store::ports::WriteError),
-
-    #[error("watermark advance failed")]
-    WatermarkWrite(#[source] photon_store::ports::WriteError),
 }
 
-pub struct FlushService<C, K, M, W>
+pub struct FlushStats {
+    pub batches: usize,
+    pub points: usize,
+    pub decode_ms: u64,
+    pub write_ms: u64,
+    pub watermarks: HashMap<RunId, SequenceNumber>,
+}
+
+pub struct FlushService<C, K, M>
 where
     C: Compressor,
     K: Codec<MetricBatch>,
     M: MetricWriter,
-    W: WatermarkStore,
 {
     compressor: C,
     codec: K,
     metric_writer: M,
-    watermark_store: W,
 }
 
-impl<C, K, M, W> FlushService<C, K, M, W>
+impl<C, K, M> FlushService<C, K, M>
 where
     C: Compressor,
     K: Codec<MetricBatch>,
     M: MetricWriter,
-    W: WatermarkStore,
 {
-    pub fn new(compressor: C, codec: K, metric_writer: M, watermark_store: W) -> Self {
+    pub fn new(compressor: C, codec: K, metric_writer: M) -> Self {
         Self {
             compressor,
             codec,
             metric_writer,
-            watermark_store,
         }
     }
 
     /// Process a batch of WAL entries: decompress, decode, write to store.
-    pub async fn process(&self, batches: &[WireBatch]) -> Result<(), FlushError> {
+    /// Returns watermarks (max sequence per run) for the caller to persist.
+    pub async fn process(&self, batches: &[WireBatch]) -> Result<FlushStats, FlushError> {
         let mut decoded_batches = Vec::with_capacity(batches.len());
-
-        // Track max watermark per run
         let mut watermarks: HashMap<RunId, SequenceNumber> = HashMap::new();
+        let mut total_points = 0usize;
 
+        // Decode
+        let t_decode = Instant::now();
         for batch in batches {
-            // Decompress
             let mut buf = BytesMut::with_capacity(batch.uncompressed_size);
             self.compressor
                 .decompress(&batch.compressed_payload, &mut buf)
                 .map_err(FlushError::Decompress)?;
 
-            // Decode
             let metric_batch: MetricBatch = self.codec.decode(&buf).map_err(FlushError::Decode)?;
+            total_points += metric_batch.points.len();
 
-            // Track max watermark per run
             watermarks
                 .entry(batch.run_id)
                 .and_modify(|s| {
@@ -84,20 +85,22 @@ where
 
             decoded_batches.push(metric_batch);
         }
+        let decode_ms = t_decode.elapsed().as_millis() as u64;
 
-        // Write decoded points in bulk so a single flush cycle can amortize insert overhead.
+        // Write metrics
+        let t_write = Instant::now();
         self.metric_writer
             .write_batches(&decoded_batches)
             .await
             .map_err(FlushError::MetricWrite)?;
+        let write_ms = t_write.elapsed().as_millis() as u64;
 
-        // Advance watermarks
-        let watermark_updates: Vec<_> = watermarks.into_iter().collect();
-        self.watermark_store
-            .advance_many(&watermark_updates)
-            .await
-            .map_err(FlushError::WatermarkWrite)?;
-
-        Ok(())
+        Ok(FlushStats {
+            batches: batches.len(),
+            points: total_points,
+            decode_ms,
+            write_ms,
+            watermarks,
+        })
     }
 }

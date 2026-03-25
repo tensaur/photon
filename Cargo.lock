@@ -2815,6 +2815,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "bytes",
+ "futures-util",
  "photon-core",
  "photon-protocol",
  "photon-store",
@@ -2836,20 +2837,17 @@ dependencies = [
 name = "photon-ingest"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "bytes",
  "crc32fast",
  "criterion",
  "dashmap",
  "photon-core",
- "photon-hook",
  "photon-protocol",
  "photon-store",
  "photon-transport",
  "photon-wal",
  "thiserror 2.0.18",
  "tokio",
- "tokio-stream",
  "tracing",
 ]
 
@@ -2903,7 +2901,6 @@ dependencies = [
  "photon-transport",
  "photon-wal",
  "rust-embed",
- "tempfile",
  "tokio",
  "tokio-util",
  "tracing",
@@ -4022,17 +4019,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
  "rustls",
- "tokio",
-]
-
-[[package]]
-name = "tokio-stream"
-version = "0.1.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32da49809aab5c3bc678af03902d4ccddea2a87d028d86392a4b1560c6906c70"
-dependencies = [
- "futures-core",
- "pin-project-lite",
  "tokio",
 ]
 

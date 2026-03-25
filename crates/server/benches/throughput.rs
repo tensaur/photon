@@ -4,15 +4,14 @@ use std::time::Instant;
 
 use tokio::net::TcpListener;
 
-use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
-use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
+use photon_wal::open_in_memory_wal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,17 +21,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(10_000_000);
 
     let codec = CodecKind::default();
-    let compressor = CompressorKind::default();
+    let _compressor = CompressorKind::default();
 
     let listener = TcpListener::bind("[::1]:0").await?;
     let addr: SocketAddr = listener.local_addr()?;
 
+    let (wal_appender, _wal) = open_in_memory_wal();
+    let notify = Arc::new(tokio::sync::Notify::new());
+
     let ingest_service = Arc::new(IngestService::new(
         InMemoryWatermarkStore::new(),
-        InMemoryMetricStore::new(),
-        NoOpHook,
-        compressor,
-        codec,
+        wal_appender,
+        notify,
     ));
 
     tokio::spawn(async move {
@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let service = Arc::clone(&ingest_service);
 
             tokio::spawn(async move {
-                handler::handle_stream(&service, &transport).await;
+                handler::handle(&service, &transport).await;
             });
         }
     });

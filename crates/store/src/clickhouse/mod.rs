@@ -66,7 +66,10 @@ impl ClientBuilder {
 }
 
 pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::error::Error> {
+    // Use the default database for CREATE DATABASE, since the photon database may not exist yet.
     client
+        .clone()
+        .with_database("default")
         .query("CREATE DATABASE IF NOT EXISTS photon")
         .execute()
         .await?;
