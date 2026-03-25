@@ -3,7 +3,11 @@ use photon_core::domain::project::Project;
 use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
-use photon_core::types::query::{MetricQuery, MetricSeries, QueryRequest, QueryResponse};
+use photon_core::types::query::{
+    DataPoint, MetricQuery, MetricSeries, QueryRequest, QueryResponse,
+};
+use photon_core::types::subscription::{SubscriptionEvent, SubscriptionMessage};
+use photon_transport::Transport;
 
 use crate::domain::error::{
     ListExperimentsError, ListMetricsError, ListProjectsError, ListRunsError, QueryMetricsError,
@@ -38,6 +42,15 @@ pub enum Response {
         request: QueryRequest,
         result: Result<QueryResponse, QueryMetricsError>,
     },
+    LivePoints {
+        run_id: RunId,
+        metric: Metric,
+        points: Vec<DataPoint>,
+    },
+    SubscriptionEnded {
+        run_id: RunId,
+    },
+    RunsChanged,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -106,15 +119,56 @@ pub use platform::{CommandSender, ResponseReceiver, send_cmd};
 use platform::{channels, recv_cmd, send_resp, spawn};
 type ResponseSender = platform::ResponseSender;
 
-pub fn spawn_service<S: DashboardService>(
+pub fn spawn_service<S, T>(
     ctx: egui::Context,
     service: S,
-) -> (CommandSender, ResponseReceiver) {
+    subscription_transport: Option<T>,
+) -> (CommandSender, ResponseReceiver)
+where
+    S: DashboardService,
+    T: Transport<SubscriptionMessage, SubscriptionEvent> + 'static,
+{
     let (cmd_tx, cmd_rx) = channels();
     let (resp_tx, resp_rx) = channels();
 
+    if let Some(sub_transport) = subscription_transport {
+        let tx = resp_tx.clone();
+        let c = ctx.clone();
+        spawn(async move { subscription_reader(c, sub_transport, tx).await });
+    }
+
     spawn(run_loop(ctx, service, cmd_rx, resp_tx));
     (cmd_tx, resp_rx)
+}
+
+async fn subscription_reader<T>(ctx: egui::Context, transport: T, resp_tx: ResponseSender)
+where
+    T: Transport<SubscriptionMessage, SubscriptionEvent>,
+{
+    loop {
+        match transport.recv().await {
+            Ok(SubscriptionEvent::LivePoints {
+                run_id,
+                metric,
+                points,
+            }) => {
+                send_resp(
+                    &resp_tx,
+                    Response::LivePoints {
+                        run_id,
+                        metric,
+                        points,
+                    },
+                );
+                ctx.request_repaint();
+            }
+            Ok(SubscriptionEvent::RunsChanged) => {
+                send_resp(&resp_tx, Response::RunsChanged);
+                ctx.request_repaint();
+            }
+            Err(_) => break,
+        }
+    }
 }
 
 async fn run_loop<S: DashboardService>(

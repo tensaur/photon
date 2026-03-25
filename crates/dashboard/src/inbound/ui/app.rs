@@ -7,7 +7,7 @@ use photon_core::domain::project::Project;
 use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
-use photon_core::types::query::{MetricQuery, MetricSeries};
+use photon_core::types::query::{MetricQuery, MetricSeries, SeriesData};
 
 use crate::inbound::channel::{self, Command, CommandSender, Response, ResponseReceiver};
 
@@ -71,6 +71,7 @@ impl DashboardApp {
     ) -> Self {
         theme::apply(&cc.egui_ctx);
 
+        // Request initial run and experiment lists.
         channel::send_cmd(&commands, Command::ListRuns);
         channel::send_cmd(&commands, Command::ListExperiments);
 
@@ -112,6 +113,7 @@ impl DashboardApp {
                     self.cache
                         .metrics
                         .insert(run_id, RequestState::Loaded(metrics));
+                    // Rebuild viewport now that new metrics have arrived.
                     self.rebuild_viewport();
                 }
                 Err(e) => {
@@ -126,16 +128,42 @@ impl DashboardApp {
                     self.cache.series.insert(key, series);
                 }
             }
-            Response::BatchSeries { .. } => {}
+            Response::BatchSeries { .. } => {
+                // Not used in v1 UI.
+            }
+            Response::LivePoints {
+                run_id,
+                metric,
+                points,
+            } => {
+                if let Some(series) = self.cache.series.get_mut(&(run_id, metric)) {
+                    if let SeriesData::Raw {
+                        points: ref mut existing,
+                    } = series.data
+                    {
+                        existing.extend(points);
+                    }
+                }
+            }
+            Response::SubscriptionEnded { .. } => {}
+            Response::RunsChanged => {
+                // Re-fetch the run and experiment lists
+                self.cache.runs = RequestState::Pending;
+                self.cache.experiments = RequestState::Pending;
+                channel::send_cmd(&self.commands, Command::ListRuns);
+                channel::send_cmd(&self.commands, Command::ListExperiments);
+            }
         }
     }
 
     fn handle_sidebar_action(&mut self, action: SidebarAction) {
         match action {
             SidebarAction::SelectRun(run_id) => {
+                // Unsubscribe old selections
                 self.unsubscribe_all();
                 self.sidebar.selected_runs = vec![run_id];
                 self.ensure_metrics_loaded(run_id);
+                self.subscribe_if_active(run_id);
                 self.rebuild_viewport();
             }
             SidebarAction::ToggleRun(run_id) => {
@@ -150,6 +178,7 @@ impl DashboardApp {
                 } else {
                     self.sidebar.selected_runs.push(run_id);
                     self.ensure_metrics_loaded(run_id);
+                    self.subscribe_if_active(run_id);
                 }
                 self.rebuild_viewport();
             }
@@ -157,6 +186,16 @@ impl DashboardApp {
                 self.unsubscribe_all();
                 self.sidebar.selected_runs.clear();
                 self.tile_tree = None;
+            }
+        }
+    }
+
+    fn subscribe_if_active(&self, run_id: RunId) {
+        if let RequestState::Loaded(runs) = &self.cache.runs {
+            if let Some(run) = runs.iter().find(|r| r.id == run_id) {
+                if run.is_active() {
+                    channel::send_cmd(&self.commands, Command::Subscribe { run_id });
+                }
             }
         }
     }
@@ -181,6 +220,7 @@ impl DashboardApp {
             return;
         }
 
+        // Collect metrics for all selected runs that have loaded
         let mut all_metrics_ready = true;
         let mut per_run_metrics: Vec<(RunId, Vec<Metric>)> = Vec::new();
         for &run_id in selected {
@@ -195,9 +235,10 @@ impl DashboardApp {
         }
 
         if !all_metrics_ready || per_run_metrics.is_empty() {
-            return;
+            return; // wait for all metrics to arrive
         }
 
+        // Request data for any runs we haven't queried yet
         for (run_id, metrics) in &per_run_metrics {
             for m in metrics {
                 if self.cache.get_series(run_id, m).is_none() {
@@ -219,6 +260,7 @@ impl DashboardApp {
         let mut tiles = Tiles::default();
 
         if selected.len() == 1 {
+            // Single run: one line chart per metric
             let (run_id, metrics) = &per_run_metrics[0];
             let tab_ids: Vec<_> = metrics
                 .iter()
@@ -236,6 +278,7 @@ impl DashboardApp {
             let root = tiles.insert_grid_tile(tab_ids);
             self.tile_tree = Some(egui_tiles::Tree::new("viewport", root, tiles));
         } else {
+            // Multiple runs: comparison panes for shared metrics
             let shared_metrics = find_shared_metrics(&per_run_metrics);
             let run_ids: Vec<RunId> = selected.clone();
 
@@ -279,6 +322,7 @@ impl eframe::App for DashboardApp {
                         let action =
                             sidebar::show(ui, &mut self.sidebar, runs_slice, experiments_slice);
 
+                        // Show loading / error state.
                         match &self.cache.runs {
                             RequestState::Pending => {
                                 ui.spinner();
