@@ -3,12 +3,11 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
-use photon_core::types::ack::AckResult;
-use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{RetryConfig, UplinkConfig};
 use photon_core::types::sequence::SequenceNumber;
-use photon_transport::ports::Transport;
 use photon_wal::Wal;
+
+use crate::domain::ports::IngestConnection;
 
 #[derive(Clone, Debug)]
 struct InFlightEntry {
@@ -158,9 +157,9 @@ pub enum ReconnectResult {
     Failed,
 }
 
-pub async fn try_reconnect<M: Wal + Clone, T: Transport<WireBatch, AckResult>>(
+pub async fn try_reconnect<M: Wal + Clone, C: IngestConnection>(
     wal: &M,
-    transport: &T,
+    connection: &C,
     oldest: Option<SequenceNumber>,
 ) -> ReconnectResult {
     let Some(seq) = oldest else {
@@ -176,7 +175,7 @@ pub async fn try_reconnect<M: Wal + Clone, T: Transport<WireBatch, AckResult>>(
     };
 
     if let Some(batch) = batches.first() {
-        match transport.send(batch).await {
+        match connection.send_batch(batch).await {
             Ok(()) => return ReconnectResult::Ok,
             Err(_) => return ReconnectResult::Failed,
         }
