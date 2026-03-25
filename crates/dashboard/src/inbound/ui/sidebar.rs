@@ -31,8 +31,11 @@ impl Default for SidebarState {
 }
 
 pub enum SidebarAction {
+    /// Replace selection with this single run.
     SelectRun(RunId),
+    /// Toggle a run in/out of the selection (ctrl/cmd+click).
     ToggleRun(RunId),
+    /// Clear selection entirely.
     ClearSelection,
 }
 
@@ -111,6 +114,7 @@ pub fn show(
                     let status_color = status_color(&run.status);
 
                     ui.horizontal(|ui| {
+                        // Status dot.
                         let (rect, _) =
                             ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                         ui.painter().circle_filled(rect.center(), 4.0, status_color);
@@ -125,10 +129,13 @@ pub fn show(
                         if response.clicked() {
                             let modifier = ui.input(|i| i.modifiers.command);
                             if modifier {
+                                // Ctrl/Cmd+click: toggle run in/out of selection
                                 action = Some(SidebarAction::ToggleRun(run.id));
                             } else if is_selected && state.selected_runs.len() == 1 {
+                                // Click on sole selected run: deselect
                                 action = Some(SidebarAction::ClearSelection);
                             } else {
+                                // Normal click: replace selection with this run
                                 action = Some(SidebarAction::SelectRun(run.id));
                             }
                         }
@@ -162,7 +169,7 @@ fn matches_status(run: &Run, state: &SidebarState) -> bool {
         RunStatus::Running => state.show_running,
         RunStatus::Finished => state.show_finished,
         RunStatus::Failed { .. } => state.show_failed,
-        RunStatus::Created => state.show_running,
+        RunStatus::Created => state.show_running, // group with running
     }
 }
 

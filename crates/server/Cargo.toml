@@ -19,6 +19,7 @@ photon-store = { path = "../store" }
 photon-downsample = { path = "../downsample" }
 photon-ingest = { path = "../ingest" }
 photon-query = { path = "../query" }
+photon-subscription = { path = "../subscription" }
 photon-transport = { path = "../transport" }
 photon-hook = { path = "../hook" }
 

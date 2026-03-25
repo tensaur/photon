@@ -6,6 +6,7 @@ use photon_core::domain::run::Run;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::UplinkConfig;
 use photon_core::types::ingest::{IngestMessage, IngestResult};
+use photon_core::types::sequence::SequenceNumber;
 use photon_wal::Wal;
 use tokio::sync::oneshot;
 
