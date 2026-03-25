@@ -1,16 +1,17 @@
 [package]
 name = "photon-query"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [dependencies]
-photon-core = { path = "../core" }
-photon-protocol = { path = "../protocol" }
-photon-transport = { path = "../transport" }
-photon-store = { path = "../store" }
-photon-downsample = { path = "../downsample" }
+photon-core.workspace = true
+photon-protocol.workspace = true
+photon-transport.workspace = true
+photon-store.workspace = true
+photon-downsample.workspace = true
 
 futures-util.workspace = true
 serde.workspace = true

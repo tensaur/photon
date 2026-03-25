@@ -1,12 +1,13 @@
 [package]
 name = "photon-store"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [dependencies]
-photon-core = { path = "../core" }
+photon-core.workspace = true
 
 anyhow.workspace = true
 clickhouse.workspace = true

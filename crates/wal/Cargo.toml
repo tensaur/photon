@@ -1,13 +1,14 @@
 [package]
 name = "photon-wal"
-version = "0.0.0"
+version.workspace = true
 description = "WAL contracts and adapters for Photon"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = true
 
 [dependencies]
-photon-core = { path = "../core", version = "0.0.0" }
+photon-core.workspace = true
 
 thiserror.workspace = true
 anyhow.workspace = true

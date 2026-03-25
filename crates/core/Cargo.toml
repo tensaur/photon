@@ -1,10 +1,11 @@
 [package]
 name = "photon-core"
-version = "0.0.0"
+version.workspace = true
 description = "Internal shared types for the Photon ecosystem"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = true
 
 [dependencies]
 bytes.workspace = true

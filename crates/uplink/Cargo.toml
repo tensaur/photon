@@ -1,15 +1,16 @@
 [package]
 name = "photon-uplink"
-version = "0.0.0"
+version.workspace = true
 description = "Uplink hexagon for Photon SDK"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = true
 
 [dependencies]
-photon-core = { path = "../core", version = "0.0.0" }
-photon-transport = { path = "../transport" }
-photon-wal = { path = "../wal", version = "0.0.0" }
+photon-core.workspace = true
+photon-transport.workspace = true
+photon-wal.workspace = true
 
 thiserror.workspace = true
 anyhow.workspace = true

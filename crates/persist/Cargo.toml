@@ -1,15 +1,16 @@
 [package]
 name = "photon-persist"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [dependencies]
-photon-core = { path = "../core" }
-photon-protocol = { path = "../protocol" }
-photon-store = { path = "../store" }
-photon-wal = { path = "../wal" }
+photon-core.workspace = true
+photon-protocol.workspace = true
+photon-store.workspace = true
+photon-wal.workspace = true
 
 anyhow.workspace = true
 futures-util.workspace = true

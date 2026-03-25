@@ -1,13 +1,14 @@
 [package]
 name = "photon-transport"
-version = "0.0.0"
+version.workspace = true
 description = "Transport traits and adapters for Photon"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = true
 
 [dependencies]
-photon-protocol = { path = "../protocol", version = "0.0.0" }
+photon-protocol.workspace = true
 
 async-channel.workspace = true
 bytes.workspace = true

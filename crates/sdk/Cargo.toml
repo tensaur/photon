@@ -1,22 +1,23 @@
 [package]
 name = "photon"
-version = "0.0.0"
+version.workspace = true
 description = "Client SDK for Photon"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = true
 
 [[example]]
 name = "rust_api"
 path = "examples/rust_api.rs"
 
 [dependencies]
-photon-core = { path = "../core", version = "0.0.0" }
-photon-protocol = { path = "../protocol", version = "0.0.0" }
-photon-transport = { path = "../transport" }
-photon-wal = { path = "../wal", version = "0.0.0" }
-photon-batch = { path = "../batch", version = "0.0.0" }
-photon-uplink = { path = "../uplink", version = "0.0.0" }
+photon-core.workspace = true
+photon-protocol.workspace = true
+photon-transport.workspace = true
+photon-wal.workspace = true
+photon-batch.workspace = true
+photon-uplink.workspace = true
 
 anyhow.workspace = true
 chrono.workspace = true

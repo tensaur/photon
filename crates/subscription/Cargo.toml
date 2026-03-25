@@ -1,14 +1,15 @@
 [package]
 name = "photon-subscription"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [dependencies]
-photon-core = { path = "../core" }
-photon-hook = { path = "../hook" }
-photon-transport = { path = "../transport" }
+photon-core.workspace = true
+photon-hook.workspace = true
+photon-transport.workspace = true
 
 tokio.workspace = true
 tracing.workspace = true

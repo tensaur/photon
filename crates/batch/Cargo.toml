@@ -1,15 +1,16 @@
 [package]
 name = "photon-batch"
-version = "0.0.0"
+version.workspace = true
 description = "Batch hexagon for Photon SDK"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = true
 
 [dependencies]
-photon-core = { path = "../core", version = "0.0.0" }
-photon-protocol = { path = "../protocol", version = "0.0.0" }
-photon-wal = { path = "../wal", version = "0.0.0" }
+photon-core.workspace = true
+photon-protocol.workspace = true
+photon-wal.workspace = true
 
 bytes.workspace = true
 crc32fast.workspace = true

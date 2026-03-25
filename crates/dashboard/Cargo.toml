@@ -1,17 +1,18 @@
 [package]
 name = "photon-dashboard"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-photon-core = { path = "../core" }
-photon-protocol = { path = "../protocol" }
-photon-transport = { path = "../transport" }
+photon-core.workspace = true
+photon-protocol.workspace = true
+photon-transport.workspace = true
 
 async-channel.workspace = true
 eframe.workspace = true

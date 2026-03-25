@@ -24,6 +24,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tensaur/photon"
+publish = false
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -67,3 +68,21 @@ async-trait = "0.1"
 dyn-clone = "1"
 clickhouse = { version = "0.13", features = ["uuid", "inserter"] }
 criterion = { version = "0.5", features = ["html_reports"] }
+
+# internal crates (published)
+photon = { path = "crates/sdk", version = "0.1.0" }
+photon-core = { path = "crates/core", version = "0.1.0" }
+photon-protocol = { path = "crates/protocol", version = "0.1.0" }
+photon-transport = { path = "crates/transport", version = "0.1.0" }
+photon-wal = { path = "crates/wal", version = "0.1.0" }
+photon-batch = { path = "crates/batch", version = "0.1.0" }
+photon-uplink = { path = "crates/uplink", version = "0.1.0" }
+photon-hook = { path = "crates/hook", version = "0.1.0" }
+
+# internal crates (server-only)
+photon-store = { path = "crates/store" }
+photon-ingest = { path = "crates/ingest" }
+photon-downsample = { path = "crates/downsample" }
+photon-query = { path = "crates/query" }
+photon-persist = { path = "crates/persist" }
+photon-subscription = { path = "crates/subscription" }
