@@ -3,11 +3,7 @@ use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
-use photon_core::types::metric::MetricBatch;
 use photon_core::types::wal::WalOffset;
-use photon_protocol::ports::codec::Codec;
-use photon_protocol::ports::compress::Compressor;
-use photon_store::ports::metric::MetricWriter;
 use photon_wal::Wal;
 
 use crate::domain::service::FlushService;
@@ -34,17 +30,15 @@ pub struct FlushStats {
     pub points_flushed: u64,
 }
 
-pub async fn run<C, K, M, W>(
+pub async fn run<S, W>(
     mut wal: W,
     notify: Arc<tokio::sync::Notify>,
-    service: FlushService<C, K, M>,
+    service: S,
     config: FlushConfig,
     cancel: CancellationToken,
 ) -> FlushStats
 where
-    C: Compressor,
-    K: Codec<MetricBatch>,
-    M: MetricWriter,
+    S: FlushService,
     W: Wal,
 {
     tracing::info!("flush consumer started");

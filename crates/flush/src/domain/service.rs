@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use bytes::BytesMut;
 
 use photon_core::types::batch::WireBatch;
@@ -18,7 +20,14 @@ pub enum FlushError {
     MetricWrite(#[source] photon_store::ports::WriteError),
 }
 
-pub struct FlushService<C, K, M>
+pub trait FlushService: Send + Sync + 'static {
+    fn write(
+        &self,
+        batches: &[WireBatch],
+    ) -> impl Future<Output = Result<(), FlushError>> + Send;
+}
+
+pub struct Service<C, K, M>
 where
     C: Compressor,
     K: Codec<MetricBatch>,
@@ -29,7 +38,7 @@ where
     metric_writer: M,
 }
 
-impl<C, K, M> FlushService<C, K, M>
+impl<C, K, M> Service<C, K, M>
 where
     C: Compressor,
     K: Codec<MetricBatch>,
@@ -42,9 +51,15 @@ where
             metric_writer,
         }
     }
+}
 
-    /// Decompress, decode, and write WAL entries to the metric store.
-    pub async fn write(&self, batches: &[WireBatch]) -> Result<(), FlushError> {
+impl<C, K, M> FlushService for Service<C, K, M>
+where
+    C: Compressor,
+    K: Codec<MetricBatch>,
+    M: MetricWriter,
+{
+    async fn write(&self, batches: &[WireBatch]) -> Result<(), FlushError> {
         let mut decoded_batches = Vec::with_capacity(batches.len());
 
         for batch in batches {

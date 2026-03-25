@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
 use photon_downsample::selector::noop::NoOpSelector;
-use photon_flush::domain::service::FlushService;
+use photon_flush::domain::service::Service as FlushService;
 use photon_flush::inbound::thread as flush_thread;
 use photon_flush::inbound::thread::FlushConfig;
 use photon_ingest::domain::service::Service as IngestService;
