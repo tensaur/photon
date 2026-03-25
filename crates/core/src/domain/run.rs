@@ -1,12 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::types::id::{ExperimentId, RunId, UserId};
+use crate::types::id::{ExperimentId, ProjectId, RunId, UserId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Run {
     pub id: RunId,
-    pub experiment_id: ExperimentId,
+    pub project_id: ProjectId,
+    pub experiment_id: Option<ExperimentId>,
     pub user_id: UserId,
     pub name: String,
     pub status: RunStatus,

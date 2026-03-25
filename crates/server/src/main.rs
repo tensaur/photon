@@ -14,7 +14,10 @@ use photon_query::domain::tier::TierSelector;
 use photon_query::inbound::handler as query_handler;
 use photon_store::memory::bucket::InMemoryBucketStore;
 use photon_store::memory::compaction::InMemoryCompactionCursor;
+use photon_store::memory::experiment::InMemoryExperimentStore;
 use photon_store::memory::metric::InMemoryMetricStore;
+use photon_store::memory::project::InMemoryProjectStore;
+use photon_store::memory::run::InMemoryRunStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
 use photon_transport::codec::CodecTransport;
 use photon_transport::http::HttpTransport;
@@ -42,6 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bucket_store = InMemoryBucketStore::new();
     let compaction_cursor = InMemoryCompactionCursor::new();
     let watermark_store = InMemoryWatermarkStore::new();
+    let run_store = InMemoryRunStore::new();
+    let experiment_store = InMemoryExperimentStore::new();
+    let project_store = InMemoryProjectStore::new();
 
     // Ingest service
     let ingest_service = Arc::new(IngestService::new(
@@ -58,6 +64,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         bucket_store,
         metric_store,
         compaction_cursor,
+        run_store,
+        experiment_store,
+        project_store,
         TierSelector::default(),
     ));
 

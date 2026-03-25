@@ -11,6 +11,20 @@ pub enum ListRunsError {
 
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
+pub enum ListExperimentsError {
+    #[error("unknown error: {0}")]
+    Unknown(#[source] Box<dyn Error + Send + Sync>),
+}
+
+#[non_exhaustive]
+#[derive(Debug, thiserror::Error)]
+pub enum ListProjectsError {
+    #[error("unknown error: {0}")]
+    Unknown(#[source] Box<dyn Error + Send + Sync>),
+}
+
+#[non_exhaustive]
+#[derive(Debug, thiserror::Error)]
 pub enum ListMetricsError {
     #[error("run not found: {run_id}")]
     RunNotFound { run_id: RunId },

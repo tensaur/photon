@@ -1,17 +1,28 @@
 use std::future::Future;
 
+use photon_core::domain::experiment::Experiment;
+use photon_core::domain::project::Project;
+use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{MetricQuery, MetricSeries, QueryRequest, QueryResponse};
 
 use crate::domain::error::{
-    ListMetricsError, ListRunsError, QueryMetricsError, SubscribeError, UnsubscribeError,
+    ListExperimentsError, ListMetricsError, ListProjectsError, ListRunsError, QueryMetricsError,
+    SubscribeError, UnsubscribeError,
 };
 use crate::domain::ports::{MetricQuerier, MetricSubscriber};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub trait DashboardService: Send + Sync + 'static {
-    fn list_runs(&self) -> impl Future<Output = Result<Vec<RunId>, ListRunsError>> + Send;
+    fn list_runs(&self) -> impl Future<Output = Result<Vec<Run>, ListRunsError>> + Send;
+
+    fn list_experiments(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Experiment>, ListExperimentsError>> + Send;
+
+    fn list_projects(&self)
+    -> impl Future<Output = Result<Vec<Project>, ListProjectsError>> + Send;
 
     fn list_metrics(
         &self,
@@ -38,7 +49,13 @@ pub trait DashboardService: Send + Sync + 'static {
 
 #[cfg(target_arch = "wasm32")]
 pub trait DashboardService: 'static {
-    fn list_runs(&self) -> impl Future<Output = Result<Vec<RunId>, ListRunsError>>;
+    fn list_runs(&self) -> impl Future<Output = Result<Vec<Run>, ListRunsError>>;
+
+    fn list_experiments(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Experiment>, ListExperimentsError>>;
+
+    fn list_projects(&self) -> impl Future<Output = Result<Vec<Project>, ListProjectsError>>;
 
     fn list_metrics(
         &self,
@@ -88,8 +105,16 @@ where
     Q: MetricQuerier,
     S: MetricSubscriber,
 {
-    async fn list_runs(&self) -> Result<Vec<RunId>, ListRunsError> {
+    async fn list_runs(&self) -> Result<Vec<Run>, ListRunsError> {
         self.querier.list_runs().await
+    }
+
+    async fn list_experiments(&self) -> Result<Vec<Experiment>, ListExperimentsError> {
+        self.querier.list_experiments().await
+    }
+
+    async fn list_projects(&self) -> Result<Vec<Project>, ListProjectsError> {
+        self.querier.list_projects().await
     }
 
     async fn list_metrics(&self, run_id: &RunId) -> Result<Vec<Metric>, ListMetricsError> {

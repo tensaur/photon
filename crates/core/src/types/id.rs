@@ -68,3 +68,21 @@ define_id!(ExperimentId);
 define_id!(ProjectId);
 define_id!(UserId);
 define_id!(TenantId);
+
+impl ProjectId {
+    pub fn from_name(tenant: &TenantId, name: &str) -> Self {
+        let tenant_uuid: Uuid = (*tenant).into();
+        let mut key = tenant_uuid.as_bytes().to_vec();
+        key.extend_from_slice(name.as_bytes());
+        Self(Uuid::new_v5(&Uuid::NAMESPACE_OID, &key))
+    }
+}
+
+impl ExperimentId {
+    pub fn from_name(project: &ProjectId, name: &str) -> Self {
+        let project_uuid: Uuid = (*project).into();
+        let mut key = project_uuid.as_bytes().to_vec();
+        key.extend_from_slice(name.as_bytes());
+        Self(Uuid::new_v5(&Uuid::NAMESPACE_OID, &key))
+    }
+}

@@ -1,3 +1,6 @@
+use photon_core::domain::experiment::Experiment;
+use photon_core::domain::project::Project;
+use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{
@@ -5,7 +8,9 @@ use photon_core::types::query::{
 };
 use photon_transport::Transport;
 
-use crate::domain::error::{ListMetricsError, ListRunsError, QueryMetricsError};
+use crate::domain::error::{
+    ListExperimentsError, ListMetricsError, ListProjectsError, ListRunsError, QueryMetricsError,
+};
 use crate::domain::ports::MetricQuerier;
 
 #[derive(Debug, Clone)]
@@ -23,7 +28,7 @@ impl<T> MetricQuerier for HttpQuerier<T>
 where
     T: Transport<QueryMessage, QueryResult>,
 {
-    async fn list_runs(&self) -> Result<Vec<RunId>, ListRunsError> {
+    async fn list_runs(&self) -> Result<Vec<Run>, ListRunsError> {
         self.transport
             .send(&QueryMessage::ListRuns)
             .await
@@ -39,6 +44,48 @@ where
             QueryResult::Runs(runs) => Ok(runs),
             QueryResult::Error(msg) => Err(ListRunsError::Unknown(msg.into())),
             other => Err(ListRunsError::Unknown(
+                format!("unexpected response: {other:?}").into(),
+            )),
+        }
+    }
+
+    async fn list_experiments(&self) -> Result<Vec<Experiment>, ListExperimentsError> {
+        self.transport
+            .send(&QueryMessage::ListExperiments)
+            .await
+            .map_err(|e| ListExperimentsError::Unknown(Box::new(e)))?;
+
+        let result = self
+            .transport
+            .recv()
+            .await
+            .map_err(|e| ListExperimentsError::Unknown(Box::new(e)))?;
+
+        match result {
+            QueryResult::Experiments(experiments) => Ok(experiments),
+            QueryResult::Error(msg) => Err(ListExperimentsError::Unknown(msg.into())),
+            other => Err(ListExperimentsError::Unknown(
+                format!("unexpected response: {other:?}").into(),
+            )),
+        }
+    }
+
+    async fn list_projects(&self) -> Result<Vec<Project>, ListProjectsError> {
+        self.transport
+            .send(&QueryMessage::ListProjects)
+            .await
+            .map_err(|e| ListProjectsError::Unknown(Box::new(e)))?;
+
+        let result = self
+            .transport
+            .recv()
+            .await
+            .map_err(|e| ListProjectsError::Unknown(Box::new(e)))?;
+
+        match result {
+            QueryResult::Projects(projects) => Ok(projects),
+            QueryResult::Error(msg) => Err(ListProjectsError::Unknown(msg.into())),
+            other => Err(ListProjectsError::Unknown(
                 format!("unexpected response: {other:?}").into(),
             )),
         }

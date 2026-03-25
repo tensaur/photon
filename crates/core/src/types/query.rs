@@ -2,6 +2,9 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::experiment::Experiment;
+use crate::domain::project::Project;
+use crate::domain::run::Run;
 use crate::types::id::RunId;
 use crate::types::metric::Metric;
 
@@ -45,6 +48,12 @@ pub struct DataPoint {
     pub value: f64,
 }
 
+impl From<&DataPoint> for [f64; 2] {
+    fn from(p: &DataPoint) -> Self {
+        [p.step as f64, p.value]
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RangePoint {
     pub step_start: u64,
@@ -67,6 +76,8 @@ pub struct QueryResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum QueryMessage {
     ListRuns,
+    ListExperiments,
+    ListProjects,
     ListMetrics(RunId),
     Query(MetricQuery),
     QueryBatch(QueryRequest),
@@ -75,7 +86,9 @@ pub enum QueryMessage {
 /// Envelope for query responses over a transport.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum QueryResult {
-    Runs(Vec<RunId>),
+    Runs(Vec<Run>),
+    Experiments(Vec<Experiment>),
+    Projects(Vec<Project>),
     Metrics(Vec<Metric>),
     Series(MetricSeries),
     BatchResponse(QueryResponse),

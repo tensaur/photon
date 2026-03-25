@@ -1,13 +1,20 @@
+use photon_core::domain::experiment::Experiment;
+use photon_core::domain::project::Project;
+use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{MetricQuery, MetricSeries, QueryRequest, QueryResponse};
 
-use crate::domain::error::{ListMetricsError, ListRunsError, QueryMetricsError};
+use crate::domain::error::{
+    ListExperimentsError, ListMetricsError, ListProjectsError, ListRunsError, QueryMetricsError,
+};
 use crate::domain::service::DashboardService;
 
 #[derive(Debug)]
 pub enum Command {
     ListRuns,
+    ListExperiments,
+    ListProjects,
     ListMetrics { run_id: RunId },
     Query { query: MetricQuery },
     QueryBatch { request: QueryRequest },
@@ -16,7 +23,9 @@ pub enum Command {
 }
 
 pub enum Response {
-    Runs(Result<Vec<RunId>, ListRunsError>),
+    Runs(Result<Vec<Run>, ListRunsError>),
+    Experiments(Result<Vec<Experiment>, ListExperimentsError>),
+    Projects(Result<Vec<Project>, ListProjectsError>),
     Metrics {
         run_id: RunId,
         result: Result<Vec<Metric>, ListMetricsError>,
@@ -118,6 +127,15 @@ async fn run_loop<S: DashboardService>(
         match cmd {
             Command::ListRuns => {
                 send_resp(&resp_tx, Response::Runs(service.list_runs().await));
+            }
+            Command::ListExperiments => {
+                send_resp(
+                    &resp_tx,
+                    Response::Experiments(service.list_experiments().await),
+                );
+            }
+            Command::ListProjects => {
+                send_resp(&resp_tx, Response::Projects(service.list_projects().await));
             }
             Command::ListMetrics { run_id } => {
                 let result = service.list_metrics(&run_id).await;

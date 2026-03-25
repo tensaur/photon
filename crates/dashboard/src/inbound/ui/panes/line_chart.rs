@@ -7,14 +7,7 @@ use crate::inbound::ui::app::DataCache;
 pub fn show(ui: &mut egui::Ui, state: &LineChartState, cache: &DataCache) {
     let points: Vec<[f64; 2]> = cache
         .get_series(&state.run_id, &state.metric)
-        .map(|series| {
-            series
-                .data
-                .points()
-                .iter()
-                .map(|p| [p.step as f64, p.value])
-                .collect()
-        })
+        .map(|series| series.data.points().iter().map(Into::into).collect())
         .unwrap_or_default();
 
     let metric_name = state.metric.as_str().to_owned();
