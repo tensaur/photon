@@ -131,7 +131,7 @@ impl Run {
             None => (0, 0, 0),
         };
 
-        if batches_acked == batch_stats.batches_created {
+        if batches_sent == 0 || batches_acked >= batches_sent {
             let _ = self.wal.close();
         }
 

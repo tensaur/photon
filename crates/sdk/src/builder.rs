@@ -10,7 +10,7 @@ use lasso::ThreadedRodeo;
 use photon_batch::run_batch_thread;
 use photon_core::types::config::{BatchConfig, UplinkConfig};
 use photon_core::types::id::RunId;
-use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::sequence::{SequenceNumber, WalOffset};
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_transport::TransportKind;
@@ -110,15 +110,16 @@ impl RunBuilder {
     pub fn start(self) -> Result<Run, StartError> {
         let run_id = self.run_id.unwrap_or_default();
 
-        let (wal_appender, wal) =
-            self.wal
-                .open(self.wal_dir.as_deref(), run_id, DiskWalConfig::default())?;
+        let wal_dir = self
+            .wal_dir
+            .unwrap_or_else(|| photon_wal::default_wal_dir().join(run_id.to_string()));
+        let (wal_appender, wal) = self.wal.open(wal_dir, DiskWalConfig::default())?;
 
         let interner = Arc::new(ThreadedRodeo::default());
         let (accumulator, rx) = Accumulator::new(self.channel_capacity);
 
         let start_sequence = wal
-            .read_from(SequenceNumber::ZERO)
+            .read_from(WalOffset::ZERO)
             .ok()
             .and_then(|batches: Vec<_>| batches.last().map(|b| b.sequence_number.next()))
             .unwrap_or_else(|| SequenceNumber::ZERO.next());

@@ -1,45 +1,39 @@
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
-use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::sequence::WalOffset;
 
 use crate::ports::{Wal, WalAppender, WalError};
 
-type SharedBatches = Arc<Mutex<BTreeMap<SequenceNumber, WireBatch>>>;
-
 /// In-memory WAL appender for testing.
 pub struct InMemoryWalAppender {
-    batches: SharedBatches,
+    batches: Arc<Mutex<Vec<WireBatch>>>,
 }
 
 /// In-memory WAL for testing.
 #[derive(Clone)]
 pub struct InMemoryWalManager {
-    batches: SharedBatches,
-    committed: SequenceNumber,
+    batches: Arc<Mutex<Vec<WireBatch>>>,
+    cursor: WalOffset,
 }
 
 pub fn open_in_memory_wal() -> (InMemoryWalAppender, InMemoryWalManager) {
-    let batches: SharedBatches = Arc::new(Mutex::new(BTreeMap::new()));
+    let batches = Arc::new(Mutex::new(Vec::new()));
     (
         InMemoryWalAppender {
             batches: Arc::clone(&batches),
         },
         InMemoryWalManager {
             batches,
-            committed: SequenceNumber::ZERO,
+            cursor: WalOffset::ZERO,
         },
     )
 }
 
 impl WalAppender for InMemoryWalAppender {
     fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
-        self.batches
-            .lock()
-            .unwrap()
-            .insert(batch.sequence_number, batch.clone());
+        self.batches.lock().unwrap().push(batch.clone());
         Ok(())
     }
 }
@@ -49,11 +43,15 @@ impl Wal for InMemoryWalManager {
         Ok(())
     }
 
-    fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError> {
+    fn truncate_through(&mut self, offset: WalOffset) -> Result<(), WalError> {
+        let cursor_val = u64::from(self.cursor);
+        let new_val = u64::from(offset);
+        let to_remove = (new_val - cursor_val) as usize;
+
         let mut batches = self.batches.lock().unwrap();
-        let keep = batches.split_off(&sequence.next());
-        *batches = keep;
-        self.committed = sequence;
+        let n = to_remove.min(batches.len());
+        batches.drain(..n);
+        self.cursor = offset;
         Ok(())
     }
 
@@ -61,25 +59,25 @@ impl Wal for InMemoryWalManager {
         Ok(())
     }
 
-    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
-        Ok(self
-            .batches
-            .lock()
-            .unwrap()
-            .range(sequence.next()..)
-            .map(|(_, batch)| batch.clone())
-            .collect())
+    fn read_from(&self, offset: WalOffset) -> Result<Vec<WireBatch>, WalError> {
+        let cursor_val = u64::from(self.cursor);
+        let offset_val = u64::from(offset);
+        let skip = (offset_val - cursor_val) as usize;
+
+        let batches = self.batches.lock().unwrap();
+        Ok(batches.iter().skip(skip).cloned().collect())
     }
 
     fn read_meta(&self) -> Result<WalMeta, WalError> {
         Ok(WalMeta {
-            committed_sequence: self.committed,
+            cursor: self.cursor,
+            consumed: self.cursor,
         })
     }
 
     fn delete_all(&mut self) -> Result<(), WalError> {
         self.batches.lock().unwrap().clear();
-        self.committed = SequenceNumber::ZERO;
+        self.cursor = WalOffset::ZERO;
         Ok(())
     }
 }

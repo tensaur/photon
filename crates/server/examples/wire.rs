@@ -20,7 +20,7 @@ use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
-use photon_wal::server::{self, ServerWalConfig};
+use photon_wal::{DiskWalConfig, open_disk_wal};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,6 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let codec = CodecKind::default();
     let compressor = CompressorKind::default();
     let cancel = CancellationToken::new();
+    let notify = Arc::new(tokio::sync::Notify::new());
 
     // ClickHouse
     let client = ClientBuilder::new().with_env().build();
@@ -47,9 +48,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metric_store = ClickHouseMetricStore::new(client);
 
     // Server WAL
-    let wal_dir = ".photon/server-wal";
-    let (wal_appender, wal_reader, notify) =
-        server::open(wal_dir, ServerWalConfig::default())?;
+    let (wal_appender, wal_manager) =
+        open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
     // Ingest service (WAL-backed)
     let ingest_service = Arc::new(IngestService::new(
@@ -57,7 +57,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wal_appender,
         notify.clone(),
     ));
-    ingest_service.seed_watermarks(wal_reader.watermarks());
 
     // Flush consumer
     let flush_service = FlushService::new(
@@ -67,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let flush_cancel = cancel.clone();
     let flush_handle = tokio::spawn(flush_thread::run(
-        wal_reader,
+        Box::new(wal_manager),
         notify,
         flush_service,
         FlushConfig::default(),
@@ -107,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t0 = Instant::now();
 
         // Simulate a training loop
-        for step in 0..100_000_000u64 {
+        for step in 0..10_000_000u64 {
             let loss = 1.0 / (1.0 + step as f64 * 0.05);
             let accuracy = 1.0 - loss;
 

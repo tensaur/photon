@@ -1,7 +1,7 @@
 use dyn_clone::DynClone;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
-use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
+use photon_core::types::sequence::{SegmentIndex, WalOffset};
 
 /// WAL lifecycle and read/truncate operations.
 /// Split from [`WalAppender`] so the append path has exclusive `&mut self` access
@@ -9,11 +9,11 @@ use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
 pub trait Wal: DynClone + Send + 'static {
     fn close(&self) -> Result<(), WalError>;
 
-    fn truncate_through(&mut self, sequence: SequenceNumber) -> Result<(), WalError>;
+    fn truncate_through(&mut self, offset: WalOffset) -> Result<(), WalError>;
 
     fn sync(&self) -> Result<(), WalError>;
 
-    fn read_from(&self, sequence: SequenceNumber) -> Result<Vec<WireBatch>, WalError>;
+    fn read_from(&self, offset: WalOffset) -> Result<Vec<WireBatch>, WalError>;
 
     fn read_meta(&self) -> Result<WalMeta, WalError>;
 
@@ -31,16 +31,16 @@ impl Wal for Box<dyn Wal> {
         (**self).close()
     }
 
-    fn truncate_through(&mut self, seq: SequenceNumber) -> Result<(), WalError> {
-        (**self).truncate_through(seq)
+    fn truncate_through(&mut self, offset: WalOffset) -> Result<(), WalError> {
+        (**self).truncate_through(offset)
     }
 
     fn sync(&self) -> Result<(), WalError> {
         (**self).sync()
     }
 
-    fn read_from(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
-        (**self).read_from(seq)
+    fn read_from(&self, offset: WalOffset) -> Result<Vec<WireBatch>, WalError> {
+        (**self).read_from(offset)
     }
 
     fn read_meta(&self) -> Result<WalMeta, WalError> {

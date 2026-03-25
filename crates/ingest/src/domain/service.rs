@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
@@ -56,13 +55,6 @@ impl<W: WatermarkStore, A: WalAppender> Service<W, A> {
             dedup: DeduplicationTracker::new(watermark_store),
             wal: Mutex::new(wal),
             notify,
-        }
-    }
-
-    /// Seed the dedup cache with watermarks loaded from the WAL meta file.
-    pub fn seed_watermarks(&self, watermarks: &HashMap<RunId, SequenceNumber>) {
-        for (run_id, seq) in watermarks {
-            self.dedup.advance_local(run_id, *seq);
         }
     }
 }

@@ -24,7 +24,7 @@ use photon_transport::codec::CodecTransport;
 use photon_transport::http::HttpTransport;
 use photon_transport::serve;
 use photon_transport::tcp::TcpTransport;
-use photon_wal::server::{self, ServerWalConfig};
+use photon_wal::{DiskWalConfig, open_disk_wal};
 
 #[cfg(feature = "dashboard")]
 mod dashboard;
@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let codec = CodecKind::default();
     let cancel = CancellationToken::new();
+    let notify = Arc::new(tokio::sync::Notify::new());
 
     // ClickHouse
     let client = ClientBuilder::new().with_env().build();
@@ -52,9 +53,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bucket_store = ClickHouseBucketStore::new(client.clone());
     let compaction_cursor = ClickHouseCompactionCursor::new(client);
 
-    // Server WAL
-    let wal_dir = ".photon/server-wal";
-    let (wal_appender, wal_reader, notify) = server::open(wal_dir, ServerWalConfig::default())?;
+    // Server WAL (same implementation as client, different config)
+    let (wal_appender, wal_manager) =
+        open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
     // Ingest hexagon (WAL-backed)
     let ingest_service = Arc::new(IngestService::new(
@@ -62,7 +63,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wal_appender,
         notify.clone(),
     ));
-    ingest_service.seed_watermarks(wal_reader.watermarks());
 
     // Flush hexagon
     let flush_service = FlushService::new(
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metric_store.clone(),
     );
     let flush_handle = tokio::spawn(flush_thread::run(
-        wal_reader,
+        Box::new(wal_manager),
         notify,
         flush_service,
         FlushConfig::default(),

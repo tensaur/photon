@@ -5,15 +5,16 @@ use std::sync::{Arc, Mutex};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{WalConfig, WalMeta, WalSyncPolicy};
-use photon_core::types::id::RunId;
-use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
+use photon_core::types::sequence::{SegmentIndex, WalOffset};
 
-use crate::segment::{Active, RECORD_OVERHEAD, Sealed, Segment};
+pub(crate) mod segment;
+
+use self::segment::{Active, RECORD_OVERHEAD, Sealed, Segment};
 
 use crate::ports::{Wal, WalAppender, WalError};
 
 #[derive(Clone, Debug)]
-pub struct ClientWalConfig {
+pub struct DiskWalConfig {
     pub wal: WalConfig,
     /// Fraction of segment capacity that triggers rotation (0.0, 1.0)
     pub rotation_threshold: f64,
@@ -23,7 +24,7 @@ pub struct ClientWalConfig {
     pub hard_pressure_ratio: f64,
 }
 
-impl Default for ClientWalConfig {
+impl Default for DiskWalConfig {
     fn default() -> Self {
         Self {
             wal: WalConfig::default(),
@@ -34,33 +35,43 @@ impl Default for ClientWalConfig {
     }
 }
 
-pub fn default_wal_dir(run_id: &RunId) -> PathBuf {
-    PathBuf::from(".photon")
-        .join("wal")
-        .join(run_id.to_string())
+pub fn default_wal_dir() -> PathBuf {
+    PathBuf::from(".photon").join("wal")
 }
 
 const META_FILENAME: &str = "wal.meta";
 
-pub fn open_client_wal(
-    dir: Option<&Path>,
-    run_id: RunId,
-    config: ClientWalConfig,
-) -> Result<(ClientWalAppender, ClientWalManager), WalError> {
-    let dir = dir
-        .map(|d| d.join(run_id.to_string()))
-        .unwrap_or_else(|| default_wal_dir(&run_id));
+pub fn open_disk_wal(
+    dir: impl Into<PathBuf>,
+    config: DiskWalConfig,
+) -> Result<(DiskWalAppender, DiskWalManager), WalError> {
+    let dir = dir.into();
     fs::create_dir_all(&dir)?;
 
-    let (committed, next_seg) = load_meta(&dir);
-    let existing = crate::segment::list_segments(&dir)?;
+    let (cursor, consumed) = load_meta(&dir);
+    let existing = segment::list_segments(&dir)?;
     let cap = config.wal.segment_size;
 
     let (active, sealed) = if existing.is_empty() {
-        (Segment::create(&dir, next_seg, cap)?, Vec::new())
+        (Segment::create(&dir, SegmentIndex::ZERO, cap)?, Vec::new())
     } else {
         recover_segments(&dir, &existing, cap)?
     };
+
+    // Count total records across all segments to determine next_offset
+    let mut total_records = 0u64;
+    for seg in &sealed {
+        total_records += seg.record_count()? as u64;
+    }
+    total_records += active.record_count()? as u64;
+
+    let stale_on_disk = u64::from(consumed).saturating_sub(u64::from(cursor));
+    let to_replay = total_records.saturating_sub(stale_on_disk);
+    if to_replay > 0 {
+        tracing::info!(records = to_replay, "WAL recovery: replaying unconsumed records");
+    }
+
+    let next_offset = consumed.advance(to_replay);
 
     let bytes_used_val = active.bytes_used() + sealed.iter().map(|s| s.bytes_used()).sum::<u64>();
 
@@ -69,27 +80,29 @@ pub fn open_client_wal(
         .map(|s| s.index())
         .chain(std::iter::once(active.index()))
         .max()
-        .unwrap_or(next_seg)
+        .unwrap_or(SegmentIndex::ZERO)
         .next();
 
     let sealed = Arc::new(Mutex::new(sealed));
     let bytes_used = Arc::new(AtomicU64::new(bytes_used_val));
+    let next_offset = Arc::new(AtomicU64::new(u64::from(next_offset)));
 
-    let appender = ClientWalAppender {
+    let appender = DiskWalAppender {
         dir: dir.clone(),
         config: config.clone(),
         active,
         sealed: Arc::clone(&sealed),
         bytes_used: Arc::clone(&bytes_used),
+        next_offset: Arc::clone(&next_offset),
         next_segment,
         batches_since_sync: 0,
     };
 
-    let manager = ClientWalManager {
+    let manager = DiskWalManager {
         sealed,
-        committed: Arc::new(Mutex::new(committed)),
+        cursor: Arc::new(Mutex::new(cursor)),
+        consumed: Arc::new(Mutex::new(consumed)),
         dir,
-        run_id,
         config,
         bytes_used,
     };
@@ -97,17 +110,18 @@ pub fn open_client_wal(
     Ok((appender, manager))
 }
 
-pub struct ClientWalAppender {
+pub struct DiskWalAppender {
     dir: PathBuf,
-    config: ClientWalConfig,
+    config: DiskWalConfig,
     active: Segment<Active>,
     sealed: Arc<Mutex<Vec<Segment<Sealed>>>>,
     bytes_used: Arc<AtomicU64>,
+    next_offset: Arc<AtomicU64>,
     next_segment: SegmentIndex,
     batches_since_sync: u32,
 }
 
-impl ClientWalAppender {
+impl DiskWalAppender {
     fn rotate(&mut self) -> Result<SegmentIndex, WalError> {
         let idx = self.next_segment;
         let cap = self.config.wal.segment_size;
@@ -183,7 +197,7 @@ impl ClientWalAppender {
     }
 }
 
-impl WalAppender for ClientWalAppender {
+impl WalAppender for DiskWalAppender {
     fn append(&mut self, batch: &WireBatch) -> Result<(), WalError> {
         self.enforce_budget()?;
 
@@ -191,6 +205,7 @@ impl WalAppender for ClientWalAppender {
         let at_cap = self.active.append(batch, threshold)?;
         let added = batch.compressed_payload.len() as u64 + RECORD_OVERHEAD as u64;
         self.bytes_used.fetch_add(added, Ordering::Relaxed);
+        self.next_offset.fetch_add(1, Ordering::Relaxed);
         self.batches_since_sync += 1;
         self.maybe_sync()?;
 
@@ -203,21 +218,22 @@ impl WalAppender for ClientWalAppender {
 }
 
 #[derive(Clone)]
-pub struct ClientWalManager {
+pub struct DiskWalManager {
     sealed: Arc<Mutex<Vec<Segment<Sealed>>>>,
-    committed: Arc<Mutex<SequenceNumber>>,
+    /// Records physically deleted from disk.
+    cursor: Arc<Mutex<WalOffset>>,
+    /// Records the consumer has processed (may be ahead of cursor).
+    consumed: Arc<Mutex<WalOffset>>,
     dir: PathBuf,
-    run_id: RunId,
-    config: ClientWalConfig,
+    config: DiskWalConfig,
     bytes_used: Arc<AtomicU64>,
 }
 
-impl ClientWalManager {
-    fn persist_meta(&self, committed: SequenceNumber) -> Result<(), WalError> {
+impl DiskWalManager {
+    fn persist_meta(&self, cursor: WalOffset, consumed: WalOffset) -> Result<(), WalError> {
         let json = serde_json::to_string(&MetaFile {
-            run_id: self.run_id.to_string(),
-            committed_sequence: u64::from(committed),
-            next_segment_index: 0, // not critical for recovery
+            cursor: u64::from(cursor),
+            consumed: u64::from(consumed),
         })
         .map_err(|e| WalError::Unknown(e.into()))?;
 
@@ -227,38 +243,46 @@ impl ClientWalManager {
         Ok(())
     }
 
-    fn read_after(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
+    /// Read all records after the given offset.
+    /// The cursor tracks records physically deleted. Skip = offset - cursor
+    /// gives the number of consumed-but-still-on-disk records to skip.
+    fn read_after(&self, offset: WalOffset) -> Result<Vec<WireBatch>, WalError> {
+        let cursor = *self.cursor.lock().unwrap();
+        let skip = u64::from(offset).saturating_sub(u64::from(cursor));
+        let mut skipped = 0u64;
         let mut out = Vec::new();
 
         let sealed = self.sealed.lock().unwrap();
         for seg in sealed.iter() {
-            for r in seg.read_records()? {
-                if r.sequence_number > seq {
-                    out.push(r.into_wire_batch());
+            let records = seg.read_records()?;
+            for batch in records {
+                if skipped < skip {
+                    skipped += 1;
+                } else {
+                    out.push(batch);
                 }
             }
         }
         drop(sealed);
 
         // Read the active segment by opening the latest segment file read-only.
-        // The appender may be concurrently writing, but we read only flushed data.
-        let active_segments = crate::segment::list_segments(&self.dir)?;
+        let active_segments = segment::list_segments(&self.dir)?;
         if let Some((idx, _)) = active_segments.last() {
             let active = Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
-            for r in active.read_records()? {
-                if r.sequence_number > seq {
-                    out.push(r.into_wire_batch());
+            for batch in active.read_records()? {
+                if skipped < skip {
+                    skipped += 1;
+                } else {
+                    out.push(batch);
                 }
             }
         }
 
-        out.sort_by_key(|b| b.sequence_number);
-        out.dedup_by_key(|b| b.sequence_number);
         Ok(out)
     }
 }
 
-impl Wal for ClientWalManager {
+impl Wal for DiskWalManager {
     fn close(&self) -> Result<(), WalError> {
         if self.dir.exists() {
             fs::remove_dir_all(&self.dir)?;
@@ -266,18 +290,22 @@ impl Wal for ClientWalManager {
         Ok(())
     }
 
-    fn truncate_through(&mut self, seq: SequenceNumber) -> Result<(), WalError> {
-        *self.committed.lock().unwrap() = seq;
+    /// Record the consumer's position, then delete fully consumed sealed segments.
+    fn truncate_through(&mut self, offset: WalOffset) -> Result<(), WalError> {
+        *self.consumed.lock().unwrap() = offset;
+
+        let mut cursor = self.cursor.lock().unwrap();
+        let offset_val = u64::from(offset);
 
         let mut sealed = self.sealed.lock().unwrap();
         let drained = std::mem::take(&mut *sealed);
         for seg in drained {
-            let dominated = seg.last_sequence().map(|l| l <= seq).unwrap_or(true);
-
-            if dominated {
+            let count = seg.record_count()? as u64;
+            if u64::from(*cursor) + count <= offset_val {
                 let freed = seg.bytes_used();
                 let _ = seg.mark_acked().delete();
                 self.bytes_used.fetch_sub(freed, Ordering::Relaxed);
+                *cursor = cursor.advance(count);
             } else {
                 sealed.push(seg);
             }
@@ -287,17 +315,19 @@ impl Wal for ClientWalManager {
     }
 
     fn sync(&self) -> Result<(), WalError> {
-        let committed = *self.committed.lock().unwrap();
-        self.persist_meta(committed)
+        let cursor = *self.cursor.lock().unwrap();
+        let consumed = *self.consumed.lock().unwrap();
+        self.persist_meta(cursor, consumed)
     }
 
-    fn read_from(&self, seq: SequenceNumber) -> Result<Vec<WireBatch>, WalError> {
-        self.read_after(seq)
+    fn read_from(&self, offset: WalOffset) -> Result<Vec<WireBatch>, WalError> {
+        self.read_after(offset)
     }
 
     fn read_meta(&self) -> Result<WalMeta, WalError> {
         Ok(WalMeta {
-            committed_sequence: *self.committed.lock().unwrap(),
+            cursor: *self.cursor.lock().unwrap(),
+            consumed: *self.consumed.lock().unwrap(),
         })
     }
 
@@ -309,24 +339,21 @@ impl Wal for ClientWalManager {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct MetaFile {
-    run_id: String,
-    committed_sequence: u64,
-    next_segment_index: u64,
+    cursor: u64,
+    #[serde(default)]
+    consumed: u64,
 }
 
-fn load_meta(dir: &Path) -> (SequenceNumber, SegmentIndex) {
+fn load_meta(dir: &Path) -> (WalOffset, WalOffset) {
     let Ok(content) = fs::read_to_string(dir.join(META_FILENAME)) else {
-        return (SequenceNumber::ZERO, SegmentIndex::ZERO);
+        return (WalOffset::ZERO, WalOffset::ZERO);
     };
 
     match serde_json::from_str::<MetaFile>(&content) {
-        Ok(m) => (
-            SequenceNumber::from(m.committed_sequence),
-            SegmentIndex::from(m.next_segment_index),
-        ),
+        Ok(m) => (WalOffset::from(m.cursor), WalOffset::from(m.consumed)),
         Err(e) => {
             tracing::warn!("corrupt wal.meta, starting from zero: {e}");
-            (SequenceNumber::ZERO, SegmentIndex::ZERO)
+            (WalOffset::ZERO, WalOffset::ZERO)
         }
     }
 }
@@ -345,10 +372,5 @@ fn recover_segments(
     let (last_idx, _) = existing.last().unwrap();
     let active = Segment::open_for_recovery(dir, *last_idx, capacity)?;
 
-    tracing::info!(
-        sealed = sealed.len(),
-        active = %active.index(),
-        "WAL recovery complete"
-    );
     Ok((active, sealed))
 }

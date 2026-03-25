@@ -3,7 +3,7 @@ use std::future::Future;
 use photon_core::types::ack::AckResult;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
-use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::sequence::{SequenceNumber, WalOffset};
 use photon_transport::ports::Transport;
 use photon_wal::Wal;
 
@@ -15,6 +15,7 @@ pub trait UplinkService {
     fn send(&mut self, batch: &WireBatch) -> impl Future<Output = Result<(), UplinkError>> + Send;
     fn handle_ack(&mut self, ack: AckResult) -> Result<(), UplinkError>;
     fn sync(&mut self) -> Result<(), UplinkError>;
+    fn wal_cursor(&self) -> WalOffset;
     fn stats(&self) -> UplinkStats;
 }
 
@@ -28,6 +29,7 @@ where
     run_id: RunId,
     start_sequence: SequenceNumber,
     tracker: AckTracker,
+    wal_cursor: WalOffset,
     stats: UplinkStats,
 }
 
@@ -37,12 +39,14 @@ where
     M: Wal + Clone,
 {
     pub fn new(transport: T, wal: M, run_id: RunId, start_sequence: SequenceNumber) -> Self {
+        let wal_cursor = wal.read_meta().map(|m| m.consumed).unwrap_or(WalOffset::ZERO);
         Self {
             transport,
             wal,
             run_id,
             start_sequence,
             tracker: AckTracker::new(SequenceNumber::ZERO),
+            wal_cursor,
             stats: UplinkStats::default(),
         }
     }
@@ -54,10 +58,9 @@ where
     M: Wal + Clone,
 {
     async fn recover(&mut self) -> Result<SequenceNumber, RecoveryError> {
-        let meta = self.wal.read_meta()?;
         let uncommitted: Vec<_> = self
             .wal
-            .read_from(meta.committed_sequence)?
+            .read_from(self.wal_cursor)?
             .into_iter()
             .filter(|b| b.sequence_number < self.start_sequence)
             .collect();
@@ -75,12 +78,12 @@ where
             .await
             .map_err(TransportError::from)?;
 
-        let local = meta.committed_sequence;
+        let local = self.tracker.committed();
         let effective = std::cmp::max(local, server);
 
         self.tracker = AckTracker::new(effective);
 
-        let replay_batches = self.wal.read_from(effective)?;
+        let replay_batches = self.wal.read_from(self.wal_cursor)?;
         let bytes_to_replay: u64 = replay_batches
             .iter()
             .map(|b| b.compressed_size() as u64)
@@ -111,10 +114,15 @@ where
     }
 
     fn handle_ack(&mut self, ack: AckResult) -> Result<(), UplinkError> {
+        let before = self.tracker.committed();
         let outcome = self.tracker.track(ack, &mut self.stats);
 
-        if let Some(watermark) = outcome.new_watermark {
-            self.wal.truncate_through(watermark)?;
+        if outcome.new_watermark.is_some() {
+            let after = self.tracker.committed();
+            let advanced = u64::from(after) - u64::from(before);
+            self.wal_cursor = self.wal_cursor.advance(advanced);
+
+            self.wal.truncate_through(self.wal_cursor)?;
             if outcome.should_sync {
                 self.wal.sync()?;
             }
@@ -125,6 +133,10 @@ where
 
     fn sync(&mut self) -> Result<(), UplinkError> {
         self.wal.sync().map_err(Into::into)
+    }
+
+    fn wal_cursor(&self) -> WalOffset {
+        self.wal_cursor
     }
 
     fn stats(&self) -> UplinkStats {

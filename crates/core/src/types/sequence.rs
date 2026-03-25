@@ -49,6 +49,43 @@ impl fmt::Display for SequenceNumber {
     }
 }
 
+/// Position in a WAL. Monotonically increasing record counter,
+/// independent of run or sequence number. Used as the WAL consumer cursor.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct WalOffset(u64);
+
+impl WalOffset {
+    pub const ZERO: Self = Self(0);
+
+    pub fn advance(self, count: u64) -> Self {
+        Self(self.0 + count)
+    }
+}
+
+impl From<u64> for WalOffset {
+    fn from(n: u64) -> Self {
+        Self(n)
+    }
+}
+
+impl From<WalOffset> for u64 {
+    fn from(o: WalOffset) -> Self {
+        o.0
+    }
+}
+
+impl fmt::Debug for WalOffset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Off({})", self.0)
+    }
+}
+
+impl fmt::Display for WalOffset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Identifies a WAL segment file on disk. Monotonically increasing per run.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SegmentIndex(u64);
