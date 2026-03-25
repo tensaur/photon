@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 use photon_core::types::ack::AckResult;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{RetryConfig, UplinkConfig};
-use photon_core::types::sequence::{SequenceNumber, WalOffset};
+use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::wal::WalOffset;
 use photon_transport::ports::Transport;
 use photon_wal::Wal;
 

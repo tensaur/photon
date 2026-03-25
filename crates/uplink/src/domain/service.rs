@@ -3,7 +3,8 @@ use std::future::Future;
 use photon_core::types::ack::AckResult;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
-use photon_core::types::sequence::{SequenceNumber, WalOffset};
+use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::wal::WalOffset;
 use photon_transport::ports::Transport;
 use photon_wal::Wal;
 
@@ -39,7 +40,10 @@ where
     M: Wal + Clone,
 {
     pub fn new(transport: T, wal: M, run_id: RunId, start_sequence: SequenceNumber) -> Self {
-        let wal_cursor = wal.read_meta().map(|m| m.consumed).unwrap_or(WalOffset::ZERO);
+        let wal_cursor = wal
+            .read_meta()
+            .map(|m| m.consumed)
+            .unwrap_or(WalOffset::ZERO);
         Self {
             transport,
             wal,

@@ -6,7 +6,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
-use photon_core::types::sequence::{SegmentIndex, SequenceNumber};
+use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::wal::SegmentIndex;
 
 use crate::ports::WalError;
 
@@ -104,8 +105,7 @@ impl Segment<Active> {
 
         let mut header = [0u8; HEADER_SIZE];
         header[OFF_MAGIC..OFF_PAYLOAD_LEN].copy_from_slice(MAGIC);
-        header[OFF_PAYLOAD_LEN..OFF_RUN_ID]
-            .copy_from_slice(&(payload.len() as u32).to_le_bytes());
+        header[OFF_PAYLOAD_LEN..OFF_RUN_ID].copy_from_slice(&(payload.len() as u32).to_le_bytes());
         header[OFF_RUN_ID..OFF_SEQUENCE].copy_from_slice(run_uuid.as_bytes());
         header[OFF_SEQUENCE..OFF_BATCH_CRC]
             .copy_from_slice(&u64::from(batch.sequence_number).to_le_bytes());

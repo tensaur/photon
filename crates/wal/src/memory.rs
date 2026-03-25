@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
-use photon_core::types::sequence::WalOffset;
+use photon_core::types::wal::WalOffset;
 
 use crate::ports::{Wal, WalAppender, WalError};
 

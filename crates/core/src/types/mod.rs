@@ -6,3 +6,4 @@ pub mod id;
 pub mod metric;
 pub mod query;
 pub mod sequence;
+pub mod wal;

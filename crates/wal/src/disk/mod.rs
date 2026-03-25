@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::{WalConfig, WalMeta, WalSyncPolicy};
-use photon_core::types::sequence::{SegmentIndex, WalOffset};
+use photon_core::types::wal::{SegmentIndex, WalOffset};
 
 pub(crate) mod segment;
 
@@ -68,7 +68,10 @@ pub fn open_disk_wal(
     let stale_on_disk = u64::from(consumed).saturating_sub(u64::from(cursor));
     let to_replay = total_records.saturating_sub(stale_on_disk);
     if to_replay > 0 {
-        tracing::info!(records = to_replay, "WAL recovery: replaying unconsumed records");
+        tracing::info!(
+            records = to_replay,
+            "WAL recovery: replaying unconsumed records"
+        );
     }
 
     let next_offset = consumed.advance(to_replay);

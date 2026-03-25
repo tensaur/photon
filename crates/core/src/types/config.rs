@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::sequence::WalOffset;
+use super::wal::WalOffset;
 
 /// Configuration for the batch builder.
 #[derive(Clone, Debug)]

@@ -1,7 +1,7 @@
 use dyn_clone::DynClone;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::config::WalMeta;
-use photon_core::types::sequence::{SegmentIndex, WalOffset};
+use photon_core::types::wal::{SegmentIndex, WalOffset};
 
 /// WAL lifecycle and read/truncate operations.
 /// Split from [`WalAppender`] so the append path has exclusive `&mut self` access

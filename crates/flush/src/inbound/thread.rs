@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 use photon_core::types::metric::MetricBatch;
-use photon_core::types::sequence::WalOffset;
+use photon_core::types::wal::WalOffset;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::metric::MetricWriter;
