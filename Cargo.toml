@@ -53,6 +53,7 @@ egui = "0.33"
 egui_plot = "0.34"
 egui_extras = "0.33"
 egui_tiles = "0.14"
+futures-channel = "0.3"
 futures-util = { version = "0.3", features = ["sink"] }
 async-channel = "2"
 gloo-net = { version = "0.6", default-features = false, features = ["websocket"] }
