@@ -7,7 +7,6 @@ use tokio::net::TcpListener;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
-use photon_protocol::compressor::CompressorKind;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
 use photon_wal::open_in_memory_wal;
@@ -20,7 +19,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(10_000_000);
 
     let codec = CodecKind::default();
-    let _compressor = CompressorKind::default();
 
     let listener = TcpListener::bind("[::1]:0").await?;
     let addr: SocketAddr = listener.local_addr()?;
