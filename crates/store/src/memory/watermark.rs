@@ -3,7 +3,7 @@ use dashmap::DashMap;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
-use crate::ports::watermark::WatermarkWriter;
+use crate::ports::watermark::{WatermarkReader, WatermarkWriter};
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Clone)]
@@ -36,7 +36,9 @@ impl WatermarkWriter for InMemoryWatermarkStore {
         }
         Ok(())
     }
+}
 
+impl WatermarkReader for InMemoryWatermarkStore {
     async fn read_all(&self) -> Result<Vec<(RunId, SequenceNumber)>, ReadError> {
         Ok(self
             .inner

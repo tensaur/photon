@@ -20,7 +20,7 @@ use photon_store::clickhouse::compaction::ClickHouseCompactionCursor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
-use photon_store::ports::watermark::WatermarkWriter;
+use photon_store::ports::watermark::WatermarkReader;
 use photon_transport::codec::CodecTransport;
 use photon_transport::http::HttpTransport;
 use photon_transport::serve;

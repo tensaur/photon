@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
-use crate::ports::watermark::WatermarkWriter;
+use crate::ports::watermark::{WatermarkReader, WatermarkWriter};
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Row, Serialize, Deserialize)]
@@ -55,7 +55,9 @@ impl WatermarkWriter for ClickHouseWatermarkStore {
             .map_err(|e| WriteError::Unknown(e.into()))?;
         Ok(())
     }
+}
 
+impl WatermarkReader for ClickHouseWatermarkStore {
     async fn read_all(&self) -> Result<Vec<(RunId, SequenceNumber)>, ReadError> {
         let rows: Vec<WatermarkRow> = self
             .client
