@@ -23,14 +23,7 @@ pub fn show(ui: &mut egui::Ui, state: &ComparisonState, cache: &DataCache) {
 
                 let points: Vec<[f64; 2]> = cache
                     .get_series(run_id, &state.metric)
-                    .map(|series| {
-                        series
-                            .data
-                            .points()
-                            .iter()
-                            .map(|p| [p.step as f64, p.value])
-                            .collect()
-                    })
+                    .map(|series| series.data.points().iter().map(Into::into).collect())
                     .unwrap_or_default();
 
                 plot_ui.line(Line::new(run_id.short(), PlotPoints::new(points)).color(color));

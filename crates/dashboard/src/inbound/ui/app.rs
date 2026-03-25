@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 use egui_tiles::Tiles;
 
+use photon_core::domain::experiment::Experiment;
+use photon_core::domain::project::Project;
+use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{MetricQuery, MetricSeries};
@@ -27,7 +30,9 @@ impl<T> Default for RequestState<T> {
 }
 
 pub struct DataCache {
-    pub runs: RequestState<Vec<RunId>>,
+    pub runs: RequestState<Vec<Run>>,
+    pub experiments: RequestState<Vec<Experiment>>,
+    pub projects: RequestState<Vec<Project>>,
     pub metrics: HashMap<RunId, RequestState<Vec<Metric>>>,
     pub series: HashMap<(RunId, Metric), MetricSeries>,
 }
@@ -36,6 +41,8 @@ impl Default for DataCache {
     fn default() -> Self {
         Self {
             runs: RequestState::Idle,
+            experiments: RequestState::Idle,
+            projects: RequestState::Idle,
             metrics: HashMap::new(),
             series: HashMap::new(),
         }
@@ -65,12 +72,14 @@ impl DashboardApp {
         theme::apply(&cc.egui_ctx);
 
         channel::send_cmd(&commands, Command::ListRuns);
+        channel::send_cmd(&commands, Command::ListExperiments);
 
         Self {
             commands,
             responses,
             cache: DataCache {
                 runs: RequestState::Pending,
+                experiments: RequestState::Pending,
                 ..DataCache::default()
             },
             sidebar: SidebarState::default(),
@@ -89,6 +98,14 @@ impl DashboardApp {
             Response::Runs(result) => match result {
                 Ok(runs) => self.cache.runs = RequestState::Loaded(runs),
                 Err(e) => self.cache.runs = RequestState::Failed(e.to_string()),
+            },
+            Response::Experiments(result) => match result {
+                Ok(experiments) => self.cache.experiments = RequestState::Loaded(experiments),
+                Err(e) => self.cache.experiments = RequestState::Failed(e.to_string()),
+            },
+            Response::Projects(result) => match result {
+                Ok(projects) => self.cache.projects = RequestState::Loaded(projects),
+                Err(e) => self.cache.projects = RequestState::Failed(e.to_string()),
             },
             Response::Metrics { run_id, result } => match result {
                 Ok(metrics) => {
@@ -251,11 +268,16 @@ impl eframe::App for DashboardApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
                     .show(ui, |ui| {
-                        let runs_slice: &[RunId] = match &self.cache.runs {
+                        let runs_slice: &[Run] = match &self.cache.runs {
                             RequestState::Loaded(runs) => runs.as_slice(),
                             _ => &[],
                         };
-                        let action = sidebar::show(ui, &mut self.sidebar, runs_slice);
+                        let experiments_slice: &[Experiment] = match &self.cache.experiments {
+                            RequestState::Loaded(experiments) => experiments.as_slice(),
+                            _ => &[],
+                        };
+                        let action =
+                            sidebar::show(ui, &mut self.sidebar, runs_slice, experiments_slice);
 
                         match &self.cache.runs {
                             RequestState::Pending => {
