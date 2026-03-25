@@ -4,6 +4,9 @@ pub mod websocket;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tcp;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod router;
+
 use self::http::HttpTransport;
 #[cfg(not(target_arch = "wasm32"))]
 use self::tcp::TcpTransport;

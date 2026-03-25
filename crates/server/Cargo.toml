@@ -26,7 +26,6 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
-axum = { workspace = true, optional = true }
 rust-embed = { workspace = true, optional = true, features = ["mime-guess"] }
 
 [dev-dependencies]
@@ -37,4 +36,4 @@ name = "throughput"
 harness = false
 
 [features]
-dashboard = ["axum", "rust-embed"]
+dashboard = ["rust-embed"]
