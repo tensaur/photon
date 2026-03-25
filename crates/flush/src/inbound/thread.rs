@@ -13,11 +13,8 @@ use photon_wal::Wal;
 use crate::domain::service::{FlushService, FlushStats};
 
 pub struct FlushConfig {
-    /// Maximum time to wait for new entries before flushing what we have.
     pub poll_interval: Duration,
-    /// Maximum number of batches per ClickHouse INSERT.
     pub max_batch_read: usize,
-    /// Number of concurrent ClickHouse INSERTs per flush cycle.
     pub concurrency: usize,
 }
 
@@ -43,14 +40,15 @@ pub async fn run<C, K, M>(
     M: MetricWriter,
 {
     tracing::info!("flush consumer started");
-    let mut total_points: u64 = 0;
-    let mut total_batches: u64 = 0;
-    let start = Instant::now();
-
     let mut cursor = wal
         .read_meta()
         .map(|m| m.consumed)
         .unwrap_or(WalOffset::ZERO);
+
+    let read_limit = config.max_batch_read * config.concurrency;
+    let start = Instant::now();
+    let mut total_points: u64 = 0;
+    let mut total_batches: u64 = 0;
 
     loop {
         let mut batches = match wal.read_from(cursor) {
@@ -61,189 +59,83 @@ pub async fn run<C, K, M>(
                 continue;
             }
         };
-
-        let read_limit = config.max_batch_read * config.concurrency;
         batches.truncate(read_limit);
 
         if !batches.is_empty() {
-            let new_cursor = cursor.advance(batches.len() as u64);
-            match flush_concurrent(&service, &batches, &config).await {
-                Ok(stats) => {
+            let count = batches.len() as u64;
+            let chunk_size = config.max_batch_read.max(1);
+            let futures: Vec<_> = batches.chunks(chunk_size).map(|c| service.process(c)).collect();
+
+            match futures_util::future::try_join_all(futures).await {
+                Ok(results) => {
+                    let stats = merge_stats(results);
                     total_points += stats.points as u64;
                     total_batches += stats.batches as u64;
-                    log_stats(&stats, total_points, start);
+                    log_flush(&stats, total_points, start);
 
-                    cursor = new_cursor;
+                    cursor = cursor.advance(count);
                     if let Err(e) = wal.truncate_through(cursor) {
                         tracing::error!("WAL truncate failed: {e}");
                     }
                     let _ = wal.sync();
                 }
                 Err(e) => {
-                    tracing::error!("flush failed, retrying: {e}");
-                    loop {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        if cancel.is_cancelled() {
-                            tracing::error!("flush failed during shutdown, data in WAL for recovery");
-                            log_totals(total_points, total_batches, start);
-                            return;
-                        }
-                        match flush_concurrent(&service, &batches, &config).await {
-                            Ok(stats) => {
-                                total_points += stats.points as u64;
-                                total_batches += stats.batches as u64;
-                                log_stats(&stats, total_points, start);
-
-                                cursor = new_cursor;
-                                if let Err(e) = wal.truncate_through(cursor) {
-                                    tracing::error!("WAL truncate failed: {e}");
-                                }
-                                let _ = wal.sync();
-                                break;
-                            }
-                            Err(e) => {
-                                tracing::error!("flush retry failed: {e}");
-                            }
-                        }
-                    }
+                    tracing::error!("flush failed: {e}");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
             continue;
         }
 
-        // Caught up
+        // Caught up — wait or exit
         if cancel.is_cancelled() {
-            tracing::info!("flush consumer shut down (caught up)");
-            log_totals(total_points, total_batches, start);
-            return;
+            break;
         }
 
         tokio::select! {
             _ = notify.notified() => {}
             _ = tokio::time::sleep(config.poll_interval) => {}
-            _ = cancel.cancelled() => {
-                drain(&mut wal, &mut cursor, &service, &config, &mut total_points, &mut total_batches, start).await;
-                tracing::info!("flush consumer shut down (drained)");
-                log_totals(total_points, total_batches, start);
-                return;
-            }
+            _ = cancel.cancelled() => break,
         }
     }
+
+    tracing::info!(
+        total_points,
+        total_batches,
+        elapsed_ms = start.elapsed().as_millis() as u64,
+        "flush consumer shut down"
+    );
 }
 
-async fn flush_concurrent<C, K, M>(
-    service: &FlushService<C, K, M>,
-    batches: &[photon_core::types::batch::WireBatch],
-    config: &FlushConfig,
-) -> Result<FlushStats, crate::domain::service::FlushError>
-where
-    C: Compressor,
-    K: Codec<MetricBatch>,
-    M: MetricWriter,
-{
-    let chunk_size = config.max_batch_read.max(1);
-    let futures: Vec<_> = batches.chunks(chunk_size).map(|c| service.process(c)).collect();
-    let results = futures_util::future::try_join_all(futures).await?;
-
+fn merge_stats(results: Vec<FlushStats>) -> FlushStats {
     let mut merged = FlushStats {
         batches: 0,
         points: 0,
         decode_ms: 0,
         write_ms: 0,
     };
-    for stats in results {
-        merged.batches += stats.batches;
-        merged.points += stats.points;
-        merged.decode_ms = merged.decode_ms.max(stats.decode_ms);
-        merged.write_ms = merged.write_ms.max(stats.write_ms);
+    for s in results {
+        merged.batches += s.batches;
+        merged.points += s.points;
+        merged.decode_ms = merged.decode_ms.max(s.decode_ms);
+        merged.write_ms = merged.write_ms.max(s.write_ms);
     }
-
-    Ok(merged)
+    merged
 }
 
-fn log_stats(stats: &FlushStats, total_points: u64, start: Instant) {
+fn log_flush(stats: &FlushStats, total_points: u64, start: Instant) {
     let elapsed = start.elapsed().as_secs_f64();
     let throughput = if elapsed > 0.0 {
         total_points as f64 / elapsed / 1_000_000.0
     } else {
         0.0
     };
-
     tracing::info!(
         batches = stats.batches,
         points = stats.points,
         decode_ms = stats.decode_ms,
         write_ms = stats.write_ms,
-        total_points,
         throughput_mpts = format!("{throughput:.2}"),
         "flushed"
     );
-}
-
-fn log_totals(total_points: u64, total_batches: u64, start: Instant) {
-    let elapsed = start.elapsed();
-    let throughput = if elapsed.as_secs_f64() > 0.0 {
-        total_points as f64 / elapsed.as_secs_f64() / 1_000_000.0
-    } else {
-        0.0
-    };
-
-    tracing::info!(
-        total_points,
-        total_batches,
-        elapsed_ms = elapsed.as_millis() as u64,
-        throughput_mpts = format!("{throughput:.2}"),
-        "flush consumer totals"
-    );
-}
-
-async fn drain<C, K, M>(
-    wal: &mut Box<dyn Wal>,
-    cursor: &mut WalOffset,
-    service: &FlushService<C, K, M>,
-    config: &FlushConfig,
-    total_points: &mut u64,
-    total_batches: &mut u64,
-    start: Instant,
-) where
-    C: Compressor,
-    K: Codec<MetricBatch>,
-    M: MetricWriter,
-{
-    let read_limit = config.max_batch_read * config.concurrency;
-
-    loop {
-        let mut batches = match wal.read_from(*cursor) {
-            Ok(b) => b,
-            Err(e) => {
-                tracing::error!("WAL read failed during drain: {e}");
-                return;
-            }
-        };
-
-        batches.truncate(read_limit);
-
-        if batches.is_empty() {
-            return;
-        }
-
-        let new_cursor = cursor.advance(batches.len() as u64);
-        match flush_concurrent(service, &batches, config).await {
-            Ok(stats) => {
-                *total_points += stats.points as u64;
-                *total_batches += stats.batches as u64;
-                log_stats(&stats, *total_points, start);
-
-                *cursor = new_cursor;
-                if let Err(e) = wal.truncate_through(*cursor) {
-                    tracing::error!("WAL truncate failed during drain: {e}");
-                }
-                let _ = wal.sync();
-            }
-            Err(e) => {
-                tracing::error!("drain flush failed, data in WAL for recovery: {e}");
-                return;
-            }
-        }
-    }
 }
