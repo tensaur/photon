@@ -14,7 +14,6 @@ use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
-use photon_store::memory::watermark::InMemoryWatermarkStore;
 use photon_wal::open_in_memory_wal;
 
 const BATCH_SIZES: &[usize] = &[100, 1_000, 10_000, 100_000];
@@ -86,7 +85,7 @@ fn bench_service(c: &mut Criterion) {
         let (wal_appender, _wal) = open_in_memory_wal();
         let notify = Arc::new(tokio::sync::Notify::new());
 
-        let service = Service::new(InMemoryWatermarkStore::new(), wal_appender, notify);
+        let service = Service::new(wal_appender, notify);
 
         group.bench_function(id, |b| {
             b.iter_batched(

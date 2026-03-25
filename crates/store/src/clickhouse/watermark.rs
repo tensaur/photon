@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 
-use crate::ports::watermark::WatermarkStore;
+use crate::ports::watermark::WatermarkWriter;
 use crate::ports::{ReadError, WriteError};
 
-#[derive(Debug, Clone, Row, Serialize, Deserialize)]
-pub struct WatermarkRow {
+#[derive(Row, Serialize, Deserialize)]
+struct WatermarkRow {
     #[serde(with = "clickhouse::serde::uuid")]
-    pub run_id: uuid::Uuid,
-    pub sequence: u64,
+    run_id: uuid::Uuid,
+    sequence: u64,
 }
 
 #[derive(Clone)]
@@ -25,26 +25,11 @@ impl ClickHouseWatermarkStore {
     }
 }
 
-impl WatermarkStore for ClickHouseWatermarkStore {
-    async fn get(&self, run_id: &RunId) -> Result<Option<SequenceNumber>, ReadError> {
-        let run_uuid: uuid::Uuid = (*run_id).into();
-
-        let rows: Vec<WatermarkRow> = self
-            .client
-            .query("SELECT ?fields FROM watermarks FINAL WHERE run_id = ?")
-            .bind(run_uuid)
-            .fetch_all()
-            .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
-
-        Ok(rows.first().map(|r| SequenceNumber::from(r.sequence)))
-    }
-
-    async fn advance(&self, run_id: &RunId, seq: SequenceNumber) -> Result<(), WriteError> {
-        self.advance_many(&[(*run_id, seq)]).await
-    }
-
-    async fn advance_many(&self, entries: &[(RunId, SequenceNumber)]) -> Result<(), WriteError> {
+impl WatermarkWriter for ClickHouseWatermarkStore {
+    async fn write_watermarks(
+        &self,
+        entries: &[(RunId, SequenceNumber)],
+    ) -> Result<(), WriteError> {
         if entries.is_empty() {
             return Ok(());
         }
@@ -69,5 +54,19 @@ impl WatermarkStore for ClickHouseWatermarkStore {
             .await
             .map_err(|e| WriteError::Unknown(e.into()))?;
         Ok(())
+    }
+
+    async fn read_all(&self) -> Result<Vec<(RunId, SequenceNumber)>, ReadError> {
+        let rows: Vec<WatermarkRow> = self
+            .client
+            .query("SELECT ?fields FROM watermarks FINAL")
+            .fetch_all()
+            .await
+            .map_err(|e| ReadError::Unknown(e.into()))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| (RunId::from(r.run_id), SequenceNumber::from(r.sequence)))
+            .collect())
     }
 }

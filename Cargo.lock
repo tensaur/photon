@@ -2826,7 +2826,6 @@ dependencies = [
  "dashmap",
  "photon-core",
  "photon-protocol",
- "photon-store",
  "photon-transport",
  "photon-wal",
  "thiserror 2.0.18",

@@ -83,7 +83,6 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
                 value Float64,
                 timestamp_ms UInt64
             ) ENGINE = MergeTree()
-            PARTITION BY run_id
             ORDER BY (run_id, key, step)",
         )
         .execute()

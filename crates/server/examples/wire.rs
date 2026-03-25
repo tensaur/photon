@@ -18,6 +18,7 @@ use photon_protocol::compressor::ZstdCompressor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
+use photon_store::ports::watermark::WatermarkWriter;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
 use photon_wal::{DiskWalConfig, open_disk_wal};
@@ -44,8 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = ClientBuilder::new().with_env().build();
     migrate(&client).await?;
 
-    let watermark_store = ClickHouseWatermarkStore::new(client.clone());
-    let metric_store = ClickHouseMetricStore::new(client);
+    let metric_store = ClickHouseMetricStore::new(client.clone());
+    let watermark_store = ClickHouseWatermarkStore::new(client);
 
     // Server WAL
     let (wal_appender, wal_manager) =
@@ -53,16 +54,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Ingest service (WAL-backed)
     let ingest_service = Arc::new(IngestService::new(
-        watermark_store,
         wal_appender,
         notify.clone(),
     ));
+
+    // Seed dedup cache from persisted watermarks
+    let watermarks = watermark_store.read_all().await?;
+    if !watermarks.is_empty() {
+        tracing::info!(runs = watermarks.len(), "seeded dedup cache from watermarks");
+        ingest_service.seed_watermarks(&watermarks);
+    }
 
     // Persist consumer
     let persist_service = PersistService::new(
         ZstdCompressor::default(),
         codec,
         metric_store,
+        watermark_store,
     );
     let persist_cancel = cancel.clone();
     let persist_handle = tokio::spawn(persist_thread::run(

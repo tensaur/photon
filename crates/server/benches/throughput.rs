@@ -8,7 +8,6 @@ use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
-use photon_store::memory::watermark::InMemoryWatermarkStore;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
 use photon_wal::open_in_memory_wal;
@@ -30,7 +29,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let notify = Arc::new(tokio::sync::Notify::new());
 
     let ingest_service = Arc::new(IngestService::new(
-        InMemoryWatermarkStore::new(),
         wal_appender,
         notify,
     ));

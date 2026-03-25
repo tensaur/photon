@@ -2,8 +2,6 @@ use dashmap::DashMap;
 
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
-use photon_store::ports::watermark::WatermarkStore;
-use photon_store::ports::{ReadError, WriteError};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Verdict {
@@ -11,80 +9,43 @@ pub enum Verdict {
     Duplicate,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum DeduplicationError {
-    #[error("failed to read watermark")]
-    Read(#[from] ReadError),
-
-    #[error("failed to advance watermark")]
-    Write(#[source] WriteError),
+/// In-memory cache of the highest sequence number seen per run.
+pub struct DeduplicationCache {
+    seen: DashMap<RunId, SequenceNumber>,
 }
 
-/// Wraps a [`WatermarkStore`] with an in-memory cache to avoid
-/// hitting the store on every dedup check.
-pub struct DeduplicationTracker<W: WatermarkStore> {
-    store: W,
-    cache: DashMap<RunId, SequenceNumber>,
-}
-
-impl<W: WatermarkStore> DeduplicationTracker<W> {
-    pub fn new(store: W) -> Self {
+impl DeduplicationCache {
+    pub fn new() -> Self {
         Self {
-            store,
-            cache: DashMap::new(),
+            seen: DashMap::new(),
         }
     }
 
-    pub async fn check(
-        &self,
-        run_id: &RunId,
-        seq: SequenceNumber,
-    ) -> Result<Verdict, DeduplicationError> {
-        let watermark = self.watermark(run_id).await?;
-
-        if seq <= watermark {
-            Ok(Verdict::Duplicate)
-        } else {
-            Ok(Verdict::Process)
+    pub fn seed(&self, entries: &[(RunId, SequenceNumber)]) {
+        for (run_id, seq) in entries {
+            self.seen.insert(*run_id, *seq);
         }
     }
 
-    pub async fn advance(
-        &self,
-        run_id: &RunId,
-        seq: SequenceNumber,
-    ) -> Result<(), DeduplicationError> {
-        self.store
-            .advance(run_id, seq)
-            .await
-            .map_err(DeduplicationError::Write)?;
-
-        self.cache.insert(*run_id, seq);
-        Ok(())
-    }
-
-    pub async fn watermark(&self, run_id: &RunId) -> Result<SequenceNumber, DeduplicationError> {
-        if let Some(w) = self.cache.get(run_id) {
-            return Ok(*w.value());
-        }
-
-        let w = self
-            .store
+    pub fn check(&self, run_id: &RunId, seq: SequenceNumber) -> Verdict {
+        let highest = self
+            .seen
             .get(run_id)
-            .await?
+            .map(|w| *w.value())
             .unwrap_or(SequenceNumber::ZERO);
 
-        self.cache.insert(*run_id, w);
-        Ok(w)
+        if seq <= highest {
+            Verdict::Duplicate
+        } else {
+            Verdict::Process
+        }
     }
 
-    /// Advance the in-memory cache only, without persisting to the store.
-    /// Used on the server WAL path where the flush consumer handles store writes.
-    pub fn advance_local(&self, run_id: &RunId, seq: SequenceNumber) {
-        self.cache.insert(*run_id, seq);
+    pub fn advance(&self, run_id: &RunId, seq: SequenceNumber) {
+        self.seen.insert(*run_id, seq);
     }
 
     pub fn evict(&self, run_id: &RunId) {
-        self.cache.remove(run_id);
+        self.seen.remove(run_id);
     }
 }
