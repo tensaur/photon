@@ -21,6 +21,7 @@ photon-downsample = { path = "../downsample" }
 photon-ingest = { path = "../ingest" }
 photon-persist = { path = "../persist" }
 photon-query = { path = "../query" }
+photon-subscription = { path = "../subscription" }
 photon-transport = { path = "../transport" }
 photon-hook = { path = "../hook" }
 photon-wal = { path = "../wal" }
@@ -30,7 +31,6 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
-axum = { workspace = true, optional = true }
 rust-embed = { workspace = true, optional = true, features = ["mime-guess"] }
 
 [dev-dependencies]
@@ -41,4 +41,4 @@ name = "throughput"
 harness = false
 
 [features]
-dashboard = ["axum", "rust-embed"]
+dashboard = ["rust-embed"]

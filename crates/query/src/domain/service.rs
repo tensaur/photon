@@ -1,5 +1,8 @@
 use std::future::Future;
 
+use photon_core::domain::experiment::Experiment;
+use photon_core::domain::project::Project;
+use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{
@@ -10,7 +13,10 @@ use photon_downsample::ports::selector::Selector;
 use photon_store::ports::ReadError;
 use photon_store::ports::bucket::BucketReader;
 use photon_store::ports::compaction::CompactionCursor;
+use photon_store::ports::experiment::ExperimentReader;
 use photon_store::ports::metric::MetricReader;
+use photon_store::ports::project::ProjectReader;
+use photon_store::ports::run::RunReader;
 
 use crate::domain::tier::{Resolution, TierSelector};
 
@@ -21,7 +27,11 @@ pub enum QueryError {
 }
 
 pub trait QueryService: Send + Sync + 'static {
-    fn list_runs(&self) -> impl Future<Output = Result<Vec<RunId>, QueryError>> + Send;
+    fn list_runs(&self) -> impl Future<Output = Result<Vec<Run>, QueryError>> + Send;
+
+    fn list_experiments(&self) -> impl Future<Output = Result<Vec<Experiment>, QueryError>> + Send;
+
+    fn list_projects(&self) -> impl Future<Output = Result<Vec<Project>, QueryError>> + Send;
 
     fn list_metrics(
         &self,
@@ -46,6 +56,14 @@ pub async fn dispatch<S: QueryService>(service: &S, msg: QueryMessage) -> QueryR
             Ok(runs) => QueryResult::Runs(runs),
             Err(e) => QueryResult::Error(e.to_string()),
         },
+        QueryMessage::ListExperiments => match service.list_experiments().await {
+            Ok(experiments) => QueryResult::Experiments(experiments),
+            Err(e) => QueryResult::Error(e.to_string()),
+        },
+        QueryMessage::ListProjects => match service.list_projects().await {
+            Ok(projects) => QueryResult::Projects(projects),
+            Err(e) => QueryResult::Error(e.to_string()),
+        },
         QueryMessage::ListMetrics(run_id) => match service.list_metrics(&run_id).await {
             Ok(metrics) => QueryResult::Metrics(metrics),
             Err(e) => QueryResult::Error(e.to_string()),
@@ -61,32 +79,44 @@ pub async fn dispatch<S: QueryService>(service: &S, msg: QueryMessage) -> QueryR
     }
 }
 
-pub struct Service<S, B, M, C>
+pub struct Service<S, B, M, C, R, E, P>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
     C: CompactionCursor,
+    R: RunReader,
+    E: ExperimentReader,
+    P: ProjectReader,
 {
     selector: S,
     bucket_reader: B,
     metric_reader: M,
     compaction_cursor: C,
+    run_reader: R,
+    experiment_reader: E,
+    project_reader: P,
     tier_selector: TierSelector,
 }
 
-impl<S, B, M, C> Service<S, B, M, C>
+impl<S, B, M, C, R, E, P> Service<S, B, M, C, R, E, P>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
     C: CompactionCursor,
+    R: RunReader,
+    E: ExperimentReader,
+    P: ProjectReader,
 {
     pub fn new(
         selector: S,
         bucket_reader: B,
         metric_reader: M,
         compaction_cursor: C,
+        run_reader: R,
+        experiment_reader: E,
+        project_reader: P,
         tier_selector: TierSelector,
     ) -> Self {
         Self {
@@ -94,20 +124,34 @@ where
             bucket_reader,
             metric_reader,
             compaction_cursor,
+            run_reader,
+            experiment_reader,
+            project_reader,
             tier_selector,
         }
     }
 }
 
-impl<S, B, M, C> QueryService for Service<S, B, M, C>
+impl<S, B, M, C, R, E, P> QueryService for Service<S, B, M, C, R, E, P>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
     C: CompactionCursor,
+    R: RunReader,
+    E: ExperimentReader,
+    P: ProjectReader,
 {
-    async fn list_runs(&self) -> Result<Vec<RunId>, QueryError> {
-        Ok(self.metric_reader.list_runs().await?)
+    async fn list_runs(&self) -> Result<Vec<Run>, QueryError> {
+        Ok(self.run_reader.list_runs().await?)
+    }
+
+    async fn list_experiments(&self) -> Result<Vec<Experiment>, QueryError> {
+        Ok(self.experiment_reader.list_experiments().await?)
+    }
+
+    async fn list_projects(&self) -> Result<Vec<Project>, QueryError> {
+        Ok(self.project_reader.list_projects().await?)
     }
 
     async fn list_metrics(&self, run_id: &RunId) -> Result<Vec<Metric>, QueryError> {

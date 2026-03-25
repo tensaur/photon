@@ -27,6 +27,11 @@ pub trait IngestService: Send + Sync + 'static {
         batch: &WireBatch,
     ) -> impl Future<Output = Result<IngestResult, IngestError>> + Send;
 
+    fn watermark(
+        &self,
+        run_id: &RunId,
+    ) -> impl Future<Output = Result<SequenceNumber, IngestError>> + Send;
+
     fn evict_run(&self, run_id: &RunId);
 }
 
@@ -89,6 +94,10 @@ impl<A: WalAppender> IngestService for Service<A> {
             sequence_number: seq,
             status: AckStatus::Ok,
         })
+    }
+
+    async fn watermark(&self, run_id: &RunId) -> Result<SequenceNumber, IngestError> {
+        Ok(self.dedup.watermark(run_id))
     }
 
     fn evict_run(&self, run_id: &RunId) {

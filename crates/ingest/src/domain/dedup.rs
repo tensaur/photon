@@ -41,6 +41,13 @@ impl DeduplicationCache {
         }
     }
 
+    pub fn watermark(&self, run_id: &RunId) -> SequenceNumber {
+        self.seen
+            .get(run_id)
+            .map(|w| *w.value())
+            .unwrap_or(SequenceNumber::ZERO)
+    }
+
     pub fn advance(&self, run_id: &RunId, seq: SequenceNumber) {
         self.seen.insert(*run_id, seq);
     }

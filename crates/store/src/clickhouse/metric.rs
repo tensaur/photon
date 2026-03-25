@@ -26,12 +26,6 @@ struct MetricReadRow {
 }
 
 #[derive(Row, Serialize, Deserialize)]
-struct RunIdRow {
-    #[serde(with = "clickhouse::serde::uuid")]
-    run_id: uuid::Uuid,
-}
-
-#[derive(Row, Serialize, Deserialize)]
 struct KeyRow {
     key: String,
 }
@@ -93,17 +87,6 @@ impl MetricWriter for ClickHouseMetricStore {
 }
 
 impl MetricReader for ClickHouseMetricStore {
-    async fn list_runs(&self) -> Result<Vec<RunId>, ReadError> {
-        let rows: Vec<RunIdRow> = self
-            .client
-            .query("SELECT DISTINCT run_id FROM metrics")
-            .fetch_all()
-            .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
-
-        Ok(rows.into_iter().map(|r| RunId::from(r.run_id)).collect())
-    }
-
     async fn read_points(
         &self,
         run_id: &RunId,

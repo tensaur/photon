@@ -18,6 +18,9 @@ use photon_protocol::compressor::ZstdCompressor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
+use photon_store::memory::experiment::InMemoryExperimentStore;
+use photon_store::memory::project::InMemoryProjectStore;
+use photon_store::memory::run::InMemoryRunStore;
 use photon_store::ports::watermark::WatermarkReader;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
@@ -81,6 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         persist_cancel,
     ));
 
+    let run_store = InMemoryRunStore::new();
+    let experiment_store = InMemoryExperimentStore::new();
+    let project_store = InMemoryProjectStore::new();
+
     // Spawn server in background
     tokio::spawn(async move {
         loop {
@@ -88,9 +95,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let bt = TcpTransport::accept(stream);
             let transport = CodecTransport::new(codec, bt);
             let service = Arc::clone(&ingest_service);
+            let run_store = run_store.clone();
+            let experiment_store = experiment_store.clone();
+            let project_store = project_store.clone();
 
             tokio::spawn(async move {
-                handler::handle(&service, &transport).await;
+                handler::handle_envelope(
+                    &service,
+                    &run_store,
+                    &experiment_store,
+                    &project_store,
+                    &transport,
+                )
+                .await;
             });
         }
     });

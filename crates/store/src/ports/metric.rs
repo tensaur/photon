@@ -28,8 +28,6 @@ pub trait MetricWriter: Send + Sync + Clone + 'static {
 
 /// Range reads over raw metric points.
 pub trait MetricReader: Send + Sync + Clone + 'static {
-    fn list_runs(&self) -> impl Future<Output = Result<Vec<RunId>, ReadError>> + Send;
-
     fn read_points(
         &self,
         run_id: &RunId,

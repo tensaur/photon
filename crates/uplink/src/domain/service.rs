@@ -5,11 +5,11 @@ use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 use photon_core::types::wal::WalOffset;
-use photon_transport::ports::Transport;
 use photon_wal::Wal;
 
 use super::ack::{AckTracker, UplinkStats};
-use super::error::{RecoveryError, TransportError, UplinkError};
+use super::error::{RecoveryError, UplinkError};
+use super::ports::IngestConnection;
 
 pub trait UplinkService {
     fn recover(&mut self) -> impl Future<Output = Result<SequenceNumber, RecoveryError>> + Send;
@@ -20,12 +20,12 @@ pub trait UplinkService {
     fn stats(&self) -> UplinkStats;
 }
 
-pub struct Service<T, M>
+pub struct Service<C, M>
 where
-    T: Transport<WireBatch, AckResult>,
+    C: IngestConnection,
     M: Wal + Clone,
 {
-    transport: T,
+    connection: C,
     wal: M,
     run_id: RunId,
     start_sequence: SequenceNumber,
@@ -34,18 +34,18 @@ where
     stats: UplinkStats,
 }
 
-impl<T, M> Service<T, M>
+impl<C, M> Service<C, M>
 where
-    T: Transport<WireBatch, AckResult>,
+    C: IngestConnection,
     M: Wal + Clone,
 {
-    pub fn new(transport: T, wal: M, run_id: RunId, start_sequence: SequenceNumber) -> Self {
+    pub fn new(connection: C, wal: M, run_id: RunId, start_sequence: SequenceNumber) -> Self {
         let wal_cursor = wal
             .read_meta()
             .map(|m| m.consumed)
             .unwrap_or(WalOffset::ZERO);
         Self {
-            transport,
+            connection,
             wal,
             run_id,
             start_sequence,
@@ -56,9 +56,9 @@ where
     }
 }
 
-impl<T, M> UplinkService for Service<T, M>
+impl<C, M> UplinkService for Service<C, M>
 where
-    T: Transport<WireBatch, AckResult> + Transport<RunId, SequenceNumber>,
+    C: IngestConnection,
     M: Wal + Clone,
 {
     async fn recover(&mut self) -> Result<SequenceNumber, RecoveryError> {
@@ -74,13 +74,11 @@ where
             return Ok(self.tracker.committed());
         }
 
-        self.transport
-            .send(&self.run_id)
+        let server = self
+            .connection
+            .query_watermark(&self.run_id)
             .await
-            .map_err(TransportError::from)?;
-        let server: SequenceNumber = <T as Transport<RunId, SequenceNumber>>::recv(&self.transport)
-            .await
-            .map_err(TransportError::from)?;
+            .map_or(SequenceNumber::ZERO, |seq| seq);
 
         let local = self.tracker.committed();
         let effective = std::cmp::max(local, server);
@@ -109,10 +107,7 @@ where
     }
 
     async fn send(&mut self, batch: &WireBatch) -> Result<(), UplinkError> {
-        self.transport
-            .send(batch)
-            .await
-            .map_err(TransportError::from)?;
+        self.connection.send_batch(batch).await?;
         self.stats.batches_sent += 1;
         Ok(())
     }

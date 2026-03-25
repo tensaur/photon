@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 photon-core = { path = "../core" }
+photon-store = { path = "../store" }
 photon-transport = { path = "../transport" }
 photon-wal = { path = "../wal" }
 

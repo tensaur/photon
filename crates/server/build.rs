@@ -14,8 +14,12 @@ fn build_dashboard() {
 
     std::fs::create_dir_all(&dist_dir).expect("failed to create dist directory");
 
+    // Use a separate target directory to avoid deadlocking on the cargo lock
+    let wasm_target_dir = workspace_root.join("target/wasm");
+
     let status = Command::new("cargo")
         .current_dir(&workspace_root)
+        .env("CARGO_TARGET_DIR", &wasm_target_dir)
         .args([
             "build",
             "-p",
@@ -32,8 +36,7 @@ fn build_dashboard() {
         panic!("failed to compile photon-dashboard to WASM");
     }
 
-    let wasm_file =
-        workspace_root.join("target/wasm32-unknown-unknown/release/photon_dashboard.wasm");
+    let wasm_file = wasm_target_dir.join("wasm32-unknown-unknown/release/photon_dashboard.wasm");
 
     match Command::new("wasm-bindgen")
         .args([

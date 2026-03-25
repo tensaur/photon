@@ -20,11 +20,12 @@ use photon_store::clickhouse::compaction::ClickHouseCompactionCursor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
+use photon_store::memory::experiment::InMemoryExperimentStore;
+use photon_store::memory::project::InMemoryProjectStore;
+use photon_store::memory::run::InMemoryRunStore;
 use photon_store::ports::watermark::WatermarkReader;
-use photon_transport::codec::CodecTransport;
-use photon_transport::http::HttpTransport;
-use photon_transport::serve;
-use photon_transport::tcp::TcpTransport;
+use photon_subscription::SubscriptionHook;
+use photon_transport::router::Router;
 use photon_wal::{DiskWalConfig, open_disk_wal};
 
 #[cfg(feature = "dashboard")]
@@ -39,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let ingest_addr = "[::1]:50051";
-    let query_addr = "[::1]:50052";
+    let api_addr = "[::1]:50052";
 
     let codec = CodecKind::default();
     let cancel = CancellationToken::new();
@@ -54,7 +55,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let compaction_cursor = ClickHouseCompactionCursor::new(client.clone());
     let watermark_store = ClickHouseWatermarkStore::new(client);
 
-    // Server WAL (same implementation as client, different config)
+    // Entity stores (in-memory for now)
+    let run_store = InMemoryRunStore::new();
+    let experiment_store = InMemoryExperimentStore::new();
+    let project_store = InMemoryProjectStore::new();
+    let subscription = SubscriptionHook::new();
+
+    // Server WAL
     let (wal_appender, wal_manager) =
         open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
@@ -86,57 +93,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cancel.clone(),
     ));
 
-    // Query service
     let query_service = Arc::new(QueryService::new(
         NoOpSelector,
         bucket_store,
         metric_store,
         compaction_cursor,
+        run_store.clone(),
+        experiment_store.clone(),
+        project_store.clone(),
         TierSelector::default(),
     ));
 
-    // Ingest (TCP)
     let ingest_listener = TcpListener::bind(ingest_addr).await?;
     tracing::info!("ingest listening on {ingest_addr}");
 
-    tokio::spawn(serve(
-        ingest_listener,
-        ingest_service,
-        move |svc, stream| async move {
-            let bt = TcpTransport::accept(stream);
-            let transport = CodecTransport::new(codec, bt);
-            ingest_handler::handle(&svc, &transport).await;
-        },
-    ));
+    tokio::spawn(photon_transport::serve(ingest_listener, codec, move |t| {
+        let svc = ingest_service.clone();
+        let run_store = run_store.clone();
+        let experiment_store = experiment_store.clone();
+        let project_store = project_store.clone();
+        async move {
+            ingest_handler::handle_envelope(&svc, &run_store, &experiment_store, &project_store, &t)
+                .await
+        }
+    }));
 
-    // Query (HTTP)
-    let query_listener = TcpListener::bind(query_addr).await?;
-    tracing::info!("query listening on http://{query_addr}/query");
+    let router = Router::new(codec)
+        .request_response("/api/query", move |t| {
+            let svc = query_service.clone();
+            async move { query_handler::handle(&svc, &t).await }
+        })
+        .websocket("/api/ws", move |t| {
+            let events = subscription.subscribe();
+            async move { photon_subscription::handle(&t, events).await }
+        });
 
-    tokio::spawn(serve(
-        query_listener,
-        query_service,
-        move |svc, stream| async move {
-            let bt = match HttpTransport::accept(stream).await {
-                Ok(bt) => bt,
-                Err(e) => {
-                    tracing::warn!("HTTP accept error: {e}");
-                    return;
-                }
-            };
-
-            let transport = CodecTransport::new(codec, bt);
-            query_handler::handle(&svc, &transport).await;
-        },
-    ));
-
-    // Dashboard
     #[cfg(feature = "dashboard")]
-    {
-        let dashboard_listener = TcpListener::bind("[::1]:50053").await?;
-        tracing::info!("dashboard at http://[::1]:50053");
-        tokio::spawn(dashboard::serve(dashboard_listener));
-    }
+    let router = router.fallback(dashboard::get_file);
+
+    let api_listener = TcpListener::bind(api_addr).await?;
+    tracing::info!("api listening on http://{api_addr}");
+
+    tokio::spawn(async move { router.serve(api_listener).await });
 
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");

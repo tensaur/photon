@@ -8,8 +8,11 @@ use tokio::sync::oneshot;
 use lasso::ThreadedRodeo;
 
 use photon_batch::run_batch_thread;
+use photon_core::domain::experiment::Experiment;
+use photon_core::domain::project::Project;
+use photon_core::domain::run::{Run as DomainRun, RunStatus};
 use photon_core::types::config::{BatchConfig, UplinkConfig};
-use photon_core::types::id::RunId;
+use photon_core::types::id::{ExperimentId, ProjectId, RunId, TenantId, UserId};
 use photon_core::types::sequence::SequenceNumber;
 use photon_core::types::wal::WalOffset;
 use photon_protocol::codec::CodecKind;
@@ -31,6 +34,11 @@ use crate::run::{Run, UplinkHandle};
 /// ```
 pub struct RunBuilder {
     run_id: Option<RunId>,
+    name: Option<String>,
+    project: Option<Project>,
+    experiment: Option<Experiment>,
+    user_id: Option<UserId>,
+    tags: Vec<String>,
     wal_dir: Option<PathBuf>,
     wal: WalKind,
     channel_capacity: usize,
@@ -45,6 +53,11 @@ impl Default for RunBuilder {
     fn default() -> Self {
         Self {
             run_id: None,
+            name: None,
+            project: None,
+            experiment: None,
+            user_id: None,
+            tags: Vec::new(),
             wal_dir: None,
             wal: WalKind::default(),
             channel_capacity: 65_536,
@@ -60,6 +73,57 @@ impl Default for RunBuilder {
 impl RunBuilder {
     pub fn run_id(mut self, id: RunId) -> Self {
         self.run_id = Some(id);
+        self
+    }
+
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn project(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        let tenant_id = TenantId::default();
+        let id = ProjectId::from_name(&tenant_id, &name);
+        let now = chrono::Utc::now();
+        self.project = Some(Project {
+            id,
+            tenant_id,
+            name,
+            created_at: now,
+            updated_at: now,
+        });
+        self
+    }
+
+    pub fn experiment(mut self, name: impl Into<String>) -> Self {
+        let name = name.into();
+        let project_id = self.project.as_ref().map(|p| p.id).unwrap_or_default();
+        let id = ExperimentId::from_name(&project_id, &name);
+        let now = chrono::Utc::now();
+        self.experiment = Some(Experiment {
+            id,
+            project_id,
+            name,
+            tags: Vec::new(),
+            created_at: now,
+            updated_at: now,
+        });
+        self
+    }
+
+    pub fn user(mut self, id: UserId) -> Self {
+        self.user_id = Some(id);
+        self
+    }
+
+    pub fn tags(mut self, tags: Vec<String>) -> Self {
+        self.tags = tags;
+        self
+    }
+
+    pub fn tag(mut self, tag: impl Into<String>) -> Self {
+        self.tags.push(tag.into());
         self
     }
 
@@ -110,6 +174,35 @@ impl RunBuilder {
 
     pub fn start(self) -> Result<Run, StartError> {
         let run_id = self.run_id.unwrap_or_default();
+        let now = chrono::Utc::now();
+
+        let project = self.project.unwrap_or_else(|| {
+            let tenant_id = TenantId::default();
+            let name = "default".to_string();
+            let id = ProjectId::from_name(&tenant_id, &name);
+            Project {
+                id,
+                tenant_id,
+                name,
+                created_at: now,
+                updated_at: now,
+            }
+        });
+
+        let domain_run = DomainRun {
+            id: run_id,
+            project_id: project.id,
+            experiment_id: self.experiment.as_ref().map(|e| e.id),
+            user_id: self.user_id.unwrap_or_default(),
+            name: self
+                .name
+                .unwrap_or_else(|| format!("run-{}", run_id.short())),
+            status: RunStatus::Running,
+            tags: self.tags,
+            created_at: now,
+            updated_at: now,
+        };
+        let experiment = self.experiment;
 
         let wal_dir = self
             .wal_dir
@@ -151,6 +244,9 @@ impl RunBuilder {
             let uplink_wal = wal.clone();
             let uplink_config = UplinkConfig::default();
             let transport_kind = self.transport;
+            let run = domain_run.clone();
+            let project = project.clone();
+            let experiment = experiment.clone();
 
             let handle = thread::Builder::new()
                 .name(format!("photon-uplink-{run_id}"))
@@ -170,7 +266,9 @@ impl RunBuilder {
 
                         run_uplink(
                             transport,
-                            run_id,
+                            run,
+                            project,
+                            experiment,
                             uplink_wal,
                             uplink_config,
                             start_sequence,
