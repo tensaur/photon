@@ -2810,23 +2810,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "photon-flush"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "bytes",
- "futures-util",
- "photon-core",
- "photon-protocol",
- "photon-store",
- "photon-wal",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
 name = "photon-hook"
 version = "0.0.0"
 dependencies = [
@@ -2848,6 +2831,23 @@ dependencies = [
  "photon-wal",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "photon-persist"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "futures-util",
+ "photon-core",
+ "photon-protocol",
+ "photon-store",
+ "photon-wal",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -2892,9 +2892,9 @@ dependencies = [
  "photon",
  "photon-core",
  "photon-downsample",
- "photon-flush",
  "photon-hook",
  "photon-ingest",
+ "photon-persist",
  "photon-protocol",
  "photon-query",
  "photon-store",

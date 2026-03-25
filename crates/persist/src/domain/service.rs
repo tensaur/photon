@@ -9,7 +9,7 @@ use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::metric::MetricWriter;
 
 #[derive(Debug, thiserror::Error)]
-pub enum FlushError {
+pub enum PersistError {
     #[error("decompression failed")]
     Decompress(#[source] photon_protocol::ports::compress::CompressionError),
 
@@ -20,11 +20,11 @@ pub enum FlushError {
     MetricWrite(#[source] photon_store::ports::WriteError),
 }
 
-pub trait FlushService: Send + Sync + 'static {
+pub trait PersistService: Send + Sync + 'static {
     fn write(
         &self,
         batches: &[WireBatch],
-    ) -> impl Future<Output = Result<(), FlushError>> + Send;
+    ) -> impl Future<Output = Result<(), PersistError>> + Send;
 }
 
 pub struct Service<C, K, M>
@@ -53,29 +53,29 @@ where
     }
 }
 
-impl<C, K, M> FlushService for Service<C, K, M>
+impl<C, K, M> PersistService for Service<C, K, M>
 where
     C: Compressor,
     K: Codec<MetricBatch>,
     M: MetricWriter,
 {
-    async fn write(&self, batches: &[WireBatch]) -> Result<(), FlushError> {
+    async fn write(&self, batches: &[WireBatch]) -> Result<(), PersistError> {
         let mut decoded_batches = Vec::with_capacity(batches.len());
 
         for batch in batches {
             let mut buf = BytesMut::with_capacity(batch.uncompressed_size);
             self.compressor
                 .decompress(&batch.compressed_payload, &mut buf)
-                .map_err(FlushError::Decompress)?;
+                .map_err(PersistError::Decompress)?;
 
-            let metric_batch: MetricBatch = self.codec.decode(&buf).map_err(FlushError::Decode)?;
+            let metric_batch: MetricBatch = self.codec.decode(&buf).map_err(PersistError::Decode)?;
             decoded_batches.push(metric_batch);
         }
 
         self.metric_writer
             .write_batches(&decoded_batches)
             .await
-            .map_err(FlushError::MetricWrite)?;
+            .map_err(PersistError::MetricWrite)?;
 
         Ok(())
     }

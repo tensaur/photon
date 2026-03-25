@@ -19,7 +19,7 @@ photon-protocol = { path = "../protocol" }
 photon-store = { path = "../store" }
 photon-downsample = { path = "../downsample" }
 photon-ingest = { path = "../ingest" }
-photon-flush = { path = "../flush" }
+photon-persist = { path = "../persist" }
 photon-query = { path = "../query" }
 photon-transport = { path = "../transport" }
 photon-hook = { path = "../hook" }

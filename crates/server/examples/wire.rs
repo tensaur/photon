@@ -7,9 +7,9 @@ use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-use photon_flush::domain::service::Service as FlushService;
-use photon_flush::inbound::thread as flush_thread;
-use photon_flush::inbound::thread::FlushConfig;
+use photon_persist::domain::service::Service as PersistService;
+use photon_persist::inbound::thread as persist_thread;
+use photon_persist::inbound::thread::PersistConfig;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
@@ -58,19 +58,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         notify.clone(),
     ));
 
-    // Flush consumer
-    let flush_service = FlushService::new(
+    // Persist consumer
+    let persist_service = PersistService::new(
         ZstdCompressor::default(),
         codec,
         metric_store,
     );
-    let flush_cancel = cancel.clone();
-    let flush_handle = tokio::spawn(flush_thread::run(
+    let persist_cancel = cancel.clone();
+    let persist_handle = tokio::spawn(persist_thread::run(
         wal_manager,
         notify,
-        flush_service,
-        FlushConfig::default(),
-        flush_cancel,
+        persist_service,
+        PersistConfig::default(),
+        persist_cancel,
     ));
 
     // Spawn server in background
@@ -166,7 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     client_handle.await?;
 
     cancel.cancel();
-    flush_handle.await?;
+    persist_handle.await?;
 
     println!("Done.");
     Ok(())

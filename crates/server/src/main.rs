@@ -5,9 +5,9 @@ use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
 use photon_downsample::selector::noop::NoOpSelector;
-use photon_flush::domain::service::Service as FlushService;
-use photon_flush::inbound::thread as flush_thread;
-use photon_flush::inbound::thread::FlushConfig;
+use photon_persist::domain::service::Service as PersistService;
+use photon_persist::inbound::thread as persist_thread;
+use photon_persist::inbound::thread::PersistConfig;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler as ingest_handler;
 use photon_protocol::codec::CodecKind;
@@ -64,17 +64,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         notify.clone(),
     ));
 
-    // Flush hexagon
-    let flush_service = FlushService::new(
+    // Persist hexagon
+    let persist_service = PersistService::new(
         ZstdCompressor::default(),
         codec,
         metric_store.clone(),
     );
-    let flush_handle = tokio::spawn(flush_thread::run(
+    let persist_handle = tokio::spawn(persist_thread::run(
         wal_manager,
         notify,
-        flush_service,
-        FlushConfig::default(),
+        persist_service,
+        PersistConfig::default(),
         cancel.clone(),
     ));
 
@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");
     cancel.cancel();
-    let _ = flush_handle.await;
+    let _ = persist_handle.await;
 
     Ok(())
 }

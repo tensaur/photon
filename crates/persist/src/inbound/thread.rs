@@ -6,15 +6,15 @@ use tokio_util::sync::CancellationToken;
 use photon_core::types::wal::WalOffset;
 use photon_wal::Wal;
 
-use crate::domain::service::FlushService;
+use crate::domain::service::PersistService;
 
-pub struct FlushConfig {
+pub struct PersistConfig {
     pub poll_interval: Duration,
     pub max_batch_read: usize,
     pub concurrency: usize,
 }
 
-impl Default for FlushConfig {
+impl Default for PersistConfig {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_millis(100),
@@ -25,23 +25,23 @@ impl Default for FlushConfig {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FlushStats {
-    pub batches_flushed: u64,
-    pub points_flushed: u64,
+pub struct PersistStats {
+    pub batches_persisted: u64,
+    pub points_persisted: u64,
 }
 
 pub async fn run<S, W>(
     mut wal: W,
     notify: Arc<tokio::sync::Notify>,
     service: S,
-    config: FlushConfig,
+    config: PersistConfig,
     cancel: CancellationToken,
-) -> FlushStats
+) -> PersistStats
 where
-    S: FlushService,
+    S: PersistService,
     W: Wal,
 {
-    tracing::info!("flush consumer started");
+    tracing::info!("persist consumer started");
     let mut cursor = wal
         .read_meta()
         .map(|m| m.consumed)
@@ -49,7 +49,7 @@ where
 
     let read_limit = config.max_batch_read * config.concurrency;
     let start = Instant::now();
-    let mut stats = FlushStats::default();
+    let mut stats = PersistStats::default();
 
     loop {
         let mut batches = match wal.read_from(cursor) {
@@ -70,9 +70,9 @@ where
 
             match futures_util::future::try_join_all(futures).await {
                 Ok(_) => {
-                    stats.batches_flushed += count;
-                    stats.points_flushed += points;
-                    log_flush(&stats, start);
+                    stats.batches_persisted += count;
+                    stats.points_persisted += points;
+                    log_persist(&stats, start);
 
                     cursor = cursor.advance(count);
                     if let Err(e) = wal.truncate_through(cursor) {
@@ -81,7 +81,7 @@ where
                     let _ = wal.sync();
                 }
                 Err(e) => {
-                    tracing::error!("flush failed: {e}");
+                    tracing::error!("persist failed: {e}");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
@@ -101,26 +101,26 @@ where
     }
 
     tracing::info!(
-        batches = stats.batches_flushed,
-        points = stats.points_flushed,
+        batches = stats.batches_persisted,
+        points = stats.points_persisted,
         elapsed_ms = start.elapsed().as_millis() as u64,
-        "flush consumer shut down"
+        "persist consumer shut down"
     );
 
     stats
 }
 
-fn log_flush(stats: &FlushStats, start: Instant) {
+fn log_persist(stats: &PersistStats, start: Instant) {
     let elapsed = start.elapsed().as_secs_f64();
     let throughput = if elapsed > 0.0 {
-        stats.points_flushed as f64 / elapsed / 1_000_000.0
+        stats.points_persisted as f64 / elapsed / 1_000_000.0
     } else {
         0.0
     };
     tracing::info!(
-        batches = stats.batches_flushed,
-        points = stats.points_flushed,
+        batches = stats.batches_persisted,
+        points = stats.points_persisted,
         throughput_mpts = format!("{throughput:.2}"),
-        "flushed"
+        "persisted"
     );
 }

@@ -13,7 +13,7 @@ members = [
     "crates/hook",
     "crates/downsample",
     "crates/query",
-    "crates/flush",
+    "crates/persist",
     "crates/server",
     "crates/dashboard",
 ]
