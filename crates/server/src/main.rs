@@ -4,7 +4,6 @@ use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
 use photon_downsample::selector::noop::NoOpSelector;
-use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler as ingest_handler;
 use photon_protocol::codec::CodecKind;
@@ -19,6 +18,7 @@ use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::project::InMemoryProjectStore;
 use photon_store::memory::run::InMemoryRunStore;
 use photon_store::memory::watermark::InMemoryWatermarkStore;
+use photon_subscription::SubscriptionHook;
 use photon_transport::router::Router;
 
 #[cfg(feature = "dashboard")]
@@ -44,11 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let run_store = InMemoryRunStore::new();
     let experiment_store = InMemoryExperimentStore::new();
     let project_store = InMemoryProjectStore::new();
+    let subscription = SubscriptionHook::new();
 
     let ingest_service = Arc::new(IngestService::new(
         watermark_store,
         metric_store.clone(),
-        NoOpHook,
+        subscription.clone(),
         ZstdCompressor::default(),
         codec,
     ));
@@ -78,10 +79,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }));
 
-    let router = Router::new(codec).request_response("/api/query", move |t| {
-        let svc = query_service.clone();
-        async move { query_handler::handle(&svc, &t).await }
-    });
+    let router = Router::new(codec)
+        .request_response("/api/query", move |t| {
+            let svc = query_service.clone();
+            async move { query_handler::handle(&svc, &t).await }
+        })
+        .websocket("/api/ws", move |t| {
+            let events = subscription.subscribe();
+            async move { photon_subscription::handle(&t, events).await }
+        });
 
     #[cfg(feature = "dashboard")]
     let router = router.fallback(dashboard::get_file);

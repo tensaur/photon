@@ -2687,6 +2687,8 @@ dependencies = [
 name = "photon-dashboard"
 version = "0.0.0"
 dependencies = [
+ "async-channel",
+ "chrono",
  "eframe",
  "egui",
  "egui_extras",
@@ -2725,6 +2727,7 @@ name = "photon-hook"
 version = "0.0.0"
 dependencies = [
  "photon-core",
+ "tokio",
 ]
 
 [[package]]
@@ -2791,6 +2794,7 @@ dependencies = [
  "photon-protocol",
  "photon-query",
  "photon-store",
+ "photon-subscription",
  "photon-transport",
  "rust-embed",
  "tokio",
@@ -2807,6 +2811,17 @@ dependencies = [
  "photon-core",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "photon-subscription"
+version = "0.0.0"
+dependencies = [
+ "photon-core",
+ "photon-hook",
+ "photon-transport",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
