@@ -64,9 +64,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         bucket_store,
         metric_store,
         compaction_cursor,
-        run_store,
-        experiment_store,
-        project_store,
+        run_store.clone(),
+        experiment_store.clone(),
+        project_store.clone(),
         TierSelector::default(),
     ));
 
@@ -77,10 +77,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(serve(
         ingest_listener,
         ingest_service,
-        move |svc, stream| async move {
-            let bt = TcpTransport::accept(stream);
-            let transport = CodecTransport::new(codec, bt);
-            ingest_handler::handle(&svc, &transport).await;
+        move |svc, stream| {
+            let run_store = run_store.clone();
+            let experiment_store = experiment_store.clone();
+            let project_store = project_store.clone();
+            async move {
+                let bt = TcpTransport::accept(stream);
+                let transport = CodecTransport::new(codec, bt);
+                ingest_handler::handle_envelope(
+                    &svc,
+                    &run_store,
+                    &experiment_store,
+                    &project_store,
+                    &transport,
+                )
+                .await;
+            }
         },
     ));
 

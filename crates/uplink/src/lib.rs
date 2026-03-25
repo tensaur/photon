@@ -17,4 +17,6 @@ pub enum UplinkThreadError {
     Recovery(#[from] RecoveryError),
     #[error("uplink run loop failed")]
     Uplink(#[from] UplinkError),
+    #[error("transport error")]
+    Transport(TransportError),
 }
