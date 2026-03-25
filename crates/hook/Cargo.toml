@@ -8,4 +8,5 @@ repository.workspace = true
 
 [dependencies]
 photon-core = { path = "../core", version = "0.0.0" }
+tokio = { workspace = true, features = ["sync"] }
 

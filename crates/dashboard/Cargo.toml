@@ -13,6 +13,7 @@ photon-core = { path = "../core" }
 photon-protocol = { path = "../protocol" }
 photon-transport = { path = "../transport" }
 
+async-channel.workspace = true
 eframe.workspace = true
 egui.workspace = true
 egui_plot.workspace = true
@@ -23,6 +24,7 @@ uuid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+chrono.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio.workspace = true
