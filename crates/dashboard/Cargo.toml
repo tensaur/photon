@@ -29,7 +29,10 @@ tokio.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 eframe = { workspace = true, features = ["web_screen_reader"] }
+futures-channel.workspace = true
+futures-util.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
+web-sys = { version = "0.3", features = ["HtmlCanvasElement", "Window", "Location"] }
 tracing-subscriber.workspace = true
 tracing-web.workspace = true
