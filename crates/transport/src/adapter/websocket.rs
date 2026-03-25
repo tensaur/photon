@@ -2,8 +2,6 @@ use async_channel::{Receiver, Sender};
 use async_trait::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::io::{AsyncRead, AsyncWrite};
-#[cfg(not(target_arch = "wasm32"))]
-use tokio::net::TcpStream;
 
 use crate::ports::{ByteTransport, TransportError};
 
@@ -41,16 +39,6 @@ impl WebSocketTransport {
         let ws = WebSocket::open(url).map_err(|e| TransportError::Connection(e.to_string()))?;
 
         let (outgoing, incoming) = spawn_wasm_bridge(ws);
-        Ok(Self { outgoing, incoming })
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub async fn accept(stream: TcpStream) -> Result<Self, TransportError> {
-        let ws = tokio_tungstenite::accept_async(stream)
-            .await
-            .map_err(|e| TransportError::Connection(e.to_string()))?;
-
-        let (outgoing, incoming) = spawn_native_bridge(ws);
         Ok(Self { outgoing, incoming })
     }
 }
