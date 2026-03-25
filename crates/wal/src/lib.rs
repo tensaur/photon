@@ -8,9 +8,7 @@ pub use self::disk::{
 pub use self::memory::{InMemoryWalAppender, InMemoryWalManager, open_in_memory_wal};
 pub use self::ports::{Wal, WalAppender, WalError};
 
-use std::path::Path;
-
-use photon_core::types::id::RunId;
+use std::path::PathBuf;
 
 /// WAL backend selection. Call [`open`](Self::open) to create appender and manager.
 #[derive(Clone, Copy, Debug, Default)]
@@ -23,13 +21,12 @@ pub enum WalKind {
 impl WalKind {
     pub fn open(
         self,
-        dir: Option<&Path>,
-        run_id: RunId,
+        dir: impl Into<PathBuf>,
         config: DiskWalConfig,
     ) -> Result<(Box<dyn WalAppender>, Box<dyn Wal>), WalError> {
         match self {
             Self::Disk => {
-                let (a, m) = open_disk_wal(dir, run_id, config)?;
+                let (a, m) = open_disk_wal(dir, config)?;
                 Ok((Box::new(a), Box::new(m)))
             }
             Self::Memory => {

@@ -1,19 +1,13 @@
 use std::future::Future;
-
-use bytes::BytesMut;
+use std::sync::{Arc, Mutex};
 
 use photon_core::types::ack::AckStatus;
 use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::MetricBatch;
 use photon_core::types::sequence::SequenceNumber;
-use photon_hook::IngestHook;
-use photon_protocol::ports::codec::Codec;
-use photon_protocol::ports::compress::Compressor;
-use photon_store::ports::metric::MetricWriter;
-use photon_store::ports::watermark::WatermarkStore;
+use photon_wal::WalAppender;
 
-use crate::domain::dedup::{DeduplicationError, DeduplicationTracker, Verdict};
+use crate::domain::dedup::{DeduplicationCache, Verdict};
 
 #[derive(Clone, Debug)]
 pub struct IngestResult {
@@ -23,17 +17,8 @@ pub struct IngestResult {
 
 #[derive(Debug, thiserror::Error)]
 pub enum IngestError {
-    #[error("deduplication failed")]
-    Dedup(#[from] DeduplicationError),
-
-    #[error("decompression failed")]
-    Decompress(#[source] photon_protocol::ports::compress::CompressionError),
-
-    #[error("batch decoding failed")]
-    Decode(#[source] photon_protocol::ports::codec::CodecError),
-
-    #[error("metric store write failed")]
-    MetricWrite(#[source] photon_store::ports::WriteError),
+    #[error("WAL append failed")]
+    Wal(#[source] photon_wal::WalError),
 }
 
 pub trait IngestService: Send + Sync + 'static {
@@ -50,53 +35,33 @@ pub trait IngestService: Send + Sync + 'static {
     fn evict_run(&self, run_id: &RunId);
 }
 
-pub struct Service<W, M, H, C, K>
-where
-    W: WatermarkStore,
-    M: MetricWriter,
-    H: IngestHook,
-    C: Compressor,
-    K: Codec<MetricBatch>,
-{
-    dedup: DeduplicationTracker<W>,
-    metric_store: M,
-    hook: H,
-    compressor: C,
-    codec: K,
+/// WAL-backed ingest service.
+pub struct Service<A: WalAppender> {
+    dedup: DeduplicationCache,
+    wal: Mutex<A>,
+    notify: Arc<tokio::sync::Notify>,
 }
 
-impl<W, M, H, C, K> Service<W, M, H, C, K>
-where
-    W: WatermarkStore,
-    M: MetricWriter,
-    H: IngestHook,
-    C: Compressor,
-    K: Codec<MetricBatch>,
-{
-    pub fn new(watermark_store: W, metric_store: M, hook: H, compressor: C, codec: K) -> Self {
+impl<A: WalAppender> Service<A> {
+    pub fn new(wal: A, notify: Arc<tokio::sync::Notify>) -> Self {
         Self {
-            dedup: DeduplicationTracker::new(watermark_store),
-            metric_store,
-            hook,
-            compressor,
-            codec,
+            dedup: DeduplicationCache::new(),
+            wal: Mutex::new(wal),
+            notify,
         }
+    }
+
+    pub fn seed_watermarks(&self, entries: &[(RunId, SequenceNumber)]) {
+        self.dedup.seed(entries);
     }
 }
 
-impl<W, M, H, C, K> IngestService for Service<W, M, H, C, K>
-where
-    W: WatermarkStore,
-    M: MetricWriter,
-    H: IngestHook,
-    C: Compressor,
-    K: Codec<MetricBatch>,
-{
+impl<A: WalAppender> IngestService for Service<A> {
     async fn ingest(&self, batch: &WireBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;
 
-        // 1. Dedup
-        if self.dedup.check(&batch.run_id, seq).await? == Verdict::Duplicate {
+        // 1. Dedup check
+        if self.dedup.check(&batch.run_id, seq) == Verdict::Duplicate {
             return Ok(IngestResult {
                 sequence_number: seq,
                 status: AckStatus::Duplicate,
@@ -112,24 +77,18 @@ where
             });
         }
 
-        // 3. Decompress + decode
-        let mut buf = BytesMut::with_capacity(batch.uncompressed_size);
-        self.compressor
-            .decompress(&batch.compressed_payload, &mut buf)
-            .map_err(IngestError::Decompress)?;
-        let metric_batch = self.codec.decode(&buf).map_err(IngestError::Decode)?;
+        // 3. WAL append
+        self.wal
+            .lock()
+            .unwrap()
+            .append(batch)
+            .map_err(IngestError::Wal)?;
 
-        // 4. Write raw points
-        self.metric_store
-            .write_batch(&metric_batch)
-            .await
-            .map_err(IngestError::MetricWrite)?;
+        // 4. Wake persist consumer
+        self.notify.notify_one();
 
-        // 5. Notify hooks
-        self.hook.on_batch_decoded(batch.run_id, &metric_batch);
-
-        // 6. Advance watermark
-        self.dedup.advance(&batch.run_id, seq).await?;
+        // 5. Advance dedup cache
+        self.dedup.advance(&batch.run_id, seq);
 
         Ok(IngestResult {
             sequence_number: seq,
@@ -138,7 +97,7 @@ where
     }
 
     async fn watermark(&self, run_id: &RunId) -> Result<SequenceNumber, IngestError> {
-        Ok(self.dedup.watermark(run_id).await?)
+        Ok(self.dedup.watermark(run_id))
     }
 
     fn evict_run(&self, run_id: &RunId) {

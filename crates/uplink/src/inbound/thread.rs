@@ -68,7 +68,7 @@ where
         }
 
         if let Some(attempt) = conn.reconnect_due() {
-            match try_reconnect(&wal, &connection, conn.oldest_in_flight()).await {
+            match try_reconnect(&wal, &connection, service.wal_cursor()).await {
                 ReconnectResult::Ok => conn.reconnected(),
                 ReconnectResult::Failed => conn.schedule_next_reconnect(attempt),
             }

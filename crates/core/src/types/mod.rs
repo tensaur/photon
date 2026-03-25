@@ -8,3 +8,4 @@ pub mod metric;
 pub mod query;
 pub mod sequence;
 pub mod subscription;
+pub mod wal;

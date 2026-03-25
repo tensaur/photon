@@ -1,5 +1,5 @@
 [package]
-name = "photon-store"
+name = "photon-persist"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
@@ -7,12 +7,14 @@ repository.workspace = true
 
 [dependencies]
 photon-core = { path = "../core" }
+photon-protocol = { path = "../protocol" }
+photon-store = { path = "../store" }
+photon-wal = { path = "../wal" }
 
 anyhow.workspace = true
-clickhouse.workspace = true
-dashmap.workspace = true
-serde.workspace = true
+futures-util.workspace = true
 thiserror.workspace = true
+bytes.workspace = true
 tokio.workspace = true
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing.workspace = true
-uuid.workspace = true

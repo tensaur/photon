@@ -4,15 +4,12 @@ use std::time::Instant;
 
 use tokio::net::TcpListener;
 
-use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
-use photon_protocol::compressor::CompressorKind;
-use photon_store::memory::metric::InMemoryMetricStore;
-use photon_store::memory::watermark::InMemoryWatermarkStore;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
+use photon_wal::open_in_memory_wal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,18 +19,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(10_000_000);
 
     let codec = CodecKind::default();
-    let compressor = CompressorKind::default();
 
     let listener = TcpListener::bind("[::1]:0").await?;
     let addr: SocketAddr = listener.local_addr()?;
 
-    let ingest_service = Arc::new(IngestService::new(
-        InMemoryWatermarkStore::new(),
-        InMemoryMetricStore::new(),
-        NoOpHook,
-        compressor,
-        codec,
-    ));
+    let (wal_appender, _wal) = open_in_memory_wal();
+    let notify = Arc::new(tokio::sync::Notify::new());
+
+    let ingest_service = Arc::new(IngestService::new(wal_appender, notify));
 
     tokio::spawn(async move {
         loop {
@@ -43,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let service = Arc::clone(&ingest_service);
 
             tokio::spawn(async move {
-                handler::handle_stream(&service, &transport).await;
+                handler::handle(&service, &transport).await;
             });
         }
     });
@@ -114,8 +107,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Compression:        {compression_ratio:.2}x");
         eprintln!("Log:                {log_elapsed:.2?}");
         eprintln!("Total:              {total_elapsed:.2?}");
-        eprintln!("Throughput (log):   {:.2} M pts/s", log_throughput / 1_000_000.0);
-        eprintln!("Throughput (total): {:.2} M pts/s", total_throughput / 1_000_000.0);
+        eprintln!(
+            "Throughput (log):   {:.2} M pts/s",
+            log_throughput / 1_000_000.0
+        );
+        eprintln!(
+            "Throughput (total): {:.2} M pts/s",
+            total_throughput / 1_000_000.0
+        );
     })
     .await?;
 

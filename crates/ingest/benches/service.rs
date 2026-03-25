@@ -1,21 +1,20 @@
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use bytes::BytesMut;
-use criterion::{BenchmarkId, BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
 use photon_core::types::sequence::SequenceNumber;
-use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::{IngestService, Service};
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
-use photon_store::memory::metric::InMemoryMetricStore;
-use photon_store::memory::watermark::InMemoryWatermarkStore;
+use photon_wal::open_in_memory_wal;
 
 const BATCH_SIZES: &[usize] = &[100, 1_000, 10_000, 100_000];
 
@@ -83,29 +82,18 @@ fn bench_service(c: &mut Criterion) {
         let run_id = RunId::new();
         let seq_counter = AtomicU64::new(0);
 
-        let service = Service::new(
-            InMemoryWatermarkStore::new(),
-            InMemoryMetricStore::new(),
-            NoOpHook,
-            compressor,
-            codec,
-        );
+        let (wal_appender, _wal) = open_in_memory_wal();
+        let notify = Arc::new(tokio::sync::Notify::new());
+
+        let service = Service::new(wal_appender, notify);
 
         group.bench_function(id, |b| {
             b.iter_batched(
                 || {
                     let seq = seq_counter.fetch_add(1, Ordering::Relaxed);
-                    make_wire_batch(
-                        run_id,
-                        size,
-                        SequenceNumber::from(seq),
-                        &compressor,
-                        &codec,
-                    )
+                    make_wire_batch(run_id, size, SequenceNumber::from(seq), &compressor, &codec)
                 },
-                |wire_batch| {
-                    rt.block_on(service.ingest(&wire_batch)).unwrap()
-                },
+                |wire_batch| rt.block_on(service.ingest(&wire_batch)).unwrap(),
                 BatchSize::SmallInput,
             );
         });

@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use photon_core::types::config::{RetryConfig, UplinkConfig};
 use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::wal::WalOffset;
 use photon_wal::Wal;
 
 use crate::domain::ports::IngestConnection;
@@ -67,10 +68,6 @@ impl ConnectionState {
 
     pub fn record_acked(&mut self, seq: SequenceNumber) {
         self.in_flight.remove(&seq);
-    }
-
-    pub fn oldest_in_flight(&self) -> Option<SequenceNumber> {
-        self.in_flight.keys().next().copied()
     }
 
     pub fn enter_reconnecting(&mut self) {
@@ -160,13 +157,9 @@ pub enum ReconnectResult {
 pub async fn try_reconnect<M: Wal + Clone, C: IngestConnection>(
     wal: &M,
     connection: &C,
-    oldest: Option<SequenceNumber>,
+    wal_cursor: WalOffset,
 ) -> ReconnectResult {
-    let Some(seq) = oldest else {
-        return ReconnectResult::Ok;
-    };
-
-    let batches = match wal.read_from(seq.prev_or_zero()) {
+    let batches = match wal.read_from(wal_cursor) {
         Ok(b) => b,
         Err(e) => {
             tracing::error!("WAL read during reconnection failed: {e}");
@@ -181,7 +174,7 @@ pub async fn try_reconnect<M: Wal + Clone, C: IngestConnection>(
         }
     }
 
-    ReconnectResult::Failed
+    ReconnectResult::Ok
 }
 
 fn backoff_delay(config: &RetryConfig, attempt: u32) -> Duration {

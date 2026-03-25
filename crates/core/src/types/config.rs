@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::sequence::SequenceNumber;
+use super::wal::WalOffset;
 
 /// Configuration for the batch builder.
 #[derive(Clone, Debug)]
@@ -109,7 +109,10 @@ impl Default for WalConfig {
 /// segment deletion. This is the recovery starting point after a crash.
 #[derive(Clone, Debug)]
 pub struct WalMeta {
-    pub committed_sequence: SequenceNumber,
+    /// Records physically deleted from disk.
+    pub cursor: WalOffset,
+    /// Records the consumer has processed (may be ahead of cursor).
+    pub consumed: WalOffset,
 }
 
 /// Shutdown behaviour for the pipeline.

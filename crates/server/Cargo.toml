@@ -14,16 +14,20 @@ name = "wire"
 path = "examples/wire.rs"
 
 [dependencies]
+photon-core = { path = "../core" }
 photon-protocol = { path = "../protocol" }
 photon-store = { path = "../store" }
 photon-downsample = { path = "../downsample" }
 photon-ingest = { path = "../ingest" }
+photon-persist = { path = "../persist" }
 photon-query = { path = "../query" }
 photon-subscription = { path = "../subscription" }
 photon-transport = { path = "../transport" }
 photon-hook = { path = "../hook" }
+photon-wal = { path = "../wal" }
 
 tokio.workspace = true
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

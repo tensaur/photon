@@ -5,16 +5,17 @@ use photon_core::types::sequence::SequenceNumber;
 
 use super::{ReadError, WriteError};
 
-/// Per-run deduplication watermarks.
-pub trait WatermarkStore: Send + Sync + Clone + 'static {
-    fn get(
+/// Persist per-run dedup watermarks. Written by the persist consumer.
+pub trait WatermarkWriter: Send + Sync + Clone + 'static {
+    fn write_watermarks(
         &self,
-        run_id: &RunId,
-    ) -> impl Future<Output = Result<Option<SequenceNumber>, ReadError>> + Send;
-
-    fn advance(
-        &self,
-        run_id: &RunId,
-        seq: SequenceNumber,
+        entries: &[(RunId, SequenceNumber)],
     ) -> impl Future<Output = Result<(), WriteError>> + Send;
+}
+
+/// Read persisted watermarks. Used once at startup to seed the dedup cache.
+pub trait WatermarkReader: Send + Sync + Clone + 'static {
+    fn read_all(
+        &self,
+    ) -> impl Future<Output = Result<Vec<(RunId, SequenceNumber)>, ReadError>> + Send;
 }

@@ -12,6 +12,18 @@ pub trait MetricWriter: Send + Sync + Clone + 'static {
         &self,
         batch: &MetricBatch,
     ) -> impl Future<Output = Result<(), WriteError>> + Send;
+
+    fn write_batches<'a>(
+        &'a self,
+        batches: &'a [MetricBatch],
+    ) -> impl Future<Output = Result<(), WriteError>> + Send + 'a {
+        async move {
+            for batch in batches {
+                self.write_batch(batch).await?;
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Range reads over raw metric points.

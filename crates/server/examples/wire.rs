@@ -5,38 +5,83 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 
-use photon_hook::noop::NoOpHook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
+use photon_persist::domain::service::Service as PersistService;
+use photon_persist::inbound::thread as persist_thread;
+use photon_persist::inbound::thread::PersistConfig;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
+use photon_protocol::compressor::ZstdCompressor;
+use photon_store::clickhouse::metric::ClickHouseMetricStore;
+use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
+use photon_store::clickhouse::{ClientBuilder, migrate};
 use photon_store::memory::experiment::InMemoryExperimentStore;
-use photon_store::memory::metric::InMemoryMetricStore;
 use photon_store::memory::project::InMemoryProjectStore;
 use photon_store::memory::run::InMemoryRunStore;
-use photon_store::memory::watermark::InMemoryWatermarkStore;
+use photon_store::ports::watermark::WatermarkReader;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
+use photon_wal::{DiskWalConfig, open_disk_wal};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     let listener = TcpListener::bind("[::1]:0").await?;
     let addr: SocketAddr = listener.local_addr()?;
     println!("Server listening on {addr}");
 
     let codec = CodecKind::default();
     let compressor = CompressorKind::default();
+    let cancel = CancellationToken::new();
+    let notify = Arc::new(tokio::sync::Notify::new());
 
-    let watermark_store = InMemoryWatermarkStore::new();
-    let metric_store = InMemoryMetricStore::new();
+    // ClickHouse
+    let client = ClientBuilder::new().with_env().build();
+    migrate(&client).await?;
 
-    let ingest_service = Arc::new(IngestService::new(
-        watermark_store,
-        metric_store,
-        NoOpHook,
-        compressor,
+    let metric_store = ClickHouseMetricStore::new(client.clone());
+    let watermark_store = ClickHouseWatermarkStore::new(client);
+
+    // Server WAL
+    let (wal_appender, wal_manager) =
+        open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
+
+    // Ingest service (WAL-backed)
+    let ingest_service = Arc::new(IngestService::new(wal_appender, notify.clone()));
+
+    // Seed dedup cache from persisted watermarks
+    let watermarks = watermark_store.read_all().await?;
+    if !watermarks.is_empty() {
+        tracing::info!(
+            runs = watermarks.len(),
+            "seeded dedup cache from watermarks"
+        );
+        ingest_service.seed_watermarks(&watermarks);
+    }
+
+    // Persist consumer
+    let persist_service = PersistService::new(
+        ZstdCompressor::default(),
         codec,
+        metric_store,
+        watermark_store,
+    );
+    let persist_cancel = cancel.clone();
+    let persist_handle = tokio::spawn(persist_thread::run(
+        wal_manager,
+        notify,
+        persist_service,
+        PersistConfig::default(),
+        persist_cancel,
     ));
 
     let run_store = InMemoryRunStore::new();
@@ -86,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t0 = Instant::now();
 
         // Simulate a training loop
-        for step in 0..10_000_000u64 {
+        for step in 0..100_000_000u64 {
             let loss = 1.0 / (1.0 + step as f64 * 0.05);
             let accuracy = 1.0 - loss;
 
@@ -145,5 +190,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     client_handle.await?;
 
+    cancel.cancel();
+    persist_handle.await?;
+
+    println!("Done.");
     Ok(())
 }

@@ -7,17 +7,13 @@ repository.workspace = true
 
 [dependencies]
 photon-core = { path = "../core" }
-photon-protocol = { path = "../protocol" }
-photon-transport = { path = "../transport" }
 photon-store = { path = "../store" }
-photon-hook = { path = "../hook" }
+photon-transport = { path = "../transport" }
+photon-wal = { path = "../wal" }
 
 tokio.workspace = true
-tokio-stream.workspace = true
 dashmap.workspace = true
 thiserror.workspace = true
-anyhow.workspace = true
-bytes.workspace = true
 tracing.workspace = true
 crc32fast.workspace = true
 
@@ -25,6 +21,8 @@ crc32fast.workspace = true
 bench = false
 
 [dev-dependencies]
+photon-protocol = { path = "../protocol" }
+bytes.workspace = true
 criterion.workspace = true
 
 [[bench]]
