@@ -66,7 +66,10 @@ where
             let count = batches.len() as u64;
             let points: u64 = batches.iter().map(|b| b.point_count as u64).sum();
             let chunk_size = config.max_batch_read.max(1);
-            let futures: Vec<_> = batches.chunks(chunk_size).map(|c| service.write(c)).collect();
+            let futures: Vec<_> = batches
+                .chunks(chunk_size)
+                .map(|c| service.write(c))
+                .collect();
 
             match futures_util::future::try_join_all(futures).await {
                 Ok(_) => {

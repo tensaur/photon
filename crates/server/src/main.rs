@@ -5,11 +5,11 @@ use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
 use photon_downsample::selector::noop::NoOpSelector;
+use photon_ingest::domain::service::Service as IngestService;
+use photon_ingest::inbound::handler as ingest_handler;
 use photon_persist::domain::service::Service as PersistService;
 use photon_persist::inbound::thread as persist_thread;
 use photon_persist::inbound::thread::PersistConfig;
-use photon_ingest::domain::service::Service as IngestService;
-use photon_ingest::inbound::handler as ingest_handler;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::ZstdCompressor;
 use photon_query::domain::service::Service as QueryService;
@@ -59,15 +59,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
     // Ingest hexagon (WAL-backed)
-    let ingest_service = Arc::new(IngestService::new(
-        wal_appender,
-        notify.clone(),
-    ));
+    let ingest_service = Arc::new(IngestService::new(wal_appender, notify.clone()));
 
     // Seed dedup cache from persisted watermarks
     let watermarks = watermark_store.read_all().await?;
     if !watermarks.is_empty() {
-        tracing::info!(runs = watermarks.len(), "seeded dedup cache from watermarks");
+        tracing::info!(
+            runs = watermarks.len(),
+            "seeded dedup cache from watermarks"
+        );
         ingest_service.seed_watermarks(&watermarks);
     }
 

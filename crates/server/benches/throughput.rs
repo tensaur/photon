@@ -26,10 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (wal_appender, _wal) = open_in_memory_wal();
     let notify = Arc::new(tokio::sync::Notify::new());
 
-    let ingest_service = Arc::new(IngestService::new(
-        wal_appender,
-        notify,
-    ));
+    let ingest_service = Arc::new(IngestService::new(wal_appender, notify));
 
     tokio::spawn(async move {
         loop {

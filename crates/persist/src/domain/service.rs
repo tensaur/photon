@@ -28,10 +28,8 @@ pub enum PersistError {
 }
 
 pub trait PersistService: Send + Sync + 'static {
-    fn write(
-        &self,
-        batches: &[WireBatch],
-    ) -> impl Future<Output = Result<(), PersistError>> + Send;
+    fn write(&self, batches: &[WireBatch])
+    -> impl Future<Output = Result<(), PersistError>> + Send;
 }
 
 pub struct Service<C, K, M, W>
@@ -81,7 +79,8 @@ where
                 .decompress(&batch.compressed_payload, &mut buf)
                 .map_err(PersistError::Decompress)?;
 
-            let metric_batch: MetricBatch = self.codec.decode(&buf).map_err(PersistError::Decode)?;
+            let metric_batch: MetricBatch =
+                self.codec.decode(&buf).map_err(PersistError::Decode)?;
             decoded_batches.push(metric_batch);
 
             watermarks
