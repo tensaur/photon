@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metric_store.clone(),
     );
     let flush_handle = tokio::spawn(flush_thread::run(
-        Box::new(wal_manager),
+        wal_manager,
         notify,
         flush_service,
         FlushConfig::default(),

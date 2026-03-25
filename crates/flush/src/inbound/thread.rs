@@ -10,7 +10,7 @@ use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::metric::MetricWriter;
 use photon_wal::Wal;
 
-use crate::domain::service::{FlushService, FlushStats};
+use crate::domain::service::FlushService;
 
 pub struct FlushConfig {
     pub poll_interval: Duration,
@@ -28,16 +28,24 @@ impl Default for FlushConfig {
     }
 }
 
-pub async fn run<C, K, M>(
-    mut wal: Box<dyn Wal>,
+#[derive(Clone, Debug, Default)]
+pub struct FlushStats {
+    pub batches_flushed: u64,
+    pub points_flushed: u64,
+}
+
+pub async fn run<C, K, M, W>(
+    mut wal: W,
     notify: Arc<tokio::sync::Notify>,
     service: FlushService<C, K, M>,
     config: FlushConfig,
     cancel: CancellationToken,
-) where
+) -> FlushStats
+where
     C: Compressor,
     K: Codec<MetricBatch>,
     M: MetricWriter,
+    W: Wal,
 {
     tracing::info!("flush consumer started");
     let mut cursor = wal
@@ -47,8 +55,7 @@ pub async fn run<C, K, M>(
 
     let read_limit = config.max_batch_read * config.concurrency;
     let start = Instant::now();
-    let mut total_points: u64 = 0;
-    let mut total_batches: u64 = 0;
+    let mut stats = FlushStats::default();
 
     loop {
         let mut batches = match wal.read_from(cursor) {
@@ -63,15 +70,15 @@ pub async fn run<C, K, M>(
 
         if !batches.is_empty() {
             let count = batches.len() as u64;
+            let points: u64 = batches.iter().map(|b| b.point_count as u64).sum();
             let chunk_size = config.max_batch_read.max(1);
-            let futures: Vec<_> = batches.chunks(chunk_size).map(|c| service.process(c)).collect();
+            let futures: Vec<_> = batches.chunks(chunk_size).map(|c| service.write(c)).collect();
 
             match futures_util::future::try_join_all(futures).await {
-                Ok(results) => {
-                    let stats = merge_stats(results);
-                    total_points += stats.points as u64;
-                    total_batches += stats.batches as u64;
-                    log_flush(&stats, total_points, start);
+                Ok(_) => {
+                    stats.batches_flushed += count;
+                    stats.points_flushed += points;
+                    log_flush(&stats, start);
 
                     cursor = cursor.advance(count);
                     if let Err(e) = wal.truncate_through(cursor) {
@@ -87,7 +94,7 @@ pub async fn run<C, K, M>(
             continue;
         }
 
-        // Caught up — wait or exit
+        // Caught up
         if cancel.is_cancelled() {
             break;
         }
@@ -100,41 +107,25 @@ pub async fn run<C, K, M>(
     }
 
     tracing::info!(
-        total_points,
-        total_batches,
+        batches = stats.batches_flushed,
+        points = stats.points_flushed,
         elapsed_ms = start.elapsed().as_millis() as u64,
         "flush consumer shut down"
     );
+
+    stats
 }
 
-fn merge_stats(results: Vec<FlushStats>) -> FlushStats {
-    let mut merged = FlushStats {
-        batches: 0,
-        points: 0,
-        decode_ms: 0,
-        write_ms: 0,
-    };
-    for s in results {
-        merged.batches += s.batches;
-        merged.points += s.points;
-        merged.decode_ms = merged.decode_ms.max(s.decode_ms);
-        merged.write_ms = merged.write_ms.max(s.write_ms);
-    }
-    merged
-}
-
-fn log_flush(stats: &FlushStats, total_points: u64, start: Instant) {
+fn log_flush(stats: &FlushStats, start: Instant) {
     let elapsed = start.elapsed().as_secs_f64();
     let throughput = if elapsed > 0.0 {
-        total_points as f64 / elapsed / 1_000_000.0
+        stats.points_flushed as f64 / elapsed / 1_000_000.0
     } else {
         0.0
     };
     tracing::info!(
-        batches = stats.batches,
-        points = stats.points,
-        decode_ms = stats.decode_ms,
-        write_ms = stats.write_ms,
+        batches = stats.batches_flushed,
+        points = stats.points_flushed,
         throughput_mpts = format!("{throughput:.2}"),
         "flushed"
     );

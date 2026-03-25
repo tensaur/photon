@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let flush_cancel = cancel.clone();
     let flush_handle = tokio::spawn(flush_thread::run(
-        Box::new(wal_manager),
+        wal_manager,
         notify,
         flush_service,
         FlushConfig::default(),
@@ -106,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t0 = Instant::now();
 
         // Simulate a training loop
-        for step in 0..10_000_000u64 {
+        for step in 0..100_000_000u64 {
             let loss = 1.0 / (1.0 + step as f64 * 0.05);
             let accuracy = 1.0 - loss;
 
