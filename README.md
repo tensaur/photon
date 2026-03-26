@@ -21,7 +21,7 @@ fn main() {
     println!("Run: {}", run.id());
 
     // Simulate a training loop
-    for step in 0..200 {
+    for step in 0..100_000_000 {
         let loss = 1.0 / (1.0 + step as f64 * 0.05);
         let accuracy = 1.0 - loss;
 
