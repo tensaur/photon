@@ -10,6 +10,7 @@ publish.workspace = true
 photon-core.workspace = true
 
 anyhow.workspace = true
+chrono.workspace = true
 clickhouse.workspace = true
 dashmap.workspace = true
 serde.workspace = true

@@ -1,6 +1,9 @@
 pub mod bucket;
 pub mod compaction;
+pub mod experiment;
 pub mod metric;
+pub mod project;
+pub mod run;
 pub mod watermark;
 
 pub struct ClientBuilder {
@@ -113,6 +116,55 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
             ) ENGINE = MergeTree()
             PARTITION BY run_id
             ORDER BY (run_id, key, tier, step_start)",
+        )
+        .execute()
+        .await?;
+
+    client
+        .query(
+            "CREATE TABLE IF NOT EXISTS photon.projects (
+                id UUID,
+                tenant_id UUID,
+                name String,
+                created_at Int64,
+                updated_at Int64
+            ) ENGINE = ReplacingMergeTree(updated_at)
+            ORDER BY (id)",
+        )
+        .execute()
+        .await?;
+
+    client
+        .query(
+            "CREATE TABLE IF NOT EXISTS photon.experiments (
+                id UUID,
+                project_id UUID,
+                name String,
+                tags Array(String),
+                created_at Int64,
+                updated_at Int64
+            ) ENGINE = ReplacingMergeTree(updated_at)
+            ORDER BY (id)",
+        )
+        .execute()
+        .await?;
+
+    client
+        .query(
+            "CREATE TABLE IF NOT EXISTS photon.runs (
+                id UUID,
+                project_id UUID,
+                experiment_id UUID,
+                has_experiment Bool,
+                user_id UUID,
+                name String,
+                status String,
+                status_reason String,
+                tags Array(String),
+                created_at Int64,
+                updated_at Int64
+            ) ENGINE = ReplacingMergeTree(updated_at)
+            ORDER BY (id)",
         )
         .execute()
         .await?;
