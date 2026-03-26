@@ -20,7 +20,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tensaur/photon"
@@ -42,7 +42,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 postcard = { version = "1", features = ["alloc"] }
 tokio-stream = "0.1"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio-tungstenite = "0.24"
 axum = "0.8"
 lasso = { version = "0.7", features = ["multi-threaded"] }
@@ -70,14 +70,14 @@ clickhouse = { version = "0.13", features = ["uuid", "inserter"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # internal crates (published)
-photon = { path = "crates/sdk", version = "0.1.0" }
-photon-core = { path = "crates/core", version = "0.1.0" }
-photon-protocol = { path = "crates/protocol", version = "0.1.0" }
-photon-transport = { path = "crates/transport", version = "0.1.0" }
-photon-wal = { path = "crates/wal", version = "0.1.0" }
-photon-batch = { path = "crates/batch", version = "0.1.0" }
-photon-uplink = { path = "crates/uplink", version = "0.1.0" }
-photon-hook = { path = "crates/hook", version = "0.1.0" }
+photon = { path = "crates/sdk", version = "0.1.1" }
+photon-core = { path = "crates/core", version = "0.1.1" }
+photon-protocol = { path = "crates/protocol", version = "0.1.1" }
+photon-transport = { path = "crates/transport", version = "0.1.1" }
+photon-wal = { path = "crates/wal", version = "0.1.1" }
+photon-batch = { path = "crates/batch", version = "0.1.1" }
+photon-uplink = { path = "crates/uplink", version = "0.1.1" }
+photon-hook = { path = "crates/hook", version = "0.1.1" }
 
 # internal crates (server-only)
 photon-store = { path = "crates/store" }
