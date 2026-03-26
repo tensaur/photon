@@ -18,9 +18,9 @@ use photon_protocol::compressor::ZstdCompressor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
-use photon_store::memory::experiment::InMemoryExperimentStore;
-use photon_store::memory::project::InMemoryProjectStore;
-use photon_store::memory::run::InMemoryRunStore;
+use photon_store::clickhouse::experiment::ClickHouseExperimentStore;
+use photon_store::clickhouse::project::ClickHouseProjectStore;
+use photon_store::clickhouse::run::ClickHouseRunStore;
 use photon_store::ports::watermark::WatermarkReader;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
@@ -49,7 +49,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     migrate(&client).await?;
 
     let metric_store = ClickHouseMetricStore::new(client.clone());
-    let watermark_store = ClickHouseWatermarkStore::new(client);
+    let watermark_store = ClickHouseWatermarkStore::new(client.clone());
+    let run_store = ClickHouseRunStore::new(client.clone());
+    let experiment_store = ClickHouseExperimentStore::new(client.clone());
+    let project_store = ClickHouseProjectStore::new(client);
 
     // Server WAL
     let (wal_appender, wal_manager) =
@@ -83,10 +86,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         PersistConfig::default(),
         persist_cancel,
     ));
-
-    let run_store = InMemoryRunStore::new();
-    let experiment_store = InMemoryExperimentStore::new();
-    let project_store = InMemoryProjectStore::new();
 
     // Spawn server in background
     tokio::spawn(async move {

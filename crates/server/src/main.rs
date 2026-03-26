@@ -20,9 +20,9 @@ use photon_store::clickhouse::compaction::ClickHouseCompactionCursor;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
-use photon_store::memory::experiment::InMemoryExperimentStore;
-use photon_store::memory::project::InMemoryProjectStore;
-use photon_store::memory::run::InMemoryRunStore;
+use photon_store::clickhouse::experiment::ClickHouseExperimentStore;
+use photon_store::clickhouse::project::ClickHouseProjectStore;
+use photon_store::clickhouse::run::ClickHouseRunStore;
 use photon_store::ports::watermark::WatermarkReader;
 use photon_subscription::SubscriptionHook;
 use photon_transport::router::Router;
@@ -53,12 +53,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metric_store = ClickHouseMetricStore::new(client.clone());
     let bucket_store = ClickHouseBucketStore::new(client.clone());
     let compaction_cursor = ClickHouseCompactionCursor::new(client.clone());
-    let watermark_store = ClickHouseWatermarkStore::new(client);
-
-    // Entity stores (in-memory for now)
-    let run_store = InMemoryRunStore::new();
-    let experiment_store = InMemoryExperimentStore::new();
-    let project_store = InMemoryProjectStore::new();
+    let watermark_store = ClickHouseWatermarkStore::new(client.clone());
+    let run_store = ClickHouseRunStore::new(client.clone());
+    let experiment_store = ClickHouseExperimentStore::new(client.clone());
+    let project_store = ClickHouseProjectStore::new(client);
     let subscription = SubscriptionHook::new();
 
     // Server WAL

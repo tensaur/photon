@@ -9,6 +9,7 @@ repository.workspace = true
 photon-core = { path = "../core" }
 
 anyhow.workspace = true
+chrono.workspace = true
 clickhouse.workspace = true
 dashmap.workspace = true
 serde.workspace = true
