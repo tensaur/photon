@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use bytes::BytesMut;
 use photon_protocol::ports::codec::Codec;
 
@@ -30,8 +29,6 @@ impl<C, T> CodecTransport<C, T> {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<S, R, C, T> Transport<S, R> for CodecTransport<C, T>
 where
     S: Send + Sync + 'static,

@@ -4,7 +4,7 @@ use clickhouse::Row;
 use serde::{Deserialize, Serialize};
 
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{Metric, MetricBatch};
+use photon_core::types::metric::{Metric, MetricBatch, Step};
 
 use crate::ports::metric::{MetricReader, MetricWriter};
 use crate::ports::{ReadError, WriteError};
@@ -59,7 +59,7 @@ impl MetricWriter for ClickHouseMetricStore {
         let mut insert = self
             .client
             .insert("metrics")
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         for batch in batches {
             let run_uuid: uuid::Uuid = batch.run_id.into();
@@ -69,19 +69,19 @@ impl MetricWriter for ClickHouseMetricStore {
                     .write(&MetricWriteRow {
                         run_id: run_uuid,
                         key: batch.key(point).as_str().to_owned(),
-                        step: point.step,
+                        step: point.step.as_u64(),
                         value: point.value,
                         timestamp_ms: point.timestamp_ms,
                     })
                     .await
-                    .map_err(|e| WriteError::Unknown(e.into()))?;
+                    .map_err(|e| WriteError::Store(Box::new(e)))?;
             }
         }
 
         insert
             .end()
             .await
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
         Ok(())
     }
 }
@@ -91,8 +91,8 @@ impl MetricReader for ClickHouseMetricStore {
         &self,
         run_id: &RunId,
         key: &Metric,
-        step_range: Range<u64>,
-    ) -> Result<Vec<(u64, f64)>, ReadError> {
+        step_range: Range<Step>,
+    ) -> Result<Vec<(Step, f64)>, ReadError> {
         let run_uuid: uuid::Uuid = (*run_id).into();
 
         let rows: Vec<MetricReadRow> = self
@@ -104,13 +104,16 @@ impl MetricReader for ClickHouseMetricStore {
             )
             .bind(run_uuid)
             .bind(key.as_str())
-            .bind(step_range.start)
-            .bind(step_range.end)
+            .bind(step_range.start.as_u64())
+            .bind(step_range.end.as_u64())
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
-        Ok(rows.into_iter().map(|r| (r.step, r.value)).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| (Step::new(r.step), r.value))
+            .collect())
     }
 
     async fn list_metrics(&self, run_id: &RunId) -> Result<Vec<Metric>, ReadError> {
@@ -122,7 +125,7 @@ impl MetricReader for ClickHouseMetricStore {
             .bind(run_uuid)
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
         Ok(rows
             .into_iter()
@@ -134,7 +137,7 @@ impl MetricReader for ClickHouseMetricStore {
         &self,
         run_id: &RunId,
         key: &Metric,
-        step_range: Range<u64>,
+        step_range: Range<Step>,
     ) -> Result<usize, ReadError> {
         let run_uuid: uuid::Uuid = (*run_id).into();
 
@@ -146,12 +149,12 @@ impl MetricReader for ClickHouseMetricStore {
             )
             .bind(run_uuid)
             .bind(key.as_str())
-            .bind(step_range.start)
-            .bind(step_range.end)
+            .bind(step_range.start.as_u64())
+            .bind(step_range.end.as_u64())
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
-        Ok(rows.first().map(|r| r.count as usize).unwrap_or(0))
+        Ok(rows.first().map_or(0, |r| r.count as usize))
     }
 }

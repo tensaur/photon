@@ -4,7 +4,7 @@ use photon_core::types::sequence::SequenceNumber;
 use photon_wal::ports::WalError;
 
 #[derive(Debug, thiserror::Error)]
-pub enum TransportError {
+pub enum UplinkTransportError {
     #[error("connection lost: {reason}")]
     ConnectionLost { reason: String },
 
@@ -17,8 +17,6 @@ pub enum TransportError {
         message: String,
     },
 
-    #[error(transparent)]
-    Unknown(#[from] anyhow::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -27,7 +25,7 @@ pub enum UplinkError {
     Wal(#[from] WalError),
 
     #[error("transport error")]
-    Transport(#[from] TransportError),
+    Transport(#[from] UplinkTransportError),
 
     #[error("shutdown timeout after {0:?}")]
     ShutdownTimeout(Duration),
@@ -39,5 +37,5 @@ pub enum RecoveryError {
     Wal(#[from] WalError),
 
     #[error("transport error during recovery")]
-    Transport(#[from] TransportError),
+    Transport(#[from] UplinkTransportError),
 }

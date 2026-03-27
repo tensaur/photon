@@ -11,6 +11,12 @@ pub struct InMemoryWatermarkStore {
     inner: DashMap<RunId, SequenceNumber>,
 }
 
+impl Default for InMemoryWatermarkStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryWatermarkStore {
     pub fn new() -> Self {
         Self {

@@ -12,10 +12,16 @@ photon-protocol.workspace = true
 photon-store.workspace = true
 photon-wal.workspace = true
 
-anyhow.workspace = true
 futures-util.workspace = true
 thiserror.workspace = true
 bytes.workspace = true
 tokio.workspace = true
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio-util.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+crc32fast.workspace = true
+
+[lints]
+workspace = true

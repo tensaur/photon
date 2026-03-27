@@ -5,8 +5,7 @@ use dashmap::DashMap;
 use photon_core::domain::experiment::Experiment;
 use photon_core::types::id::ExperimentId;
 
-use crate::ports::experiment::{ExperimentReader, ExperimentWriter};
-use crate::ports::{ReadError, WriteError};
+use crate::ports::{ReadError, ReadRepository, WriteError, WriteRepository};
 
 #[derive(Clone)]
 pub struct InMemoryExperimentStore {
@@ -27,8 +26,8 @@ impl Default for InMemoryExperimentStore {
     }
 }
 
-impl ExperimentReader for InMemoryExperimentStore {
-    async fn list_experiments(&self) -> Result<Vec<Experiment>, ReadError> {
+impl ReadRepository<Experiment> for InMemoryExperimentStore {
+    async fn list(&self) -> Result<Vec<Experiment>, ReadError> {
         Ok(self
             .data
             .iter()
@@ -36,13 +35,13 @@ impl ExperimentReader for InMemoryExperimentStore {
             .collect())
     }
 
-    async fn get_experiment(&self, id: &ExperimentId) -> Result<Option<Experiment>, ReadError> {
+    async fn get(&self, id: &ExperimentId) -> Result<Option<Experiment>, ReadError> {
         Ok(self.data.get(id).map(|entry| entry.value().clone()))
     }
 }
 
-impl ExperimentWriter for InMemoryExperimentStore {
-    async fn upsert_experiment(&self, experiment: &Experiment) -> Result<(), WriteError> {
+impl WriteRepository<Experiment> for InMemoryExperimentStore {
+    async fn upsert(&self, experiment: &Experiment) -> Result<(), WriteError> {
         self.data.insert(experiment.id, experiment.clone());
         Ok(())
     }

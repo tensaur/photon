@@ -5,7 +5,7 @@ use dashmap::DashMap;
 
 use photon_core::types::bucket::{Bucket, BucketEntry};
 use photon_core::types::id::RunId;
-use photon_core::types::metric::Metric;
+use photon_core::types::metric::{Metric, Step};
 
 use crate::ports::bucket::{BucketReader, BucketWriter};
 use crate::ports::{ReadError, WriteError};
@@ -52,7 +52,7 @@ impl BucketReader for InMemoryBucketStore {
         run_id: &RunId,
         key: &Metric,
         tier: usize,
-        step_range: Range<u64>,
+        step_range: Range<Step>,
     ) -> Result<Vec<Bucket>, ReadError> {
         let Some(buckets) = self.data.get(&(*run_id, key.clone(), tier)) else {
             return Ok(Vec::new());

@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use photon_core::types::query::{QueryMessage, QueryResult};
 use photon_transport::ports::{Transport, TransportError};
 
 use crate::domain::service::{QueryService, dispatch};
 
 /// Transport-agnostic query handler.
-pub async fn handle<S, T>(service: &Arc<S>, transport: &T)
+pub async fn handle<S, T>(service: &S, transport: &T)
 where
     S: QueryService,
     T: Transport<QueryResult, QueryMessage>,
@@ -21,7 +19,7 @@ where
             }
         };
 
-        let result = dispatch(&**service, msg).await;
+        let result = dispatch(service, msg).await;
 
         if transport.send(&result).await.is_err() {
             break;

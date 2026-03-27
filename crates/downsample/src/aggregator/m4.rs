@@ -1,4 +1,5 @@
 use photon_core::types::bucket::Bucket;
+use photon_core::types::metric::Step;
 
 use crate::ports::aggregator::Aggregator;
 
@@ -8,9 +9,9 @@ pub struct M4Aggregator;
 
 #[derive(Clone, Debug)]
 pub struct M4Bucket {
-    first_step: u64,
+    first_step: Step,
     first_value: f64,
-    last_step: u64,
+    last_step: Step,
     last_value: f64,
     min_value: f64,
     max_value: f64,
@@ -19,7 +20,7 @@ pub struct M4Bucket {
 impl Aggregator for M4Aggregator {
     type Bucket = M4Bucket;
 
-    fn new_bucket(&self, step: u64, value: f64) -> M4Bucket {
+    fn new_bucket(&self, step: Step, value: f64) -> M4Bucket {
         M4Bucket {
             first_step: step,
             first_value: value,
@@ -30,7 +31,7 @@ impl Aggregator for M4Aggregator {
         }
     }
 
-    fn push(&self, bucket: &mut M4Bucket, step: u64, value: f64) {
+    fn push(&self, bucket: &mut M4Bucket, step: Step, value: f64) {
         bucket.last_step = step;
         bucket.last_value = value;
         bucket.min_value = bucket.min_value.min(value);
@@ -48,7 +49,7 @@ impl Aggregator for M4Aggregator {
         }
     }
 
-    fn close(&self, bucket: &M4Bucket, step_start: u64, step_end: u64) -> Bucket {
+    fn close(&self, bucket: &M4Bucket, step_start: Step, step_end: Step) -> Bucket {
         Bucket {
             step_start,
             step_end,

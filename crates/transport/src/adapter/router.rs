@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -11,6 +10,8 @@ use tokio::net::TcpListener;
 use photon_protocol::codec::CodecKind;
 
 use super::websocket::WebSocketTransport;
+use async_trait::async_trait;
+
 use crate::codec::CodecTransport;
 use crate::ports::{ByteTransport, TransportError};
 
@@ -32,12 +33,12 @@ impl Router {
         F: Fn(CodecTransport<CodecKind, BodyTransport>) -> Fut + Clone + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        let codec = self.codec.clone();
+        let codec = self.codec;
         self.router = self.router.route(
             path,
             axum::routing::post(move |body: axum::body::Bytes| {
                 let handler = handler.clone();
-                let codec = codec.clone();
+                let codec = codec;
                 async move {
                     let transport = BodyTransport::new(body.to_vec());
                     let response = transport.clone();
@@ -57,12 +58,12 @@ impl Router {
         F: Fn(CodecTransport<CodecKind, WebSocketTransport>) -> Fut + Clone + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        let codec = self.codec.clone();
+        let codec = self.codec;
         self.router = self.router.route(
             path,
             axum::routing::get(move |ws: WebSocketUpgrade| {
                 let handler = handler.clone();
-                let codec = codec.clone();
+                let codec = codec;
                 async move {
                     ws.on_upgrade(move |socket| async move {
                         let transport = ws_from_axum(socket);
@@ -123,8 +124,7 @@ impl BodyTransport {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[async_trait]
 impl ByteTransport for BodyTransport {
     async fn send_bytes(&self, bytes: &[u8]) -> Result<(), TransportError> {
         *self.response_body.lock().unwrap() = Some(bytes.to_vec());

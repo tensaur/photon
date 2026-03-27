@@ -6,7 +6,7 @@ use photon_core::domain::experiment::Experiment;
 use photon_core::domain::project::Project;
 use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::Metric;
+use photon_core::types::metric::{Metric, Step};
 use photon_core::types::query::{MetricQuery, MetricSeries, SeriesData};
 
 use crate::inbound::channel::{self, Command, CommandSender, Response, ResponseReceiver};
@@ -16,18 +16,15 @@ use super::sidebar::{self, SidebarAction, SidebarState};
 use super::theme;
 use super::viewport::ViewportBehavior;
 
+#[derive(Default)]
 pub enum RequestState<T> {
+    #[default]
     Idle,
     Pending,
     Loaded(T),
     Failed(String),
 }
 
-impl<T> Default for RequestState<T> {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
 
 pub struct DataCache {
     pub runs: RequestState<Vec<Run>>,
@@ -128,24 +125,20 @@ impl DashboardApp {
                     self.cache.series.insert(key, series);
                 }
             }
-            Response::BatchSeries { .. } => {
-                // Not used in v1 UI.
-            }
+            Response::BatchSeries { .. } | Response::SubscriptionEnded { .. } => {}
             Response::LivePoints {
                 run_id,
                 metric,
                 points,
             } => {
-                if let Some(series) = self.cache.series.get_mut(&(run_id, metric)) {
-                    if let SeriesData::Raw {
+                if let Some(series) = self.cache.series.get_mut(&(run_id, metric))
+                    && let SeriesData::Raw {
                         points: ref mut existing,
                     } = series.data
                     {
                         existing.extend(points);
                     }
-                }
             }
-            Response::SubscriptionEnded { .. } => {}
             Response::RunsChanged => {
                 // Re-fetch the run and experiment lists
                 self.cache.runs = RequestState::Pending;
@@ -156,6 +149,7 @@ impl DashboardApp {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn handle_sidebar_action(&mut self, action: SidebarAction) {
         match action {
             SidebarAction::SelectRun(run_id) => {
@@ -191,13 +185,11 @@ impl DashboardApp {
     }
 
     fn subscribe_if_active(&self, run_id: RunId) {
-        if let RequestState::Loaded(runs) = &self.cache.runs {
-            if let Some(run) = runs.iter().find(|r| r.id == run_id) {
-                if run.is_active() {
+        if let RequestState::Loaded(runs) = &self.cache.runs
+            && let Some(run) = runs.iter().find(|r| r.id() == run_id)
+                && run.is_active() {
                     channel::send_cmd(&self.commands, Command::Subscribe { run_id });
                 }
-            }
-        }
     }
 
     fn unsubscribe_all(&self) {
@@ -207,8 +199,8 @@ impl DashboardApp {
     }
 
     fn ensure_metrics_loaded(&mut self, run_id: RunId) {
-        if !self.cache.metrics.contains_key(&run_id) {
-            self.cache.metrics.insert(run_id, RequestState::Pending);
+        if let std::collections::hash_map::Entry::Vacant(e) = self.cache.metrics.entry(run_id) {
+            e.insert(RequestState::Pending);
             channel::send_cmd(&self.commands, Command::ListMetrics { run_id });
         }
     }
@@ -248,7 +240,7 @@ impl DashboardApp {
                             query: MetricQuery {
                                 run_id: *run_id,
                                 key: m.clone(),
-                                step_range: 0..u64::MAX,
+                                step_range: Step::ZERO..Step::MAX,
                                 target_points: 1000,
                             },
                         },
@@ -330,7 +322,7 @@ impl eframe::App for DashboardApp {
                             RequestState::Failed(msg) => {
                                 ui.colored_label(theme::STATUS_FAILED, format!("Error: {msg}"));
                                 if ui.button("Retry").clicked() {
-                                    let _ = channel::send_cmd(&self.commands, Command::ListRuns);
+                                    let () = channel::send_cmd(&self.commands, Command::ListRuns);
                                     self.cache.runs = RequestState::Pending;
                                 }
                             }

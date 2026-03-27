@@ -9,7 +9,7 @@ pub struct ViewportBehavior<'a> {
     pub cache: &'a DataCache,
 }
 
-impl<'a> egui_tiles::Behavior<Pane> for ViewportBehavior<'a> {
+impl egui_tiles::Behavior<Pane> for ViewportBehavior<'_> {
     fn pane_ui(&mut self, ui: &mut Ui, _tile_id: TileId, pane: &mut Pane) -> UiResponse {
         match pane {
             Pane::LineChart(state) => panes::line_chart::show(ui, state, self.cache),

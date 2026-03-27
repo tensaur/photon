@@ -1,12 +1,12 @@
 use crossbeam_channel::{Receiver, Sender, TrySendError, bounded};
 
-pub struct Accumulator<P: Copy + Send> {
+pub(crate) struct Accumulator<P: Copy + Send> {
     tx: Sender<P>,
     points_dropped: u64,
 }
 
 impl<P: Copy + Send> Accumulator<P> {
-    pub fn new(channel_capacity: usize) -> (Self, Receiver<P>) {
+    pub(crate) fn new(channel_capacity: usize) -> (Self, Receiver<P>) {
         let (tx, rx) = bounded(channel_capacity);
 
         let accumulator = Self {
@@ -17,7 +17,7 @@ impl<P: Copy + Send> Accumulator<P> {
         (accumulator, rx)
     }
 
-    pub fn push(&mut self, point: P) {
+    pub(crate) fn push(&mut self, point: P) {
         match self.tx.try_send(point) {
             Ok(()) => {}
             Err(TrySendError::Full(point)) => {
@@ -32,7 +32,7 @@ impl<P: Copy + Send> Accumulator<P> {
         }
     }
 
-    pub fn points_dropped(&self) -> u64 {
+    pub(crate) fn points_dropped(&self) -> u64 {
         self.points_dropped
     }
 }

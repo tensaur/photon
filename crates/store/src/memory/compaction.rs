@@ -3,14 +3,14 @@ use std::sync::Arc;
 use dashmap::DashMap;
 
 use photon_core::types::id::RunId;
-use photon_core::types::metric::Metric;
+use photon_core::types::metric::{Metric, Step};
 
 use crate::ports::compaction::CompactionCursor;
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Clone)]
 pub struct InMemoryCompactionCursor {
-    data: Arc<DashMap<(RunId, Metric, usize), u64>>,
+    data: Arc<DashMap<(RunId, Metric, usize), Step>>,
 }
 
 impl InMemoryCompactionCursor {
@@ -33,7 +33,7 @@ impl CompactionCursor for InMemoryCompactionCursor {
         run_id: &RunId,
         key: &Metric,
         tier: usize,
-    ) -> Result<Option<u64>, ReadError> {
+    ) -> Result<Option<Step>, ReadError> {
         Ok(self
             .data
             .get(&(*run_id, key.clone(), tier))
@@ -45,9 +45,9 @@ impl CompactionCursor for InMemoryCompactionCursor {
         run_id: &RunId,
         key: &Metric,
         tier: usize,
-        offset: u64,
+        through: Step,
     ) -> Result<(), WriteError> {
-        self.data.insert((*run_id, key.clone(), tier), offset);
+        self.data.insert((*run_id, key.clone(), tier), through);
         Ok(())
     }
 }

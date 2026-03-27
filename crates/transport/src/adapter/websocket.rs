@@ -1,7 +1,8 @@
 use async_channel::{Receiver, Sender};
-use async_trait::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::io::{AsyncRead, AsyncWrite};
+
+use async_trait::async_trait;
 
 use crate::ports::{ByteTransport, TransportError};
 
@@ -91,7 +92,7 @@ where
         while let Some(msg) = stream.next().await {
             match msg {
                 Ok(Message::Binary(data)) => {
-                    if in_tx.send(Ok(data.into())).await.is_err() {
+                    if in_tx.send(Ok(data)).await.is_err() {
                         break;
                     }
                 }
@@ -107,7 +108,7 @@ where
 
     tokio::spawn(async move {
         while let Ok(data) = out_rx.recv().await {
-            if sink.send(Message::Binary(data.into())).await.is_err() {
+            if sink.send(Message::Binary(data)).await.is_err() {
                 break;
             }
         }

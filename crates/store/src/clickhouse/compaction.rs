@@ -2,7 +2,7 @@ use clickhouse::Row;
 use serde::{Deserialize, Serialize};
 
 use photon_core::types::id::RunId;
-use photon_core::types::metric::Metric;
+use photon_core::types::metric::{Metric, Step};
 
 use crate::ports::compaction::CompactionCursor;
 use crate::ports::{ReadError, WriteError};
@@ -33,7 +33,7 @@ impl CompactionCursor for ClickHouseCompactionCursor {
         run_id: &RunId,
         key: &Metric,
         tier: usize,
-    ) -> Result<Option<u64>, ReadError> {
+    ) -> Result<Option<Step>, ReadError> {
         let run_uuid: uuid::Uuid = (*run_id).into();
 
         let rows: Vec<CompactionCursorRow> = self
@@ -47,9 +47,9 @@ impl CompactionCursor for ClickHouseCompactionCursor {
             .bind(tier as u32)
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
-        Ok(rows.first().map(|r| r.offset))
+        Ok(rows.first().map(|r| Step::new(r.offset)))
     }
 
     async fn advance(
@@ -57,27 +57,27 @@ impl CompactionCursor for ClickHouseCompactionCursor {
         run_id: &RunId,
         key: &Metric,
         tier: usize,
-        offset: u64,
+        through: Step,
     ) -> Result<(), WriteError> {
         let mut insert = self
             .client
             .insert("compaction_cursors")
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         insert
             .write(&CompactionCursorRow {
                 run_id: (*run_id).into(),
                 key: key.as_str().to_owned(),
                 tier: tier as u32,
-                offset,
+                offset: through.as_u64(),
             })
             .await
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         insert
             .end()
             .await
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         Ok(())
     }

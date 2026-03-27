@@ -15,6 +15,7 @@ use photon_wal::WalAppender;
 use crate::domain::service::{BatchError, BatchService, Service};
 use crate::domain::types::BatchStats;
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn run_batch_thread<K, C, A>(
     run_id: RunId,
     interner: Arc<ThreadedRodeo>,
@@ -39,32 +40,29 @@ where
     loop {
         select! {
             recv(rx) -> msg => {
-                match msg {
-                    Ok(point) => {
-                        pending.push(point);
+                if let Ok(point) = msg {
+                    pending.push(point);
 
-                        while pending.len() < config.max_points {
-                            match rx.try_recv() {
-                                Ok(p) => pending.push(p),
-                                Err(_) => break,
-                            }
-                        }
-
-                        if pending.len() >= config.max_points {
-                            let wire = service.batch(&pending, &mut stats)?;
-                            let _ = batch_tx.send(wire);
-                            pending.clear();
+                    while pending.len() < config.max_points {
+                        match rx.try_recv() {
+                            Ok(p) => pending.push(p),
+                            Err(_) => break,
                         }
                     }
-                    Err(_) => {
-                        if !pending.is_empty() {
-                            let wire = service.batch(&pending, &mut stats)?;
-                            let _ = batch_tx.send(wire);
-                            pending.clear();
-                        }
 
-                        return Ok(stats);
+                    if pending.len() >= config.max_points {
+                        let wire = service.batch(&pending, &mut stats)?;
+                        let _ = batch_tx.send(wire);
+                        pending.clear();
                     }
+                } else {
+                    if !pending.is_empty() {
+                        let wire = service.batch(&pending, &mut stats)?;
+                        let _ = batch_tx.send(wire);
+                        pending.clear();
+                    }
+
+                    return Ok(stats);
                 }
             }
 

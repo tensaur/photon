@@ -5,6 +5,7 @@ use crate::domain::project::Project;
 use crate::domain::run::Run;
 use crate::types::ack::AckResult;
 use crate::types::batch::WireBatch;
+use crate::types::error::ApiError;
 use crate::types::id::{ExperimentId, ProjectId, RunId};
 use crate::types::sequence::SequenceNumber;
 
@@ -26,5 +27,5 @@ pub enum IngestResult {
     ExperimentRegistered(ExperimentId),
     ProjectRegistered(ProjectId),
     Watermark(SequenceNumber),
-    Error(String),
+    Error(ApiError),
 }

@@ -54,8 +54,9 @@ pub enum Response {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(unreachable_pub)]
 mod platform {
-    use super::*;
+    use super::{Command, Response};
 
     pub type CommandSender = tokio::sync::mpsc::UnboundedSender<Command>;
     pub type CommandReceiver = tokio::sync::mpsc::UnboundedReceiver<Command>;
@@ -85,6 +86,7 @@ mod platform {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[allow(unreachable_pub)]
 mod platform {
     use super::*;
 
@@ -115,11 +117,11 @@ mod platform {
     }
 }
 
-pub use platform::{CommandSender, ResponseReceiver, send_cmd};
+pub(crate) use platform::{CommandSender, ResponseReceiver, send_cmd};
 use platform::{channels, recv_cmd, send_resp, spawn};
 type ResponseSender = platform::ResponseSender;
 
-pub fn spawn_service<S, T>(
+pub(crate) fn spawn_service<S, T>(
     ctx: egui::Context,
     service: S,
     subscription_transport: Option<T>,

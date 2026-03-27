@@ -1,5 +1,8 @@
+use std::future::Future;
+
 use async_trait::async_trait;
 
+#[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
     #[error("connection failed: {0}")]
@@ -10,13 +13,11 @@ pub enum TransportError {
 
     #[error("stream closed: {0}")]
     StreamClosed(String),
-
-    #[error(transparent)]
-    Unknown(#[from] anyhow::Error),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl TransportError {
+    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn from_io(e: std::io::Error) -> Self {
         use std::io::ErrorKind;
         match e.kind() {
@@ -29,6 +30,8 @@ impl TransportError {
     }
 }
 
+/// Low-level byte transport. Uses `async_trait` because it must be dyn-compatible
+/// for runtime protocol selection via [`TransportKind`](crate::TransportKind).
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait ByteTransport: Send + Sync + 'static {
@@ -48,9 +51,15 @@ impl ByteTransport for Box<dyn ByteTransport> {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+/// Typed transport over a codec. Uses RPIT (no heap allocation).
+#[cfg(not(target_arch = "wasm32"))]
 pub trait Transport<S, R>: Clone + Send + Sync + 'static {
-    async fn send(&self, msg: &S) -> Result<(), TransportError>;
-    async fn recv(&self) -> Result<R, TransportError>;
+    fn send(&self, msg: &S) -> impl Future<Output = Result<(), TransportError>> + Send;
+    fn recv(&self) -> impl Future<Output = Result<R, TransportError>> + Send;
+}
+
+#[cfg(target_arch = "wasm32")]
+pub trait Transport<S, R>: Clone + 'static {
+    fn send(&self, msg: &S) -> impl Future<Output = Result<(), TransportError>>;
+    fn recv(&self) -> impl Future<Output = Result<R, TransportError>>;
 }

@@ -3,7 +3,7 @@ use std::ops::Range;
 
 use photon_core::types::bucket::{Bucket, BucketEntry};
 use photon_core::types::id::RunId;
-use photon_core::types::metric::Metric;
+use photon_core::types::metric::{Metric, Step};
 
 use super::{ReadError, WriteError};
 
@@ -23,6 +23,6 @@ pub trait BucketReader: Send + Sync + Clone + 'static {
         run_id: &RunId,
         key: &Metric,
         tier: usize,
-        step_range: Range<u64>,
+        step_range: Range<Step>,
     ) -> impl Future<Output = Result<Vec<Bucket>, ReadError>> + Send;
 }

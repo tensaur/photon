@@ -19,7 +19,7 @@ use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_transport::TransportKind;
 use photon_transport::codec::CodecTransport;
-use photon_uplink::{TransportError as UplinkTransportError, UplinkThreadError, run_uplink};
+use photon_uplink::{UplinkTransportError, UplinkThreadError, run_uplink};
 use photon_wal::{DiskWalConfig, Wal, WalKind};
 
 use crate::accumulator::Accumulator;
@@ -189,19 +189,18 @@ impl RunBuilder {
             }
         });
 
-        let domain_run = DomainRun {
-            id: run_id,
-            project_id: project.id,
-            experiment_id: self.experiment.as_ref().map(|e| e.id),
-            user_id: self.user_id.unwrap_or_default(),
-            name: self
-                .name
+        let domain_run = DomainRun::restore(
+            run_id,
+            project.id,
+            self.experiment.as_ref().map(|e| e.id),
+            self.user_id.unwrap_or_default(),
+            self.name
                 .unwrap_or_else(|| format!("run-{}", run_id.short())),
-            status: RunStatus::Running,
-            tags: self.tags,
-            created_at: now,
-            updated_at: now,
-        };
+            RunStatus::Running,
+            self.tags,
+            now,
+            now,
+        );
         let experiment = self.experiment;
 
         let wal_dir = self
@@ -237,9 +236,9 @@ impl RunBuilder {
                     self.batch,
                 )
             })
-            .expect("failed to spawn batch thread");
+            .map_err(|e| StartError::ThreadSpawn(e.to_string()))?;
 
-        let uplink_handle = self.endpoint.map(|endpoint| {
+        let uplink_handle = self.endpoint.map(|endpoint| -> Result<UplinkHandle, StartError> {
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
             let uplink_wal = wal.clone();
             let uplink_config = UplinkConfig::default();
@@ -278,13 +277,13 @@ impl RunBuilder {
                         .await
                     })
                 })
-                .expect("failed to spawn uplink thread");
+                .map_err(|e| StartError::ThreadSpawn(e.to_string()))?;
 
-            UplinkHandle {
+            Ok(UplinkHandle {
                 shutdown_tx: Some(shutdown_tx),
                 handle,
-            }
-        });
+            })
+        }).transpose()?;
 
         Ok(Run::new(
             run_id,

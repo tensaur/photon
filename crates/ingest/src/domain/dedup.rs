@@ -10,14 +10,21 @@ pub enum Verdict {
 }
 
 /// In-memory cache of the highest sequence number seen per run.
+#[derive(Clone)]
 pub struct DeduplicationCache {
-    seen: DashMap<RunId, SequenceNumber>,
+    seen: std::sync::Arc<DashMap<RunId, SequenceNumber>>,
+}
+
+impl Default for DeduplicationCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DeduplicationCache {
     pub fn new() -> Self {
         Self {
-            seen: DashMap::new(),
+            seen: std::sync::Arc::new(DashMap::new()),
         }
     }
 
@@ -31,8 +38,7 @@ impl DeduplicationCache {
         let highest = self
             .seen
             .get(run_id)
-            .map(|w| *w.value())
-            .unwrap_or(SequenceNumber::ZERO);
+            .map_or(SequenceNumber::ZERO, |w| *w.value());
 
         if seq <= highest {
             Verdict::Duplicate
@@ -44,8 +50,7 @@ impl DeduplicationCache {
     pub fn watermark(&self, run_id: &RunId) -> SequenceNumber {
         self.seen
             .get(run_id)
-            .map(|w| *w.value())
-            .unwrap_or(SequenceNumber::ZERO)
+            .map_or(SequenceNumber::ZERO, |w| *w.value())
     }
 
     pub fn advance(&self, run_id: &RunId, seq: SequenceNumber) {

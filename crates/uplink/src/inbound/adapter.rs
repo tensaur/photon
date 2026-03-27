@@ -4,16 +4,16 @@ use photon_core::types::ingest::{IngestMessage, IngestResult};
 use photon_core::types::sequence::SequenceNumber;
 use photon_transport::ports::{Transport, TransportError as InfraTransportError};
 
-use crate::domain::error::TransportError;
+use crate::domain::error::UplinkTransportError;
 use crate::domain::ports::IngestConnection;
 
-impl From<InfraTransportError> for TransportError {
+impl From<InfraTransportError> for UplinkTransportError {
     fn from(e: InfraTransportError) -> Self {
         match e {
             InfraTransportError::Connection(msg)
             | InfraTransportError::Request(msg)
             | InfraTransportError::StreamClosed(msg) => Self::ConnectionLost { reason: msg },
-            InfraTransportError::Unknown(e) => Self::Unknown(e),
+            other => Self::ConnectionLost { reason: other.to_string() },
         }
     }
 }
@@ -22,25 +22,25 @@ impl<T> IngestConnection for T
 where
     T: Transport<IngestMessage, IngestResult>,
 {
-    async fn send_batch(&self, batch: &WireBatch) -> Result<(), TransportError> {
+    async fn send_batch(&self, batch: &WireBatch) -> Result<(), UplinkTransportError> {
         self.send(&IngestMessage::Batch(batch.clone()))
             .await
             .map_err(Into::into)
     }
 
-    async fn send_message(&self, msg: IngestMessage) -> Result<(), TransportError> {
+    async fn send_message(&self, msg: IngestMessage) -> Result<(), UplinkTransportError> {
         self.send(&msg).await.map_err(Into::into)
     }
 
-    async fn query_watermark(&self, run_id: &RunId) -> Result<SequenceNumber, TransportError> {
+    async fn query_watermark(&self, run_id: &RunId) -> Result<SequenceNumber, UplinkTransportError> {
         self.send(&IngestMessage::QueryWatermark(*run_id))
             .await
-            .map_err(TransportError::from)?;
+            .map_err(UplinkTransportError::from)?;
 
         match self.recv().await {
             Ok(IngestResult::Watermark(seq)) => Ok(seq),
             Ok(IngestResult::Error(e)) => {
-                tracing::warn!("watermark query rejected by server: {e}");
+                tracing::warn!("watermark query rejected by server: {e:?}");
                 Ok(SequenceNumber::ZERO)
             }
             Ok(_) => Ok(SequenceNumber::ZERO),
@@ -48,7 +48,7 @@ where
         }
     }
 
-    async fn recv(&self) -> Result<IngestResult, TransportError> {
+    async fn recv(&self) -> Result<IngestResult, UplinkTransportError> {
         Transport::recv(self).await.map_err(Into::into)
     }
 }

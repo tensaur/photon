@@ -27,8 +27,9 @@ photon-transport.workspace = true
 photon-hook.workspace = true
 photon-wal.workspace = true
 
-tokio.workspace = true
-tokio-util = { version = "0.7", features = ["rt"] }
+anyhow.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread"] }
+tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
@@ -43,3 +44,6 @@ harness = false
 
 [features]
 dashboard = ["rust-embed"]
+
+[lints]
+workspace = true

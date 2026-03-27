@@ -5,8 +5,7 @@ use dashmap::DashMap;
 use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 
-use crate::ports::run::{RunReader, RunWriter};
-use crate::ports::{ReadError, WriteError};
+use crate::ports::{ReadError, ReadRepository, WriteError, WriteRepository};
 
 #[derive(Clone)]
 pub struct InMemoryRunStore {
@@ -27,8 +26,8 @@ impl Default for InMemoryRunStore {
     }
 }
 
-impl RunReader for InMemoryRunStore {
-    async fn list_runs(&self) -> Result<Vec<Run>, ReadError> {
+impl ReadRepository<Run> for InMemoryRunStore {
+    async fn list(&self) -> Result<Vec<Run>, ReadError> {
         Ok(self
             .data
             .iter()
@@ -36,14 +35,14 @@ impl RunReader for InMemoryRunStore {
             .collect())
     }
 
-    async fn get_run(&self, run_id: &RunId) -> Result<Option<Run>, ReadError> {
+    async fn get(&self, run_id: &RunId) -> Result<Option<Run>, ReadError> {
         Ok(self.data.get(run_id).map(|entry| entry.value().clone()))
     }
 }
 
-impl RunWriter for InMemoryRunStore {
-    async fn upsert_run(&self, run: &Run) -> Result<(), WriteError> {
-        self.data.insert(run.id, run.clone());
+impl WriteRepository<Run> for InMemoryRunStore {
+    async fn upsert(&self, run: &Run) -> Result<(), WriteError> {
+        self.data.insert(run.id(), run.clone());
         Ok(())
     }
 }

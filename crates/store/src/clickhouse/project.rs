@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use photon_core::domain::project::Project;
 use photon_core::types::id::{ProjectId, TenantId};
 
-use crate::ports::project::{ProjectReader, ProjectWriter};
-use crate::ports::{ReadError, WriteError};
+use crate::ports::{ReadError, ReadRepository, WriteError, WriteRepository};
 
 #[derive(Row, Serialize, Deserialize)]
 struct ProjectRow {
@@ -55,39 +54,39 @@ impl ClickHouseProjectStore {
     }
 }
 
-impl ProjectWriter for ClickHouseProjectStore {
-    async fn upsert_project(&self, project: &Project) -> Result<(), WriteError> {
+impl WriteRepository<Project> for ClickHouseProjectStore {
+    async fn upsert(&self, project: &Project) -> Result<(), WriteError> {
         let mut insert = self
             .client
             .insert("projects")
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         insert
             .write(&ProjectRow::from(project))
             .await
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         insert
             .end()
             .await
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
         Ok(())
     }
 }
 
-impl ProjectReader for ClickHouseProjectStore {
-    async fn list_projects(&self) -> Result<Vec<Project>, ReadError> {
+impl ReadRepository<Project> for ClickHouseProjectStore {
+    async fn list(&self) -> Result<Vec<Project>, ReadError> {
         let rows: Vec<ProjectRow> = self
             .client
             .query("SELECT ?fields FROM projects FINAL")
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
         Ok(rows.into_iter().map(Project::from).collect())
     }
 
-    async fn get_project(&self, id: &ProjectId) -> Result<Option<Project>, ReadError> {
+    async fn get(&self, id: &ProjectId) -> Result<Option<Project>, ReadError> {
         let uuid: uuid::Uuid = (*id).into();
 
         let rows: Vec<ProjectRow> = self
@@ -96,7 +95,7 @@ impl ProjectReader for ClickHouseProjectStore {
             .bind(uuid)
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
         Ok(rows.into_iter().next().map(Project::from))
     }
