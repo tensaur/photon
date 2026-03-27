@@ -7,6 +7,9 @@ use tokio::net::TcpListener;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_protocol::codec::CodecKind;
+use photon_store::memory::experiment::InMemoryExperimentStore;
+use photon_store::memory::project::InMemoryProjectStore;
+use photon_store::memory::run::InMemoryRunStore;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
 use photon_wal::open_in_memory_wal;
@@ -26,17 +29,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (wal_appender, _wal) = open_in_memory_wal();
     let notify = Arc::new(tokio::sync::Notify::new());
 
-    let ingest_service = Arc::new(IngestService::new(wal_appender, notify));
+    let ingest_service = IngestService::new(wal_appender, notify);
+    let run_store = InMemoryRunStore::new();
+    let experiment_store = InMemoryExperimentStore::new();
+    let project_store = InMemoryProjectStore::new();
 
     tokio::spawn(async move {
         loop {
             let (stream, _) = listener.accept().await.expect("accept failed");
             let bt = TcpTransport::accept(stream);
             let transport = CodecTransport::new(codec, bt);
-            let service = Arc::clone(&ingest_service);
+            let service = ingest_service.clone();
+            let rs = run_store.clone();
+            let es = experiment_store.clone();
+            let ps = project_store.clone();
 
             tokio::spawn(async move {
-                handler::handle(&service, &transport).await;
+                handler::handle_envelope(&service, &rs, &es, &ps, &transport).await;
             });
         }
     });
