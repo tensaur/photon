@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use super::state::{ConnectionState, ReconnectResult, try_reconnect};
 use crate::UplinkThreadError;
 use crate::domain::ack::UplinkStats;
-use crate::domain::error::{UplinkTransportError, UplinkError};
+use crate::domain::error::{UplinkError, UplinkTransportError};
 use crate::domain::ports::IngestConnection;
 use crate::domain::service::{Service, UplinkService};
 
@@ -77,16 +77,17 @@ where
         }
 
         if let Some(batch) = batch
-            && conn.can_send() {
-                match service.send(&batch).await {
-                    Ok(()) => conn.record_sent(batch.sequence_number),
-                    Err(UplinkError::Transport(UplinkTransportError::ConnectionLost { .. })) => {
-                        conn.enter_reconnecting();
-                        continue;
-                    }
-                    Err(e) => return Err(e.into()),
+            && conn.can_send()
+        {
+            match service.send(&batch).await {
+                Ok(()) => conn.record_sent(batch.sequence_number),
+                Err(UplinkError::Transport(UplinkTransportError::ConnectionLost { .. })) => {
+                    conn.enter_reconnecting();
+                    continue;
                 }
+                Err(e) => return Err(e.into()),
             }
+        }
 
         match tokio::time::timeout(Duration::from_millis(1), connection.recv()).await {
             Ok(Ok(IngestResult::Ack(ack))) => {

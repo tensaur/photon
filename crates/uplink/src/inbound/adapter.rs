@@ -13,7 +13,9 @@ impl From<InfraTransportError> for UplinkTransportError {
             InfraTransportError::Connection(msg)
             | InfraTransportError::Request(msg)
             | InfraTransportError::StreamClosed(msg) => Self::ConnectionLost { reason: msg },
-            other => Self::ConnectionLost { reason: other.to_string() },
+            other => Self::ConnectionLost {
+                reason: other.to_string(),
+            },
         }
     }
 }
@@ -32,7 +34,10 @@ where
         self.send(&msg).await.map_err(Into::into)
     }
 
-    async fn query_watermark(&self, run_id: &RunId) -> Result<SequenceNumber, UplinkTransportError> {
+    async fn query_watermark(
+        &self,
+        run_id: &RunId,
+    ) -> Result<SequenceNumber, UplinkTransportError> {
         self.send(&IngestMessage::QueryWatermark(*run_id))
             .await
             .map_err(UplinkTransportError::from)?;

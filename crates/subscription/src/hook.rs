@@ -51,7 +51,7 @@ impl IngestHook for SubscriptionHook {
                 .iter()
                 .filter(|p| p.key_index == key_index as u32)
                 .map(|p| DataPoint {
-                    step: p.step, // MetricPoint.step is already Step
+                    step: p.step,
                     value: p.value,
                 })
                 .collect();

@@ -35,10 +35,8 @@ impl From<ProjectRow> for Project {
             id: ProjectId::from(r.id),
             tenant_id: TenantId::from(r.tenant_id),
             name: r.name,
-            created_at: chrono::DateTime::from_timestamp_millis(r.created_at)
-                .unwrap_or_default(),
-            updated_at: chrono::DateTime::from_timestamp_millis(r.updated_at)
-                .unwrap_or_default(),
+            created_at: chrono::DateTime::from_timestamp_millis(r.created_at).unwrap_or_default(),
+            updated_at: chrono::DateTime::from_timestamp_millis(r.updated_at).unwrap_or_default(),
         }
     }
 }

@@ -76,7 +76,8 @@ pub fn open_disk_wal(
 
     let next_offset = consumed.advance(to_replay);
 
-    let bytes_used_val = active.bytes_used() + sealed.iter().map(segment::Segment::bytes_used).sum::<u64>();
+    let bytes_used_val =
+        active.bytes_used() + sealed.iter().map(segment::Segment::bytes_used).sum::<u64>();
 
     let next_segment = sealed
         .iter()

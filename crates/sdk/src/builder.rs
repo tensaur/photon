@@ -19,7 +19,7 @@ use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_transport::TransportKind;
 use photon_transport::codec::CodecTransport;
-use photon_uplink::{UplinkTransportError, UplinkThreadError, run_uplink};
+use photon_uplink::{UplinkThreadError, UplinkTransportError, run_uplink};
 use photon_wal::{DiskWalConfig, Wal, WalKind};
 
 use crate::accumulator::Accumulator;
@@ -238,52 +238,55 @@ impl RunBuilder {
             })
             .map_err(|e| StartError::ThreadSpawn(e.to_string()))?;
 
-        let uplink_handle = self.endpoint.map(|endpoint| -> Result<UplinkHandle, StartError> {
-            let (shutdown_tx, shutdown_rx) = oneshot::channel();
-            let uplink_wal = wal.clone();
-            let uplink_config = UplinkConfig::default();
-            let transport_kind = self.transport;
-            let run = domain_run.clone();
-            let project = project.clone();
-            let experiment = experiment.clone();
+        let uplink_handle = self
+            .endpoint
+            .map(|endpoint| -> Result<UplinkHandle, StartError> {
+                let (shutdown_tx, shutdown_rx) = oneshot::channel();
+                let uplink_wal = wal.clone();
+                let uplink_config = UplinkConfig::default();
+                let transport_kind = self.transport;
+                let run = domain_run.clone();
+                let project = project.clone();
+                let experiment = experiment.clone();
 
-            let handle = thread::Builder::new()
-                .name(format!("photon-uplink-{run_id}"))
-                .spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .map_err(UplinkThreadError::Runtime)?;
+                let handle = thread::Builder::new()
+                    .name(format!("photon-uplink-{run_id}"))
+                    .spawn(move || {
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .map_err(UplinkThreadError::Runtime)?;
 
-                    rt.block_on(async {
-                        let bt = transport_kind
-                            .connect(&endpoint)
+                        rt.block_on(async {
+                            let bt = transport_kind
+                                .connect(&endpoint)
+                                .await
+                                .map_err(UplinkTransportError::from)?;
+
+                            let transport = CodecTransport::new(codec, bt);
+
+                            run_uplink(
+                                transport,
+                                run,
+                                project,
+                                experiment,
+                                uplink_wal,
+                                uplink_config,
+                                start_sequence,
+                                shutdown_rx,
+                                batch_rx,
+                            )
                             .await
-                            .map_err(UplinkTransportError::from)?;
-
-                        let transport = CodecTransport::new(codec, bt);
-
-                        run_uplink(
-                            transport,
-                            run,
-                            project,
-                            experiment,
-                            uplink_wal,
-                            uplink_config,
-                            start_sequence,
-                            shutdown_rx,
-                            batch_rx,
-                        )
-                        .await
+                        })
                     })
-                })
-                .map_err(|e| StartError::ThreadSpawn(e.to_string()))?;
+                    .map_err(|e| StartError::ThreadSpawn(e.to_string()))?;
 
-            Ok(UplinkHandle {
-                shutdown_tx: Some(shutdown_tx),
-                handle,
+                Ok(UplinkHandle {
+                    shutdown_tx: Some(shutdown_tx),
+                    handle,
+                })
             })
-        }).transpose()?;
+            .transpose()?;
 
         Ok(Run::new(
             run_id,

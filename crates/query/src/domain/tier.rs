@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn test_raw_when_few_points() {
         let selector = TierSelector::new(vec![60, 3600]);
-        // 100 points with a target of 200 — no divisor can satisfy
+        // 100 points with a target of 200 and no divisor can satisfy
         // point_count / d >= target, so we get Raw.
         let plan = selector.pick(100, 200);
         assert_eq!(plan.line, Resolution::Raw);
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn test_default_tier_selector() {
         let selector = TierSelector::default();
-        // Default divisors are [60, 3600] — 1-minute and 1-hour buckets.
+        // Default divisors are [60, 3600] with 1-minute and 1-hour buckets.
         // A small point count should still resolve to Raw.
         let plan = selector.pick(50, 500);
         assert_eq!(plan.line, Resolution::Raw);

@@ -18,6 +18,9 @@ pub fn show(ui: &mut egui::Ui, state: &LineChartState, cache: &DataCache) {
             format!("{}\nstep: {:.0}\nvalue: {:.6}", metric_name, pt.x, pt.y)
         })
         .show(ui, |plot_ui| {
-            plot_ui.line(Line::new(state.metric.as_str(), PlotPoints::new(points.clone())));
+            plot_ui.line(Line::new(
+                state.metric.as_str(),
+                PlotPoints::new(points.clone()),
+            ));
         });
 }

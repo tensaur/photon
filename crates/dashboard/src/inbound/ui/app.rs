@@ -25,7 +25,6 @@ pub enum RequestState<T> {
     Failed(String),
 }
 
-
 pub struct DataCache {
     pub runs: RequestState<Vec<Run>>,
     pub experiments: RequestState<Vec<Experiment>>,
@@ -135,9 +134,9 @@ impl DashboardApp {
                     && let SeriesData::Raw {
                         points: ref mut existing,
                     } = series.data
-                    {
-                        existing.extend(points);
-                    }
+                {
+                    existing.extend(points);
+                }
             }
             Response::RunsChanged => {
                 // Re-fetch the run and experiment lists
@@ -187,9 +186,10 @@ impl DashboardApp {
     fn subscribe_if_active(&self, run_id: RunId) {
         if let RequestState::Loaded(runs) = &self.cache.runs
             && let Some(run) = runs.iter().find(|r| r.id() == run_id)
-                && run.is_active() {
-                    channel::send_cmd(&self.commands, Command::Subscribe { run_id });
-                }
+            && run.is_active()
+        {
+            channel::send_cmd(&self.commands, Command::Subscribe { run_id });
+        }
     }
 
     fn unsubscribe_all(&self) {

@@ -130,11 +130,7 @@ mod tests {
 
     /// Encode and compress a MetricBatch into a WireBatch (the inverse of what
     /// the persist service does on the read path).
-    fn make_wire_batch(
-        batch: &MetricBatch,
-        run_id: RunId,
-        seq: SequenceNumber,
-    ) -> WireBatch {
+    fn make_wire_batch(batch: &MetricBatch, run_id: RunId, seq: SequenceNumber) -> WireBatch {
         let codec = PostcardCodec;
         let compressor = NoopCompressor;
 
@@ -247,9 +243,7 @@ mod tests {
             .await
             .expect("write should succeed");
 
-        // Read from the service's owned watermark writer (private field,
-        // accessible in same-module tests) because InMemoryWatermarkStore's
-        // Clone deep-copies its DashMap (no Arc).
+        // Read from the service's owned watermark writer.
         let mut watermarks = svc.watermark_writer.read_all().await.expect("read_all");
         watermarks.sort_by_key(|(_, seq)| u64::from(*seq));
 

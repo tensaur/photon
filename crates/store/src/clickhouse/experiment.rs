@@ -38,10 +38,8 @@ impl From<ExperimentRow> for Experiment {
             project_id: ProjectId::from(r.project_id),
             name: r.name,
             tags: r.tags,
-            created_at: chrono::DateTime::from_timestamp_millis(r.created_at)
-                .unwrap_or_default(),
-            updated_at: chrono::DateTime::from_timestamp_millis(r.updated_at)
-                .unwrap_or_default(),
+            created_at: chrono::DateTime::from_timestamp_millis(r.created_at).unwrap_or_default(),
+            updated_at: chrono::DateTime::from_timestamp_millis(r.updated_at).unwrap_or_default(),
         }
     }
 }

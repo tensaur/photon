@@ -30,8 +30,7 @@ impl TransportError {
     }
 }
 
-/// Low-level byte transport. Uses `async_trait` because it must be dyn-compatible
-/// for runtime protocol selection via [`TransportKind`](crate::TransportKind).
+/// Low-level byte transport.
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait ByteTransport: Send + Sync + 'static {
@@ -51,7 +50,7 @@ impl ByteTransport for Box<dyn ByteTransport> {
     }
 }
 
-/// Typed transport over a codec. Uses RPIT (no heap allocation).
+/// Typed transport over a codec.
 #[cfg(not(target_arch = "wasm32"))]
 pub trait Transport<S, R>: Clone + Send + Sync + 'static {
     fn send(&self, msg: &S) -> impl Future<Output = Result<(), TransportError>> + Send;

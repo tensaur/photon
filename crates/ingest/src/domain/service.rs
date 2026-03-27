@@ -88,10 +88,7 @@ impl<A: WalAppender> IngestService for Service<A> {
         }
 
         // 3. WAL append
-        self.wal
-            .lock()
-            .unwrap()
-            .append(batch)?;
+        self.wal.lock().unwrap().append(batch)?;
 
         // 4. Wake persist consumer
         self.notify.notify_one();
@@ -192,10 +189,16 @@ mod tests {
         let run_id = RunId::new();
         let batch = make_batch(run_id, 1, b"payload");
 
-        let first = svc.ingest(&batch).await.expect("first ingest should succeed");
+        let first = svc
+            .ingest(&batch)
+            .await
+            .expect("first ingest should succeed");
         assert_eq!(first.status, AckStatus::Ok);
 
-        let second = svc.ingest(&batch).await.expect("second ingest should succeed");
+        let second = svc
+            .ingest(&batch)
+            .await
+            .expect("second ingest should succeed");
         assert_eq!(second.status, AckStatus::Duplicate);
     }
 
@@ -209,7 +212,10 @@ mod tests {
             svc.ingest(&batch).await.expect("ingest should succeed");
         }
 
-        let wm = svc.watermark(&run_id).await.expect("watermark should succeed");
+        let wm = svc
+            .watermark(&run_id)
+            .await
+            .expect("watermark should succeed");
         assert_eq!(u64::from(wm), 3);
     }
 
@@ -221,12 +227,18 @@ mod tests {
         let batch = make_batch(run_id, 1, b"data");
         svc.ingest(&batch).await.expect("ingest should succeed");
 
-        let wm = svc.watermark(&run_id).await.expect("watermark should succeed");
+        let wm = svc
+            .watermark(&run_id)
+            .await
+            .expect("watermark should succeed");
         assert_eq!(u64::from(wm), 1);
 
         svc.evict_run(&run_id);
 
-        let wm = svc.watermark(&run_id).await.expect("watermark should succeed");
+        let wm = svc
+            .watermark(&run_id)
+            .await
+            .expect("watermark should succeed");
         assert_eq!(u64::from(wm), 0);
     }
 }
