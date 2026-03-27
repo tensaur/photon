@@ -4,19 +4,18 @@ use photon_core::domain::experiment::Experiment;
 use photon_core::domain::project::Project;
 use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::Metric;
+use photon_core::types::metric::{Metric, Step};
+use photon_core::types::error::ApiError;
 use photon_core::types::query::{
     DataPoint, MetricQuery, MetricSeries, QueryMessage, QueryRequest, QueryResponse, QueryResult,
     RangePoint, SeriesData,
 };
 use photon_downsample::ports::selector::Selector;
 use photon_store::ports::ReadError;
+use photon_store::ports::ReadRepository;
 use photon_store::ports::bucket::BucketReader;
 use photon_store::ports::compaction::CompactionCursor;
-use photon_store::ports::experiment::ExperimentReader;
 use photon_store::ports::metric::MetricReader;
-use photon_store::ports::project::ProjectReader;
-use photon_store::ports::run::RunReader;
 
 use crate::domain::tier::{Resolution, TierSelector};
 
@@ -26,7 +25,7 @@ pub enum QueryError {
     Read(#[from] ReadError),
 }
 
-pub trait QueryService: Send + Sync + 'static {
+pub trait QueryService: Clone + Send + Sync + 'static {
     fn list_runs(&self) -> impl Future<Output = Result<Vec<Run>, QueryError>> + Send;
 
     fn list_experiments(&self) -> impl Future<Output = Result<Vec<Experiment>, QueryError>> + Send;
@@ -54,40 +53,59 @@ pub async fn dispatch<S: QueryService>(service: &S, msg: QueryMessage) -> QueryR
     match msg {
         QueryMessage::ListRuns => match service.list_runs().await {
             Ok(runs) => QueryResult::Runs(runs),
-            Err(e) => QueryResult::Error(e.to_string()),
+            Err(e) => {
+                tracing::error!("query failed: {e}");
+                QueryResult::Error(ApiError::Internal)
+            }
         },
         QueryMessage::ListExperiments => match service.list_experiments().await {
             Ok(experiments) => QueryResult::Experiments(experiments),
-            Err(e) => QueryResult::Error(e.to_string()),
+            Err(e) => {
+                tracing::error!("query failed: {e}");
+                QueryResult::Error(ApiError::Internal)
+            }
         },
         QueryMessage::ListProjects => match service.list_projects().await {
             Ok(projects) => QueryResult::Projects(projects),
-            Err(e) => QueryResult::Error(e.to_string()),
+            Err(e) => {
+                tracing::error!("query failed: {e}");
+                QueryResult::Error(ApiError::Internal)
+            }
         },
         QueryMessage::ListMetrics(run_id) => match service.list_metrics(&run_id).await {
             Ok(metrics) => QueryResult::Metrics(metrics),
-            Err(e) => QueryResult::Error(e.to_string()),
+            Err(e) => {
+                tracing::error!("query failed: {e}");
+                QueryResult::Error(ApiError::Internal)
+            }
         },
         QueryMessage::Query(query) => match service.query(&query).await {
             Ok(series) => QueryResult::Series(series),
-            Err(e) => QueryResult::Error(e.to_string()),
+            Err(e) => {
+                tracing::error!("query failed: {e}");
+                QueryResult::Error(ApiError::Internal)
+            }
         },
         QueryMessage::QueryBatch(request) => match service.query_batch(&request).await {
             Ok(response) => QueryResult::BatchResponse(response),
-            Err(e) => QueryResult::Error(e.to_string()),
+            Err(e) => {
+                tracing::error!("query failed: {e}");
+                QueryResult::Error(ApiError::Internal)
+            }
         },
     }
 }
 
+#[derive(Clone)]
 pub struct Service<S, B, M, C, R, E, P>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
     C: CompactionCursor,
-    R: RunReader,
-    E: ExperimentReader,
-    P: ProjectReader,
+    R: ReadRepository<Run>,
+    E: ReadRepository<Experiment>,
+    P: ReadRepository<Project>,
 {
     selector: S,
     bucket_reader: B,
@@ -105,9 +123,9 @@ where
     B: BucketReader,
     M: MetricReader,
     C: CompactionCursor,
-    R: RunReader,
-    E: ExperimentReader,
-    P: ProjectReader,
+    R: ReadRepository<Run>,
+    E: ReadRepository<Experiment>,
+    P: ReadRepository<Project>,
 {
     pub fn new(
         selector: S,
@@ -138,20 +156,20 @@ where
     B: BucketReader,
     M: MetricReader,
     C: CompactionCursor,
-    R: RunReader,
-    E: ExperimentReader,
-    P: ProjectReader,
+    R: ReadRepository<Run>,
+    E: ReadRepository<Experiment>,
+    P: ReadRepository<Project>,
 {
     async fn list_runs(&self) -> Result<Vec<Run>, QueryError> {
-        Ok(self.run_reader.list_runs().await?)
+        Ok(self.run_reader.list().await?)
     }
 
     async fn list_experiments(&self) -> Result<Vec<Experiment>, QueryError> {
-        Ok(self.experiment_reader.list_experiments().await?)
+        Ok(self.experiment_reader.list().await?)
     }
 
     async fn list_projects(&self) -> Result<Vec<Project>, QueryError> {
-        Ok(self.project_reader.list_projects().await?)
+        Ok(self.project_reader.list().await?)
     }
 
     async fn list_metrics(&self, run_id: &RunId) -> Result<Vec<Metric>, QueryError> {
@@ -182,7 +200,7 @@ where
                 SeriesData::Raw {
                     points: selected
                         .into_iter()
-                        .map(|(s, v)| DataPoint { step: s, value: v })
+                        .map(|(step, value)| DataPoint { step, value })
                         .collect(),
                 }
             }
@@ -191,7 +209,7 @@ where
                     .compaction_cursor
                     .get(&q.run_id, &q.key, tier_index)
                     .await?
-                    .unwrap_or(0);
+                    .unwrap_or(Step::ZERO);
 
                 let bucket_end = compacted_through.min(q.step_range.end);
                 let raw_start = compacted_through.max(q.step_range.start);
@@ -253,7 +271,7 @@ where
                 };
 
                 // Combine bucket values with raw tail
-                let combined: Vec<(u64, f64)> = buckets
+                let combined: Vec<(Step, f64)> = buckets
                     .iter()
                     .map(|b| (b.step_start, b.value))
                     .chain(raw_tail.into_iter())
@@ -268,7 +286,7 @@ where
                 SeriesData::Aggregated {
                     points: selected
                         .into_iter()
-                        .map(|(s, v)| DataPoint { step: s, value: v })
+                        .map(|(step, value)| DataPoint { step, value })
                         .collect(),
                     envelope,
                 }

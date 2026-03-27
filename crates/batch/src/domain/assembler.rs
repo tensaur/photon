@@ -14,7 +14,7 @@ pub(crate) struct BatchAssembler {
 }
 
 impl BatchAssembler {
-    pub fn new(interner: Arc<ThreadedRodeo>) -> Self {
+    pub(crate) fn new(interner: Arc<ThreadedRodeo>) -> Self {
         Self {
             interner,
             key_map: HashMap::new(),
@@ -23,7 +23,7 @@ impl BatchAssembler {
         }
     }
 
-    pub fn assemble(&mut self, run_id: RunId, pending: &[RawPoint]) -> MetricBatch {
+    pub(crate) fn assemble(&mut self, run_id: RunId, pending: &[RawPoint]) -> MetricBatch {
         self.key_map.clear();
         self.keys.clear();
         self.points.clear();
@@ -52,7 +52,7 @@ impl BatchAssembler {
         }
     }
 
-    pub fn reclaim(&mut self, batch: MetricBatch) {
+    pub(crate) fn reclaim(&mut self, batch: MetricBatch) {
         self.keys = batch.keys;
         self.points = batch.points;
     }

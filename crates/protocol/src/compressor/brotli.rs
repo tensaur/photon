@@ -36,7 +36,7 @@ impl Compressor for BrotliCompressor {
 
         encoder
             .write_all(input)
-            .map_err(|e| CompressionError::Unknown(e.into()))?;
+            .map_err(|e| CompressionError::Internal(e.to_string()))?;
         drop(encoder);
 
         output.extend_from_slice(&compressed);

@@ -13,7 +13,9 @@ photon-transport.workspace = true
 photon-wal.workspace = true
 
 thiserror.workspace = true
-anyhow.workspace = true
 crossbeam-channel.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[lints]
+workspace = true

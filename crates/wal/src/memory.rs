@@ -15,7 +15,7 @@ pub struct InMemoryWalAppender {
 #[derive(Clone)]
 pub struct InMemoryWalManager {
     batches: Arc<Mutex<Vec<WireBatch>>>,
-    cursor: WalOffset,
+    cursor: Arc<Mutex<WalOffset>>,
 }
 
 pub fn open_in_memory_wal() -> (InMemoryWalAppender, InMemoryWalManager) {
@@ -26,7 +26,7 @@ pub fn open_in_memory_wal() -> (InMemoryWalAppender, InMemoryWalManager) {
         },
         InMemoryWalManager {
             batches,
-            cursor: WalOffset::ZERO,
+            cursor: Arc::new(Mutex::new(WalOffset::ZERO)),
         },
     )
 }
@@ -43,15 +43,16 @@ impl Wal for InMemoryWalManager {
         Ok(())
     }
 
-    fn truncate_through(&mut self, offset: WalOffset) -> Result<(), WalError> {
-        let cursor_val = u64::from(self.cursor);
+    fn truncate_through(&self, offset: WalOffset) -> Result<(), WalError> {
+        let mut cursor = self.cursor.lock().unwrap();
+        let cursor_val = u64::from(*cursor);
         let new_val = u64::from(offset);
         let to_remove = (new_val - cursor_val) as usize;
 
         let mut batches = self.batches.lock().unwrap();
         let n = to_remove.min(batches.len());
         batches.drain(..n);
-        self.cursor = offset;
+        *cursor = offset;
         Ok(())
     }
 
@@ -60,7 +61,8 @@ impl Wal for InMemoryWalManager {
     }
 
     fn read_from(&self, offset: WalOffset) -> Result<Vec<WireBatch>, WalError> {
-        let cursor_val = u64::from(self.cursor);
+        let cursor = self.cursor.lock().unwrap();
+        let cursor_val = u64::from(*cursor);
         let offset_val = u64::from(offset);
         let skip = (offset_val - cursor_val) as usize;
 
@@ -69,15 +71,16 @@ impl Wal for InMemoryWalManager {
     }
 
     fn read_meta(&self) -> Result<WalMeta, WalError> {
+        let cursor = *self.cursor.lock().unwrap();
         Ok(WalMeta {
-            cursor: self.cursor,
-            consumed: self.cursor,
+            cursor,
+            consumed: cursor,
         })
     }
 
-    fn delete_all(&mut self) -> Result<(), WalError> {
+    fn delete_all(&self) -> Result<(), WalError> {
         self.batches.lock().unwrap().clear();
-        self.cursor = WalOffset::ZERO;
+        *self.cursor.lock().unwrap() = WalOffset::ZERO;
         Ok(())
     }
 }

@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
     // Ingest service (WAL-backed)
-    let ingest_service = Arc::new(IngestService::new(wal_appender, notify.clone()));
+    let ingest_service = IngestService::new(wal_appender, notify.clone());
 
     // Seed dedup cache from persisted watermarks
     let watermarks = watermark_store.read_all().await?;
@@ -93,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (stream, _) = listener.accept().await.expect("accept failed");
             let bt = TcpTransport::accept(stream);
             let transport = CodecTransport::new(codec, bt);
-            let service = Arc::clone(&ingest_service);
+            let service = ingest_service.clone();
             let run_store = run_store.clone();
             let experiment_store = experiment_store.clone();
             let project_store = project_store.clone();

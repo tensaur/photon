@@ -1,4 +1,5 @@
 use photon_core::types::bucket::Bucket;
+use photon_core::types::metric::Step;
 
 use crate::ports::aggregator::Aggregator;
 
@@ -11,8 +12,8 @@ struct Tier<A: Aggregator> {
     divisor: usize,
     count: usize,
     open: Option<A::Bucket>,
-    first_step: u64,
-    last_step: u64,
+    first_step: Step,
+    last_step: Step,
 }
 
 impl<A: Aggregator> Reducer<A> {
@@ -23,26 +24,23 @@ impl<A: Aggregator> Reducer<A> {
                 divisor,
                 count: 0,
                 open: None,
-                first_step: 0,
-                last_step: 0,
+                first_step: Step::ZERO,
+                last_step: Step::ZERO,
             })
             .collect();
 
         Self { aggregator, tiers }
     }
 
-    pub fn push(&mut self, step: u64, value: f64) -> Vec<(usize, Bucket)> {
+    pub fn push(&mut self, step: Step, value: f64) -> Vec<(usize, Bucket)> {
         let mut closed = Vec::new();
 
         for (i, tier) in self.tiers.iter_mut().enumerate() {
-            match &mut tier.open {
-                Some(bucket) => {
-                    self.aggregator.push(bucket, step, value);
-                }
-                None => {
-                    tier.open = Some(self.aggregator.new_bucket(step, value));
-                    tier.first_step = step;
-                }
+            if let Some(bucket) = &mut tier.open {
+                self.aggregator.push(bucket, step, value);
+            } else {
+                tier.open = Some(self.aggregator.new_bucket(step, value));
+                tier.first_step = step;
             }
 
             tier.last_step = step;

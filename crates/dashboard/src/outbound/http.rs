@@ -42,7 +42,7 @@ where
 
         match result {
             QueryResult::Runs(runs) => Ok(runs),
-            QueryResult::Error(msg) => Err(ListRunsError::Unknown(msg.into())),
+            QueryResult::Error(e) => Err(ListRunsError::Unknown(e.into())),
             other => Err(ListRunsError::Unknown(
                 format!("unexpected response: {other:?}").into(),
             )),
@@ -63,7 +63,7 @@ where
 
         match result {
             QueryResult::Experiments(experiments) => Ok(experiments),
-            QueryResult::Error(msg) => Err(ListExperimentsError::Unknown(msg.into())),
+            QueryResult::Error(e) => Err(ListExperimentsError::Unknown(e.into())),
             other => Err(ListExperimentsError::Unknown(
                 format!("unexpected response: {other:?}").into(),
             )),
@@ -84,7 +84,7 @@ where
 
         match result {
             QueryResult::Projects(projects) => Ok(projects),
-            QueryResult::Error(msg) => Err(ListProjectsError::Unknown(msg.into())),
+            QueryResult::Error(e) => Err(ListProjectsError::Unknown(e.into())),
             other => Err(ListProjectsError::Unknown(
                 format!("unexpected response: {other:?}").into(),
             )),
@@ -105,7 +105,7 @@ where
 
         match result {
             QueryResult::Metrics(metrics) => Ok(metrics),
-            QueryResult::Error(msg) => Err(ListMetricsError::Unknown(msg.into())),
+            QueryResult::Error(e) => Err(ListMetricsError::Unknown(e.into())),
             other => Err(ListMetricsError::Unknown(
                 format!("unexpected response: {other:?}").into(),
             )),
@@ -126,7 +126,7 @@ where
 
         match result {
             QueryResult::Series(series) => Ok(series),
-            QueryResult::Error(msg) => Err(QueryMetricsError::Unknown(msg.into())),
+            QueryResult::Error(e) => Err(QueryMetricsError::Unknown(e.into())),
             other => Err(QueryMetricsError::Unknown(
                 format!("unexpected response: {other:?}").into(),
             )),
@@ -150,7 +150,7 @@ where
 
         match result {
             QueryResult::BatchResponse(response) => Ok(response),
-            QueryResult::Error(msg) => Err(QueryMetricsError::Unknown(msg.into())),
+            QueryResult::Error(e) => Err(QueryMetricsError::Unknown(e.into())),
             other => Err(QueryMetricsError::Unknown(
                 format!("unexpected response: {other:?}").into(),
             )),

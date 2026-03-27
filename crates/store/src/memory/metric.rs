@@ -5,7 +5,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{Metric, MetricBatch};
+use photon_core::types::metric::{Metric, MetricBatch, Step};
 
 use crate::ports::metric::{MetricReader, MetricWriter};
 use crate::ports::{ReadError, WriteError};
@@ -35,7 +35,7 @@ impl MetricWriter for InMemoryMetricStore {
         for point in &batch.points {
             run.entry(batch.key(point).clone())
                 .or_default()
-                .insert(point.step, point.value);
+                .insert(point.step.as_u64(), point.value);
         }
         Ok(())
     }
@@ -46,8 +46,8 @@ impl MetricReader for InMemoryMetricStore {
         &self,
         run_id: &RunId,
         key: &Metric,
-        step_range: Range<u64>,
-    ) -> Result<Vec<(u64, f64)>, ReadError> {
+        step_range: Range<Step>,
+    ) -> Result<Vec<(Step, f64)>, ReadError> {
         let Some(run) = self.data.get(run_id) else {
             return Ok(Vec::new());
         };
@@ -55,14 +55,18 @@ impl MetricReader for InMemoryMetricStore {
             return Ok(Vec::new());
         };
 
-        Ok(points.range(step_range).map(|(&s, &v)| (s, v)).collect())
+        let raw_range = step_range.start.as_u64()..step_range.end.as_u64();
+        Ok(points
+            .range(raw_range)
+            .map(|(&s, &v)| (Step::new(s), v))
+            .collect())
     }
 
     async fn count_points(
         &self,
         run_id: &RunId,
         key: &Metric,
-        step_range: Range<u64>,
+        step_range: Range<Step>,
     ) -> Result<usize, ReadError> {
         let Some(run) = self.data.get(run_id) else {
             return Ok(0);
@@ -71,7 +75,8 @@ impl MetricReader for InMemoryMetricStore {
             return Ok(0);
         };
 
-        Ok(points.range(step_range).count())
+        let raw_range = step_range.start.as_u64()..step_range.end.as_u64();
+        Ok(points.range(raw_range).count())
     }
 
     async fn list_metrics(&self, run_id: &RunId) -> Result<Vec<Metric>, ReadError> {

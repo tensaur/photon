@@ -10,6 +10,7 @@ pub trait Compressor: Send + Sync + Clone + 'static {
     fn name(&self) -> &'static str;
 }
 
+#[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum CompressionError {
     #[error("output buffer too small (needed {needed}, available {available})")]
@@ -18,6 +19,6 @@ pub enum CompressionError {
     #[error("corrupt payload for compressor {compressor_name:?}")]
     CorruptPayload { compressor_name: String },
 
-    #[error(transparent)]
-    Unknown(#[from] anyhow::Error),
+    #[error("internal error: {0}")]
+    Internal(String),
 }

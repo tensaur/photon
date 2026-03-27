@@ -14,6 +14,12 @@ pub struct SubscriptionHook {
     seen_runs: std::sync::Arc<Mutex<HashSet<RunId>>>,
 }
 
+impl Default for SubscriptionHook {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SubscriptionHook {
     pub fn new() -> Self {
         Self {
@@ -32,7 +38,7 @@ impl IngestHook for SubscriptionHook {
         let is_new = self
             .seen_runs
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(run_id);
 
         if is_new {
@@ -45,7 +51,7 @@ impl IngestHook for SubscriptionHook {
                 .iter()
                 .filter(|p| p.key_index == key_index as u32)
                 .map(|p| DataPoint {
-                    step: p.step,
+                    step: p.step, // MetricPoint.step is already Step
                     value: p.value,
                 })
                 .collect();

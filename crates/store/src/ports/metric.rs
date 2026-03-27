@@ -2,7 +2,7 @@ use std::future::Future;
 use std::ops::Range;
 
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{Metric, MetricBatch};
+use photon_core::types::metric::{Metric, MetricBatch, Step};
 
 use super::{ReadError, WriteError};
 
@@ -32,8 +32,8 @@ pub trait MetricReader: Send + Sync + Clone + 'static {
         &self,
         run_id: &RunId,
         key: &Metric,
-        step_range: Range<u64>,
-    ) -> impl Future<Output = Result<Vec<(u64, f64)>, ReadError>> + Send;
+        step_range: Range<Step>,
+    ) -> impl Future<Output = Result<Vec<(Step, f64)>, ReadError>> + Send;
 
     fn list_metrics(
         &self,
@@ -44,6 +44,6 @@ pub trait MetricReader: Send + Sync + Clone + 'static {
         &self,
         run_id: &RunId,
         key: &Metric,
-        step_range: Range<u64>,
+        step_range: Range<Step>,
     ) -> impl Future<Output = Result<usize, ReadError>> + Send;
 }

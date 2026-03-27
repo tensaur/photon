@@ -1,9 +1,9 @@
-use crate::types::metric::Metric;
+use crate::types::metric::{Metric, Step};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bucket {
-    pub step_start: u64,
-    pub step_end: u64,
+    pub step_start: Step,
+    pub step_end: Step,
     pub value: f64,
     pub min: f64,
     pub max: f64,

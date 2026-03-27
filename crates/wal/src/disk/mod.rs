@@ -76,11 +76,11 @@ pub fn open_disk_wal(
 
     let next_offset = consumed.advance(to_replay);
 
-    let bytes_used_val = active.bytes_used() + sealed.iter().map(|s| s.bytes_used()).sum::<u64>();
+    let bytes_used_val = active.bytes_used() + sealed.iter().map(segment::Segment::bytes_used).sum::<u64>();
 
     let next_segment = sealed
         .iter()
-        .map(|s| s.index())
+        .map(segment::Segment::index)
         .chain(std::iter::once(active.index()))
         .max()
         .unwrap_or(SegmentIndex::ZERO)
@@ -154,9 +154,8 @@ impl DiskWalAppender {
     }
 
     fn enforce_budget(&mut self) -> Result<(), WalError> {
-        let budget = match self.config.wal.max_total_size {
-            Some(b) => b,
-            None => return Ok(()),
+        let Some(budget) = self.config.wal.max_total_size else {
+            return Ok(());
         };
 
         let used = self.bytes_used.load(Ordering::Relaxed);
@@ -238,7 +237,7 @@ impl DiskWalManager {
             cursor: u64::from(cursor),
             consumed: u64::from(consumed),
         })
-        .map_err(|e| WalError::Unknown(e.into()))?;
+        .map_err(|e| WalError::Serialization(Box::new(e)))?;
 
         let tmp = self.dir.join(".wal.meta.tmp");
         fs::write(&tmp, json.as_bytes())?;
@@ -294,7 +293,7 @@ impl Wal for DiskWalManager {
     }
 
     /// Record the consumer's position, then delete fully consumed sealed segments.
-    fn truncate_through(&mut self, offset: WalOffset) -> Result<(), WalError> {
+    fn truncate_through(&self, offset: WalOffset) -> Result<(), WalError> {
         *self.consumed.lock().unwrap() = offset;
 
         let mut cursor = self.cursor.lock().unwrap();
@@ -334,7 +333,7 @@ impl Wal for DiskWalManager {
         })
     }
 
-    fn delete_all(&mut self) -> Result<(), WalError> {
+    fn delete_all(&self) -> Result<(), WalError> {
         fs::remove_dir_all(&self.dir)?;
         Ok(())
     }

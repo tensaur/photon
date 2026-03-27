@@ -38,7 +38,7 @@ mod native {
                 .lock()
                 .unwrap()
                 .compress(input)
-                .map_err(|e| CompressionError::Unknown(e.into()))?;
+                .map_err(|e| CompressionError::Internal(e.to_string()))?;
 
             output.extend_from_slice(&compressed);
             Ok(())
@@ -48,8 +48,7 @@ mod native {
             let capacity = zstd::zstd_safe::get_frame_content_size(input)
                 .ok()
                 .flatten()
-                .map(|s| s as usize)
-                .unwrap_or(input.len() * 10);
+                .map_or(input.len() * 10, |s| s as usize);
 
             let decompressed = self
                 .decompressor
@@ -108,12 +107,12 @@ mod wasm {
 
         fn decompress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
             let mut decoder = StreamingDecoder::new(input)
-                .map_err(|e| CompressionError::Unknown(anyhow::anyhow!("zstd frame init: {e}")))?;
+                .map_err(|e| CompressionError::Internal(format!("zstd frame init: {e}")))?;
 
             let mut buf = Vec::new();
             decoder
                 .read_to_end(&mut buf)
-                .map_err(|e| CompressionError::Unknown(anyhow::anyhow!("zstd decompress: {e}")))?;
+                .map_err(|e| CompressionError::Internal(format!("zstd decompress: {e}")))?;
 
             output.extend_from_slice(&buf);
             Ok(())
@@ -142,6 +141,7 @@ impl Clone for ZstdCompressor {
     }
 }
 
+#[allow(clippy::missing_fields_in_debug)]
 impl fmt::Debug for ZstdCompressor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ZstdCompressor")

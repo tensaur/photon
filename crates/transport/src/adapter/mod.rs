@@ -15,19 +15,16 @@ use crate::ports::{ByteTransport, TransportError};
 
 /// Transport protocol selection. Call [`connect`](Self::connect) to create a connected transport.
 #[derive(Clone, Copy, Debug)]
+#[derive(Default)]
 pub enum TransportKind {
     #[cfg(not(target_arch = "wasm32"))]
+    #[default]
     Tcp,
     Http,
     WebSocket,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl Default for TransportKind {
-    fn default() -> Self {
-        Self::Tcp
-    }
-}
 
 #[cfg(target_arch = "wasm32")]
 impl Default for TransportKind {

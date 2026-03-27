@@ -5,6 +5,7 @@ pub trait Codec<T>: Send + Sync + Clone + 'static {
     fn decode(&self, input: &[u8]) -> Result<T, CodecError>;
 }
 
+#[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {
     #[error("failed to encode batch: {reason}")]
@@ -12,7 +13,4 @@ pub enum CodecError {
 
     #[error("failed to decode batch: {reason}")]
     DecodeFailed { reason: String },
-
-    #[error(transparent)]
-    Unknown(#[from] anyhow::Error),
 }

@@ -890,12 +890,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
-name = "dyn-clone"
-version = "1.0.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
-
-[[package]]
 name = "ecolor"
 version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2725,7 +2719,6 @@ dependencies = [
 name = "photon"
 version = "0.1.1"
 dependencies = [
- "anyhow",
  "chrono",
  "crossbeam-channel",
  "lasso",
@@ -2835,8 +2828,8 @@ dependencies = [
 name = "photon-persist"
 version = "0.1.1"
 dependencies = [
- "anyhow",
  "bytes",
+ "crc32fast",
  "futures-util",
  "photon-core",
  "photon-protocol",
@@ -2852,7 +2845,6 @@ dependencies = [
 name = "photon-protocol"
 version = "0.1.1"
 dependencies = [
- "anyhow",
  "brotli",
  "bytes",
  "criterion",
@@ -2885,6 +2877,7 @@ dependencies = [
 name = "photon-server"
 version = "0.1.1"
 dependencies = [
+ "anyhow",
  "photon",
  "photon-core",
  "photon-downsample",
@@ -2908,7 +2901,6 @@ dependencies = [
 name = "photon-store"
 version = "0.1.1"
 dependencies = [
- "anyhow",
  "chrono",
  "clickhouse",
  "dashmap",
@@ -2935,7 +2927,6 @@ dependencies = [
 name = "photon-transport"
 version = "0.1.1"
 dependencies = [
- "anyhow",
  "async-channel",
  "async-trait",
  "axum",
@@ -2955,7 +2946,6 @@ dependencies = [
 name = "photon-uplink"
 version = "0.1.1"
 dependencies = [
- "anyhow",
  "crossbeam-channel",
  "photon-core",
  "photon-transport",
@@ -2969,10 +2959,8 @@ dependencies = [
 name = "photon-wal"
 version = "0.1.1"
 dependencies = [
- "anyhow",
  "bytes",
  "crc32fast",
- "dyn-clone",
  "photon-core",
  "serde",
  "serde_json",
@@ -3248,7 +3236,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4088,7 +4076,6 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",

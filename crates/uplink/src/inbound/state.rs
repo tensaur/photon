@@ -22,7 +22,7 @@ enum Phase {
     Shutdown,
 }
 
-pub struct ConnectionState {
+pub(crate) struct ConnectionState {
     phase: Phase,
     in_flight: BTreeMap<SequenceNumber, InFlightEntry>,
     draining_since: Option<Instant>,
@@ -33,7 +33,7 @@ pub struct ConnectionState {
 }
 
 impl ConnectionState {
-    pub fn new(config: &UplinkConfig) -> Self {
+    pub(crate) fn new(config: &UplinkConfig) -> Self {
         Self {
             phase: Phase::Connected,
             in_flight: BTreeMap::new(),
@@ -45,19 +45,19 @@ impl ConnectionState {
         }
     }
 
-    pub fn is_shutdown(&self) -> bool {
+    pub(crate) fn is_shutdown(&self) -> bool {
         self.phase == Phase::Shutdown
     }
 
-    pub fn can_send(&self) -> bool {
+    pub(crate) fn can_send(&self) -> bool {
         self.phase == Phase::Connected && self.in_flight.len() < self.max_in_flight
     }
 
-    pub fn in_flight_empty(&self) -> bool {
+    pub(crate) fn in_flight_empty(&self) -> bool {
         self.in_flight.is_empty()
     }
 
-    pub fn record_sent(&mut self, seq: SequenceNumber) {
+    pub(crate) fn record_sent(&mut self, seq: SequenceNumber) {
         self.in_flight.insert(
             seq,
             InFlightEntry {
@@ -66,11 +66,11 @@ impl ConnectionState {
         );
     }
 
-    pub fn record_acked(&mut self, seq: SequenceNumber) {
+    pub(crate) fn record_acked(&mut self, seq: SequenceNumber) {
         self.in_flight.remove(&seq);
     }
 
-    pub fn enter_reconnecting(&mut self) {
+    pub(crate) fn enter_reconnecting(&mut self) {
         tracing::warn!(
             in_flight = self.in_flight.len(),
             "connection lost, entering reconnection"
@@ -81,7 +81,7 @@ impl ConnectionState {
         };
     }
 
-    pub fn reconnected(&mut self) {
+    pub(crate) fn reconnected(&mut self) {
         tracing::info!(
             "reconnected, replaying {} in-flight batches",
             self.in_flight.len()
@@ -90,7 +90,7 @@ impl ConnectionState {
         self.phase = Phase::Connected;
     }
 
-    pub fn reconnect_due(&self) -> Option<u32> {
+    pub(crate) fn reconnect_due(&self) -> Option<u32> {
         match &self.phase {
             Phase::Reconnecting { attempt, next_at } if Instant::now() >= *next_at => {
                 Some(*attempt)
@@ -99,7 +99,7 @@ impl ConnectionState {
         }
     }
 
-    pub fn schedule_next_reconnect(&mut self, attempt: u32) {
+    pub(crate) fn schedule_next_reconnect(&mut self, attempt: u32) {
         let delay = backoff_delay(&self.retry, attempt);
         tracing::info!(
             attempt = attempt + 1,
@@ -112,7 +112,7 @@ impl ConnectionState {
         };
     }
 
-    pub fn check_timeouts(&mut self) -> Option<u64> {
+    pub(crate) fn check_timeouts(&mut self) -> Option<u64> {
         if self.in_flight.is_empty() {
             return None;
         }
@@ -131,11 +131,11 @@ impl ConnectionState {
         }
     }
 
-    pub fn shutdown(&mut self) {
+    pub(crate) fn shutdown(&mut self) {
         self.phase = Phase::Shutdown;
     }
 
-    pub fn check_drain_timeout(&mut self) -> Option<Duration> {
+    pub(crate) fn check_drain_timeout(&mut self) -> Option<Duration> {
         let since = *self.draining_since.get_or_insert(Instant::now());
         if since.elapsed() > self.shutdown_timeout {
             Some(since.elapsed())
@@ -144,17 +144,17 @@ impl ConnectionState {
         }
     }
 
-    pub fn reset_drain(&mut self) {
+    pub(crate) fn reset_drain(&mut self) {
         self.draining_since = None;
     }
 }
 
-pub enum ReconnectResult {
+pub(crate) enum ReconnectResult {
     Ok,
     Failed,
 }
 
-pub async fn try_reconnect<M: Wal + Clone, C: IngestConnection>(
+pub(crate) async fn try_reconnect<M: Wal + Clone, C: IngestConnection>(
     wal: &M,
     connection: &C,
     wal_cursor: WalOffset,

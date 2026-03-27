@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use photon_core::domain::experiment::Experiment;
 use photon_core::types::id::{ExperimentId, ProjectId};
 
-use crate::ports::experiment::{ExperimentReader, ExperimentWriter};
-use crate::ports::{ReadError, WriteError};
+use crate::ports::{ReadError, ReadRepository, WriteError, WriteRepository};
 
 #[derive(Row, Serialize, Deserialize)]
 struct ExperimentRow {
@@ -58,39 +57,39 @@ impl ClickHouseExperimentStore {
     }
 }
 
-impl ExperimentWriter for ClickHouseExperimentStore {
-    async fn upsert_experiment(&self, experiment: &Experiment) -> Result<(), WriteError> {
+impl WriteRepository<Experiment> for ClickHouseExperimentStore {
+    async fn upsert(&self, experiment: &Experiment) -> Result<(), WriteError> {
         let mut insert = self
             .client
             .insert("experiments")
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         insert
             .write(&ExperimentRow::from(experiment))
             .await
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         insert
             .end()
             .await
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
         Ok(())
     }
 }
 
-impl ExperimentReader for ClickHouseExperimentStore {
-    async fn list_experiments(&self) -> Result<Vec<Experiment>, ReadError> {
+impl ReadRepository<Experiment> for ClickHouseExperimentStore {
+    async fn list(&self) -> Result<Vec<Experiment>, ReadError> {
         let rows: Vec<ExperimentRow> = self
             .client
             .query("SELECT ?fields FROM experiments FINAL")
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
         Ok(rows.into_iter().map(Experiment::from).collect())
     }
 
-    async fn get_experiment(&self, id: &ExperimentId) -> Result<Option<Experiment>, ReadError> {
+    async fn get(&self, id: &ExperimentId) -> Result<Option<Experiment>, ReadError> {
         let uuid: uuid::Uuid = (*id).into();
 
         let rows: Vec<ExperimentRow> = self
@@ -99,7 +98,7 @@ impl ExperimentReader for ClickHouseExperimentStore {
             .bind(uuid)
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
         Ok(rows.into_iter().next().map(Experiment::from))
     }

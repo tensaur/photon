@@ -2,6 +2,7 @@ pub mod ack;
 pub mod batch;
 pub mod bucket;
 pub mod config;
+pub mod error;
 pub mod id;
 pub mod ingest;
 pub mod metric;

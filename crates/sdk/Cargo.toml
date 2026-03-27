@@ -19,7 +19,6 @@ photon-wal.workspace = true
 photon-batch.workspace = true
 photon-uplink.workspace = true
 
-anyhow.workspace = true
 chrono.workspace = true
 crossbeam-channel.workspace = true
 lasso.workspace = true
@@ -33,3 +32,6 @@ bench = false
 [[bench]]
 name = "throughput"
 harness = false
+
+[lints]
+workspace = true

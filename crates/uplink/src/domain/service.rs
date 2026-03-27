@@ -114,7 +114,7 @@ where
 
     fn handle_ack(&mut self, ack: AckResult) -> Result<(), UplinkError> {
         let before = self.tracker.committed();
-        let outcome = self.tracker.track(ack, &mut self.stats);
+        let outcome = self.tracker.track(&ack, &mut self.stats);
 
         if outcome.new_watermark.is_some() {
             let after = self.tracker.committed();

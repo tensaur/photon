@@ -11,8 +11,8 @@ pub enum StartError {
     #[error("invalid config for {field}: {reason}")]
     Config { field: String, reason: String },
 
-    #[error(transparent)]
-    Unknown(#[from] anyhow::Error),
+    #[error("failed to spawn thread: {0}")]
+    ThreadSpawn(String),
 }
 
 #[derive(Debug, thiserror::Error)]

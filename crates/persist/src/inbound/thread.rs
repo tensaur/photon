@@ -31,7 +31,7 @@ pub struct PersistStats {
 }
 
 pub async fn run<S, W>(
-    mut wal: W,
+    wal: W,
     notify: Arc<tokio::sync::Notify>,
     service: S,
     config: PersistConfig,
@@ -97,9 +97,9 @@ where
         }
 
         tokio::select! {
-            _ = notify.notified() => {}
-            _ = tokio::time::sleep(config.poll_interval) => {}
-            _ = cancel.cancelled() => break,
+            () = notify.notified() => {}
+            () = tokio::time::sleep(config.poll_interval) => {}
+            () = cancel.cancelled() => break,
         }
     }
 

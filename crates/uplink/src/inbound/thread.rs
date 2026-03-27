@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use super::state::{ConnectionState, ReconnectResult, try_reconnect};
 use crate::UplinkThreadError;
 use crate::domain::ack::UplinkStats;
-use crate::domain::error::{TransportError, UplinkError};
+use crate::domain::error::{UplinkTransportError, UplinkError};
 use crate::domain::ports::IngestConnection;
 use crate::domain::service::{Service, UplinkService};
 
@@ -32,7 +32,7 @@ where
     C: IngestConnection,
     M: Wal + Clone,
 {
-    let mut service = Service::new(connection.clone(), wal.clone(), run.id, start_sequence);
+    let mut service = Service::new(connection.clone(), wal.clone(), run.id(), start_sequence);
     service.recover().await?;
 
     let _ = connection
@@ -76,36 +76,34 @@ where
             continue;
         }
 
-        if let Some(batch) = batch {
-            if conn.can_send() {
+        if let Some(batch) = batch
+            && conn.can_send() {
                 match service.send(&batch).await {
                     Ok(()) => conn.record_sent(batch.sequence_number),
-                    Err(UplinkError::Transport(TransportError::ConnectionLost { .. })) => {
+                    Err(UplinkError::Transport(UplinkTransportError::ConnectionLost { .. })) => {
                         conn.enter_reconnecting();
                         continue;
                     }
                     Err(e) => return Err(e.into()),
                 }
             }
-        }
 
         match tokio::time::timeout(Duration::from_millis(1), connection.recv()).await {
-            Err(_) => {}
             Ok(Ok(IngestResult::Ack(ack))) => {
                 conn.record_acked(ack.sequence_number);
                 service.handle_ack(ack)?;
             }
             Ok(Ok(IngestResult::Error(e))) => {
-                tracing::warn!("ingest error from server: {e}");
+                tracing::warn!("ingest error from server: {e:?}");
             }
-            Ok(Ok(_)) => {}
             Ok(Err(e)) => match &e {
-                TransportError::ConnectionLost { .. } => {
+                UplinkTransportError::ConnectionLost { .. } => {
                     conn.enter_reconnecting();
                     continue;
                 }
                 _ => return Err(UplinkError::from(e).into()),
             },
+            _ => {}
         }
 
         if conn.check_timeouts().is_some() {

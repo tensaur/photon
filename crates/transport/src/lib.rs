@@ -24,7 +24,7 @@ use crate::adapter::tcp::TcpTransport;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::codec::CodecTransport;
 
-/// Accept TCP connections, wrap each in a CodecTransport, and dispatch to a handler.
+/// Accept TCP connections, wrap each in a `CodecTransport`, and dispatch to a handler.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn serve<F, Fut>(listener: TcpListener, codec: CodecKind, handler: F)
 where
@@ -41,7 +41,6 @@ where
         };
 
         let handler = handler.clone();
-        let codec = codec.clone();
 
         tokio::spawn(async move {
             tracing::trace!("accepted connection from {peer}");

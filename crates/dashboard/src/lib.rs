@@ -39,19 +39,16 @@ pub fn run(server_url: String) -> eframe::Result {
                 .replace("/api/query", "/api/ws");
             let ws_transport =
                 handle.block_on(async { WebSocketTransport::connect(&ws_url).await.ok() });
-            let ws_codec_transport = ws_transport.map(|bt| CodecTransport::new(codec.clone(), bt));
+            let ws_codec_transport = ws_transport.map(|bt| CodecTransport::new(codec, bt));
 
             // Build subscriber + reader transport from the same clone
-            let (subscriber, reader_transport) = match ws_codec_transport {
-                Some(t) => (WsSubscriber::new(t.clone()), Some(t)),
-                None => {
-                    let (out_tx, _out_rx) = async_channel::bounded(1);
-                    let (_in_tx, in_rx) = async_channel::bounded(1);
-                    let dummy = WebSocketTransport::from_channels(out_tx, in_rx);
-                    let t = CodecTransport::new(codec.clone(), dummy);
+            let (subscriber, reader_transport) = if let Some(t) = ws_codec_transport { (WsSubscriber::new(t.clone()), Some(t)) } else {
+                let (out_tx, _out_rx) = async_channel::bounded(1);
+                let (_in_tx, in_rx) = async_channel::bounded(1);
+                let dummy = WebSocketTransport::from_channels(out_tx, in_rx);
+                let t = CodecTransport::new(codec, dummy);
 
-                    (WsSubscriber::new(t), None)
-                }
+                (WsSubscriber::new(t), None)
             };
 
             // Create querier (HTTP)

@@ -10,3 +10,6 @@ publish = true
 [dependencies]
 photon-core.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+
+[lints]
+workspace = true

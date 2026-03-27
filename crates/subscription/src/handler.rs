@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use photon_core::types::id::RunId;
 use photon_core::types::subscription::{SubscriptionEvent, SubscriptionMessage};
-use photon_transport::ports::{Transport, TransportError};
+use photon_transport::ports::Transport;
 use tokio::sync::broadcast;
 
 pub async fn handle<T>(transport: &T, mut events: broadcast::Receiver<SubscriptionEvent>)
@@ -21,7 +21,6 @@ where
                     Ok(SubscriptionMessage::Unsubscribe(run_id)) => {
                         subscribed_runs.remove(&run_id);
                     }
-                    Err(TransportError::StreamClosed(_)) => break,
                     Err(_) => break,
                 }
             }

@@ -32,15 +32,17 @@ use photon_wal::{DiskWalConfig, open_disk_wal};
 mod dashboard;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
 
-    let ingest_addr = "[::1]:50051";
-    let api_addr = "[::1]:50052";
+    let ingest_addr = std::env::var("PHOTON_INGEST_ADDR")
+        .unwrap_or_else(|_| "[::1]:50051".into());
+    let api_addr = std::env::var("PHOTON_API_ADDR")
+        .unwrap_or_else(|_| "[::1]:50052".into());
 
     let codec = CodecKind::default();
     let cancel = CancellationToken::new();
@@ -64,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
     // Ingest hexagon (WAL-backed)
-    let ingest_service = Arc::new(IngestService::new(wal_appender, notify.clone()));
+    let ingest_service = IngestService::new(wal_appender, notify.clone());
 
     // Seed dedup cache from persisted watermarks
     let watermarks = watermark_store.read_all().await?;
@@ -91,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cancel.clone(),
     ));
 
-    let query_service = Arc::new(QueryService::new(
+    let query_service = QueryService::new(
         NoOpSelector,
         bucket_store,
         metric_store,
@@ -100,19 +102,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         experiment_store.clone(),
         project_store.clone(),
         TierSelector::default(),
-    ));
+    );
 
-    let ingest_listener = TcpListener::bind(ingest_addr).await?;
+    let ingest_listener = TcpListener::bind(&ingest_addr).await?;
     tracing::info!("ingest listening on {ingest_addr}");
 
-    tokio::spawn(photon_transport::serve(ingest_listener, codec, move |t| {
+    let ingest_handle = tokio::spawn(photon_transport::serve(ingest_listener, codec, move |t| {
         let svc = ingest_service.clone();
         let run_store = run_store.clone();
         let experiment_store = experiment_store.clone();
         let project_store = project_store.clone();
         async move {
             ingest_handler::handle_envelope(&svc, &run_store, &experiment_store, &project_store, &t)
-                .await
+                .await;
         }
     }));
 
@@ -129,15 +131,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "dashboard")]
     let router = router.fallback(dashboard::get_file);
 
-    let api_listener = TcpListener::bind(api_addr).await?;
+    let api_listener = TcpListener::bind(&api_addr).await?;
     tracing::info!("api listening on http://{api_addr}");
 
-    tokio::spawn(async move { router.serve(api_listener).await });
+    let api_handle = tokio::spawn(async move { router.serve(api_listener).await });
 
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");
     cancel.cancel();
-    let _ = persist_handle.await;
+    let _ = tokio::join!(persist_handle, ingest_handle, api_handle);
 
     Ok(())
 }

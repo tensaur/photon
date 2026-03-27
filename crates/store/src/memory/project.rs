@@ -5,8 +5,7 @@ use dashmap::DashMap;
 use photon_core::domain::project::Project;
 use photon_core::types::id::ProjectId;
 
-use crate::ports::project::{ProjectReader, ProjectWriter};
-use crate::ports::{ReadError, WriteError};
+use crate::ports::{ReadError, ReadRepository, WriteError, WriteRepository};
 
 #[derive(Clone)]
 pub struct InMemoryProjectStore {
@@ -27,8 +26,8 @@ impl Default for InMemoryProjectStore {
     }
 }
 
-impl ProjectReader for InMemoryProjectStore {
-    async fn list_projects(&self) -> Result<Vec<Project>, ReadError> {
+impl ReadRepository<Project> for InMemoryProjectStore {
+    async fn list(&self) -> Result<Vec<Project>, ReadError> {
         Ok(self
             .data
             .iter()
@@ -36,13 +35,13 @@ impl ProjectReader for InMemoryProjectStore {
             .collect())
     }
 
-    async fn get_project(&self, id: &ProjectId) -> Result<Option<Project>, ReadError> {
+    async fn get(&self, id: &ProjectId) -> Result<Option<Project>, ReadError> {
         Ok(self.data.get(id).map(|entry| entry.value().clone()))
     }
 }
 
-impl ProjectWriter for InMemoryProjectStore {
-    async fn upsert_project(&self, project: &Project) -> Result<(), WriteError> {
+impl WriteRepository<Project> for InMemoryProjectStore {
+    async fn upsert(&self, project: &Project) -> Result<(), WriteError> {
         self.data.insert(project.id, project.clone());
         Ok(())
     }

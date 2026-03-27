@@ -14,7 +14,7 @@ use crate::domain::error::{
 use crate::domain::ports::{MetricQuerier, MetricSubscriber};
 
 #[cfg(not(target_arch = "wasm32"))]
-pub trait DashboardService: Send + Sync + 'static {
+pub trait DashboardService: Clone + Send + Sync + 'static {
     fn list_runs(&self) -> impl Future<Output = Result<Vec<Run>, ListRunsError>> + Send;
 
     fn list_experiments(

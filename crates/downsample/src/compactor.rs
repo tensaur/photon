@@ -1,6 +1,6 @@
 use photon_core::types::bucket::BucketEntry;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::Metric;
+use photon_core::types::metric::{Metric, Step};
 use photon_store::ports::bucket::BucketWriter;
 use photon_store::ports::compaction::CompactionCursor;
 use photon_store::ports::metric::MetricReader;
@@ -60,12 +60,12 @@ where
                 .get(run_id, key, tier_index)
                 .await
                 .map_err(CompactionError::Read)?
-                .unwrap_or(0);
+                .unwrap_or(Step::ZERO);
 
             // Read raw points past the cursor
             let points = self
                 .metric_reader
-                .read_points(run_id, key, cursor_step..u64::MAX)
+                .read_points(run_id, key, cursor_step..Step::MAX)
                 .await
                 .map_err(CompactionError::Read)?;
 
@@ -128,14 +128,14 @@ where
             for (tier_index, &divisor) in self.divisors.iter().enumerate() {
                 let cursor_step = self
                     .cursor
-                    .get(run_id, &key, tier_index)
+                    .get(run_id, key, tier_index)
                     .await
                     .map_err(CompactionError::Read)?
-                    .unwrap_or(0);
+                    .unwrap_or(Step::ZERO);
 
                 let points = self
                     .metric_reader
-                    .read_points(run_id, &key, cursor_step..u64::MAX)
+                    .read_points(run_id, key, cursor_step..Step::MAX)
                     .await
                     .map_err(CompactionError::Read)?;
 
@@ -176,7 +176,7 @@ where
 
                 let last_step = entries.last().unwrap().bucket.step_end;
                 self.cursor
-                    .advance(run_id, &key, tier_index, last_step + 1)
+                    .advance(run_id, key, tier_index, last_step + 1)
                     .await
                     .map_err(CompactionError::Write)?;
 

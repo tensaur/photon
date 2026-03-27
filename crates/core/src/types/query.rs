@@ -5,14 +5,15 @@ use serde::{Deserialize, Serialize};
 use crate::domain::experiment::Experiment;
 use crate::domain::project::Project;
 use crate::domain::run::Run;
+use crate::types::error::ApiError;
 use crate::types::id::RunId;
-use crate::types::metric::Metric;
+use crate::types::metric::{Metric, Step};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetricQuery {
     pub run_id: RunId,
     pub key: Metric,
-    pub step_range: Range<u64>,
+    pub step_range: Range<Step>,
     pub target_points: usize,
 }
 
@@ -44,20 +45,20 @@ impl SeriesData {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DataPoint {
-    pub step: u64,
+    pub step: Step,
     pub value: f64,
 }
 
 impl From<&DataPoint> for [f64; 2] {
     fn from(p: &DataPoint) -> Self {
-        [p.step as f64, p.value]
+        [p.step.as_u64() as f64, p.value]
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RangePoint {
-    pub step_start: u64,
-    pub step_end: u64,
+    pub step_start: Step,
+    pub step_end: Step,
     pub min: f64,
     pub max: f64,
 }
@@ -92,5 +93,5 @@ pub enum QueryResult {
     Metrics(Vec<Metric>),
     Series(MetricSeries),
     BatchResponse(QueryResponse),
-    Error(String),
+    Error(ApiError),
 }

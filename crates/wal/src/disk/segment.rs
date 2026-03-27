@@ -25,18 +25,18 @@ const OFF_CREATED_AT: usize = 36;
 const OFF_POINT_COUNT: usize = 44;
 const OFF_UNCOMPRESSED: usize = 48;
 
-pub trait SegmentPhase {}
+pub(crate) trait SegmentPhase {}
 
-pub struct Active;
+pub(crate) struct Active;
 impl SegmentPhase for Active {}
 
-pub struct Sealed;
+pub(crate) struct Sealed;
 impl SegmentPhase for Sealed {}
 
-pub struct Acked;
+pub(crate) struct Acked;
 impl SegmentPhase for Acked {}
 
-pub struct Segment<S: SegmentPhase> {
+pub(crate) struct Segment<S: SegmentPhase> {
     path: PathBuf,
     index: SegmentIndex,
     file: File,
@@ -47,7 +47,7 @@ pub struct Segment<S: SegmentPhase> {
 }
 
 impl Segment<Active> {
-    pub fn create(dir: &Path, index: SegmentIndex, capacity: u64) -> Result<Self, WalError> {
+    pub(crate) fn create(dir: &Path, index: SegmentIndex, capacity: u64) -> Result<Self, WalError> {
         let path = segment_path(dir, index);
 
         let file = OpenOptions::new()
@@ -68,7 +68,7 @@ impl Segment<Active> {
     }
 
     /// Reopen an existing segment for crash recovery.
-    pub fn open_for_recovery(
+    pub(crate) fn open_for_recovery(
         dir: &Path,
         index: SegmentIndex,
         capacity: u64,
@@ -90,7 +90,7 @@ impl Segment<Active> {
         Ok(seg)
     }
 
-    pub fn append(&mut self, batch: &WireBatch, rotation_threshold: f64) -> Result<bool, WalError> {
+    pub(crate) fn append(&mut self, batch: &WireBatch, rotation_threshold: f64) -> Result<bool, WalError> {
         let payload = &batch.compressed_payload;
         let total = RECORD_OVERHEAD as u64 + payload.len() as u64;
 
@@ -135,20 +135,21 @@ impl Segment<Active> {
         Ok(self.write_offset as f64 / self.capacity as f64 > rotation_threshold)
     }
 
-    pub fn flush(&self) -> Result<(), WalError> {
+    pub(crate) fn flush(&self) -> Result<(), WalError> {
         self.file.sync_data().map_err(Into::into)
     }
 
     /// No explicit sync as the OS flushes page cache
-    pub fn flush_async(&self) -> Result<(), WalError> {
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    pub(crate) fn flush_async(&self) -> Result<(), WalError> {
         Ok(())
     }
 
-    pub fn seal(self) -> Segment<Sealed> {
+    pub(crate) fn seal(self) -> Segment<Sealed> {
         self.transition()
     }
 
-    /// Walk from offset 0, validate each record's CRC, set write_offset
+    /// Walk from offset 0, validate each record's CRC, set `write_offset`
     /// after the last valid one. Truncate any trailing partial record.
     fn scan_valid_extent(&mut self) -> Result<(), WalError> {
         self.file.seek(SeekFrom::Start(0))?;
@@ -205,13 +206,13 @@ impl Segment<Active> {
 }
 
 impl Segment<Sealed> {
-    pub fn mark_acked(self) -> Segment<Acked> {
+    pub(crate) fn mark_acked(self) -> Segment<Acked> {
         self.transition()
     }
 }
 
 impl Segment<Acked> {
-    pub fn delete(self) -> io::Result<()> {
+    pub(crate) fn delete(self) -> io::Result<()> {
         let path = self.path.clone();
         drop(self.file);
         fs::remove_file(&path)
@@ -219,15 +220,15 @@ impl Segment<Acked> {
 }
 
 impl<S: SegmentPhase> Segment<S> {
-    pub fn index(&self) -> SegmentIndex {
+    pub(crate) fn index(&self) -> SegmentIndex {
         self.index
     }
-    pub fn bytes_used(&self) -> u64 {
+    pub(crate) fn bytes_used(&self) -> u64 {
         self.write_offset
     }
 
     /// Count records without reading payloads into memory.
-    pub fn record_count(&self) -> Result<usize, WalError> {
+    pub(crate) fn record_count(&self) -> Result<usize, WalError> {
         let mut reader = BufReader::new(&self.file);
         reader.seek(SeekFrom::Start(0))?;
 
@@ -260,7 +261,7 @@ impl<S: SegmentPhase> Segment<S> {
     }
 
     /// Read all valid records from the segment.
-    pub fn read_records(&self) -> Result<Vec<WireBatch>, WalError> {
+    pub(crate) fn read_records(&self) -> Result<Vec<WireBatch>, WalError> {
         let mut reader = BufReader::new(&self.file);
         reader.seek(SeekFrom::Start(0))?;
 

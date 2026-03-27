@@ -37,7 +37,7 @@ impl WatermarkWriter for ClickHouseWatermarkStore {
         let mut insert = self
             .client
             .insert("watermarks")
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         for (run_id, seq) in entries {
             insert
@@ -46,13 +46,13 @@ impl WatermarkWriter for ClickHouseWatermarkStore {
                     sequence: (*seq).into(),
                 })
                 .await
-                .map_err(|e| WriteError::Unknown(e.into()))?;
+                .map_err(|e| WriteError::Store(Box::new(e)))?;
         }
 
         insert
             .end()
             .await
-            .map_err(|e| WriteError::Unknown(e.into()))?;
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
         Ok(())
     }
 }
@@ -64,7 +64,7 @@ impl WatermarkReader for ClickHouseWatermarkStore {
             .query("SELECT ?fields FROM watermarks FINAL")
             .fetch_all()
             .await
-            .map_err(|e| ReadError::Unknown(e.into()))?;
+            .map_err(|e| ReadError::Store(Box::new(e)))?;
 
         Ok(rows
             .into_iter()

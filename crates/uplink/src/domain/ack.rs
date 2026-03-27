@@ -40,7 +40,7 @@ impl AckTracker {
         self.committed
     }
 
-    pub fn track(&mut self, ack: AckResult, stats: &mut UplinkStats) -> AckOutcome {
+    pub fn track(&mut self, ack: &AckResult, stats: &mut UplinkStats) -> AckOutcome {
         let seq = ack.sequence_number;
 
         match ack.status {

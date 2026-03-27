@@ -6,7 +6,7 @@ use lasso::ThreadedRodeo;
 
 use photon_batch::{BatchError, BatchStats};
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{Metric, MetricKey, RawPoint};
+use photon_core::types::metric::{Metric, MetricKey, RawPoint, Step};
 use photon_uplink::{UplinkStats, UplinkThreadError};
 use photon_wal::Wal;
 use tokio::sync::oneshot;
@@ -32,26 +32,26 @@ pub(crate) struct UplinkHandle {
 }
 
 pub struct Run {
-    run_id: RunId,
+    id: RunId,
     accumulator: Accumulator<RawPoint>,
     interner: Arc<ThreadedRodeo>,
     batch_handle: JoinHandle<Result<BatchStats, BatchError>>,
     uplink_handle: Option<UplinkHandle>,
-    wal: Box<dyn Wal>,
+    wal: Arc<dyn Wal>,
     points_logged: u64,
 }
 
 impl Run {
     pub(crate) fn new(
-        run_id: RunId,
+        id: RunId,
         accumulator: Accumulator<RawPoint>,
         interner: Arc<ThreadedRodeo>,
         batch_handle: JoinHandle<Result<BatchStats, BatchError>>,
         uplink_handle: Option<UplinkHandle>,
-        wal: Box<dyn Wal>,
+        wal: Arc<dyn Wal>,
     ) -> Self {
         Self {
-            run_id,
+            id,
             accumulator,
             interner,
             batch_handle,
@@ -75,7 +75,7 @@ impl Run {
         self.accumulator.push(RawPoint {
             key: metric_key,
             value,
-            step,
+            step: Step::new(step),
             timestamp_ns: now,
         });
 
@@ -92,7 +92,7 @@ impl Run {
     }
 
     pub fn id(&self) -> RunId {
-        self.run_id
+        self.id
     }
 
     /// Flushes remaining points and waits for the pipeline to drain.

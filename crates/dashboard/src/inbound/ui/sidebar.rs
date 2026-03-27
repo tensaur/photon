@@ -85,7 +85,7 @@ pub fn show(
     let mut by_experiment: HashMap<Option<ExperimentId>, Vec<&Run>> = HashMap::new();
     for run in &filtered {
         by_experiment
-            .entry(run.experiment_id)
+            .entry(run.experiment_id())
             .or_default()
             .push(run);
     }
@@ -100,9 +100,7 @@ pub fn show(
         let header_text = match exp_id {
             Some(id) => experiments
                 .iter()
-                .find(|e| e.id == id)
-                .map(|e| e.name.clone())
-                .unwrap_or_else(|| format!("Experiment {}", id.short())),
+                .find(|e| e.id == id).map_or_else(|| format!("Experiment {}", id.short()), |e| e.name.clone()),
             None => "Ungrouped".to_string(),
         };
         let header = egui::CollapsingHeader::new(RichText::new(header_text).color(theme::TEXT_DIM))
@@ -110,8 +108,8 @@ pub fn show(
             .default_open(*expanded)
             .show(ui, |ui| {
                 for run in exp_runs {
-                    let is_selected = state.selected_runs.contains(&run.id);
-                    let status_color = status_color(&run.status);
+                    let is_selected = state.selected_runs.contains(&run.id());
+                    let status_color = status_color(run.status());
 
                     ui.horizontal(|ui| {
                         // Status dot.
@@ -119,7 +117,7 @@ pub fn show(
                             ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                         ui.painter().circle_filled(rect.center(), 4.0, status_color);
 
-                        let label = RichText::new(&run.name).color(if is_selected {
+                        let label = RichText::new(run.name()).color(if is_selected {
                             theme::ACCENT
                         } else {
                             theme::TEXT_PRIMARY
@@ -130,13 +128,13 @@ pub fn show(
                             let modifier = ui.input(|i| i.modifiers.command);
                             if modifier {
                                 // Ctrl/Cmd+click: toggle run in/out of selection
-                                action = Some(SidebarAction::ToggleRun(run.id));
+                                action = Some(SidebarAction::ToggleRun(run.id()));
                             } else if is_selected && state.selected_runs.len() == 1 {
                                 // Click on sole selected run: deselect
                                 action = Some(SidebarAction::ClearSelection);
                             } else {
                                 // Normal click: replace selection with this run
-                                action = Some(SidebarAction::SelectRun(run.id));
+                                action = Some(SidebarAction::SelectRun(run.id()));
                             }
                         }
                     });
@@ -165,11 +163,10 @@ fn status_color(status: &RunStatus) -> Color32 {
 }
 
 fn matches_status(run: &Run, state: &SidebarState) -> bool {
-    match &run.status {
-        RunStatus::Running => state.show_running,
+    match run.status() {
+        RunStatus::Running | RunStatus::Created => state.show_running,
         RunStatus::Finished => state.show_finished,
         RunStatus::Failed { .. } => state.show_failed,
-        RunStatus::Created => state.show_running, // group with running
     }
 }
 
@@ -178,5 +175,5 @@ fn matches_search(run: &Run, query: &str) -> bool {
         return true;
     }
     let q = query.to_lowercase();
-    run.name.to_lowercase().contains(&q) || run.tags.iter().any(|t| t.to_lowercase().contains(&q))
+    run.name().to_lowercase().contains(&q) || run.tags().iter().any(|t| t.to_lowercase().contains(&q))
 }
