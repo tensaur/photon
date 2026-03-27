@@ -73,10 +73,8 @@ impl From<RunRow> for Run {
             r.name,
             status,
             r.tags,
-            chrono::DateTime::from_timestamp_millis(r.created_at)
-                .unwrap_or_default(),
-            chrono::DateTime::from_timestamp_millis(r.updated_at)
-                .unwrap_or_default(),
+            chrono::DateTime::from_timestamp_millis(r.created_at).unwrap_or_default(),
+            chrono::DateTime::from_timestamp_millis(r.updated_at).unwrap_or_default(),
         )
     }
 }

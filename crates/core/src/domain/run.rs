@@ -27,7 +27,7 @@ pub struct Run {
 }
 
 impl Run {
-    /// Create a new run from a request. Generates id and timestamps.
+    /// Create a new run from a request.
     pub fn create(req: CreateRunRequest) -> Self {
         let now = Utc::now();
         Self {
@@ -43,7 +43,7 @@ impl Run {
         }
     }
 
-    /// Reconstruct a run from persisted data. No validation is performed.
+    /// Reconstruct a run from persisted data.
     pub fn restore(
         id: RunId,
         project_id: ProjectId,
@@ -67,8 +67,6 @@ impl Run {
             updated_at,
         }
     }
-
-    // --- Getters ---
 
     pub fn id(&self) -> RunId {
         self.id
@@ -105,8 +103,6 @@ impl Run {
     pub fn updated_at(&self) -> DateTime<Utc> {
         self.updated_at
     }
-
-    // --- Transitions ---
 
     pub fn start(&mut self) -> Result<(), RunStatusError> {
         match self.status {
@@ -251,9 +247,11 @@ mod tests {
         assert!(make_run(RunStatus::Created).is_active());
         assert!(make_run(RunStatus::Running).is_active());
         assert!(!make_run(RunStatus::Finished).is_active());
-        assert!(!make_run(RunStatus::Failed {
-            reason: "err".to_string()
-        })
-        .is_active());
+        assert!(
+            !make_run(RunStatus::Failed {
+                reason: "err".to_string()
+            })
+            .is_active()
+        );
     }
 }

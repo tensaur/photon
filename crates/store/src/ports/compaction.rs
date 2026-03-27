@@ -6,8 +6,6 @@ use photon_core::types::metric::{Metric, Step};
 use super::{ReadError, WriteError};
 
 /// Tracks how far each tier has been compacted for a given run and metric.
-/// The step value is the exclusive upper bound of compacted data — all steps
-/// below this value have been aggregated into buckets.
 pub trait CompactionCursor: Send + Sync + Clone + 'static {
     fn get(
         &self,

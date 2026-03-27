@@ -16,7 +16,6 @@ pub enum UplinkTransportError {
         sequence: SequenceNumber,
         message: String,
     },
-
 }
 
 #[derive(Debug, thiserror::Error)]

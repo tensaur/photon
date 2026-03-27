@@ -42,7 +42,9 @@ pub fn run(server_url: String) -> eframe::Result {
             let ws_codec_transport = ws_transport.map(|bt| CodecTransport::new(codec, bt));
 
             // Build subscriber + reader transport from the same clone
-            let (subscriber, reader_transport) = if let Some(t) = ws_codec_transport { (WsSubscriber::new(t.clone()), Some(t)) } else {
+            let (subscriber, reader_transport) = if let Some(t) = ws_codec_transport {
+                (WsSubscriber::new(t.clone()), Some(t))
+            } else {
                 let (out_tx, _out_rx) = async_channel::bounded(1);
                 let (_in_tx, in_rx) = async_channel::bounded(1);
                 let dummy = WebSocketTransport::from_channels(out_tx, in_rx);

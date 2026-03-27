@@ -204,7 +204,13 @@ mod tests {
 
     #[test]
     fn test_invalid_characters_fail() {
-        let invalid = ["has space", "emoji\u{1F600}", "colon:bad", "semi;col", "q?mark"];
+        let invalid = [
+            "has space",
+            "emoji\u{1F600}",
+            "colon:bad",
+            "semi;col",
+            "q?mark",
+        ];
         for name in invalid {
             assert!(
                 matches!(metric(name), Err(MetricError::InvalidChar(_))),

@@ -69,8 +69,7 @@ impl Default for RetryConfig {
 }
 
 /// Controls how aggressively the WAL fsyncs to disk.
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub enum WalSyncPolicy {
     /// fsync after every batch write. Maximum durability, ~10% throughput cost.
     EveryBatch,
@@ -82,7 +81,6 @@ pub enum WalSyncPolicy {
     #[default]
     OsManaged,
 }
-
 
 /// Configuration for the WAL storage backend.
 #[derive(Clone, Debug)]

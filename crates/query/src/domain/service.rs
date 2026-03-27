@@ -3,9 +3,9 @@ use std::future::Future;
 use photon_core::domain::experiment::Experiment;
 use photon_core::domain::project::Project;
 use photon_core::domain::run::Run;
+use photon_core::types::error::ApiError;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, Step};
-use photon_core::types::error::ApiError;
 use photon_core::types::query::{
     DataPoint, MetricQuery, MetricSeries, QueryMessage, QueryRequest, QueryResponse, QueryResult,
     RangePoint, SeriesData,

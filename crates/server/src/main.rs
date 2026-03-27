@@ -17,12 +17,12 @@ use photon_query::domain::tier::TierSelector;
 use photon_query::inbound::handler as query_handler;
 use photon_store::clickhouse::bucket::ClickHouseBucketStore;
 use photon_store::clickhouse::compaction::ClickHouseCompactionCursor;
-use photon_store::clickhouse::metric::ClickHouseMetricStore;
-use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
-use photon_store::clickhouse::{ClientBuilder, migrate};
 use photon_store::clickhouse::experiment::ClickHouseExperimentStore;
+use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::project::ClickHouseProjectStore;
 use photon_store::clickhouse::run::ClickHouseRunStore;
+use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
+use photon_store::clickhouse::{ClientBuilder, migrate};
 use photon_store::ports::watermark::WatermarkReader;
 use photon_subscription::SubscriptionHook;
 use photon_transport::router::Router;
@@ -39,10 +39,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let ingest_addr = std::env::var("PHOTON_INGEST_ADDR")
-        .unwrap_or_else(|_| "[::1]:50051".into());
-    let api_addr = std::env::var("PHOTON_API_ADDR")
-        .unwrap_or_else(|_| "[::1]:50052".into());
+    let ingest_addr = std::env::var("PHOTON_INGEST_ADDR").unwrap_or_else(|_| "[::1]:50051".into());
+    let api_addr = std::env::var("PHOTON_API_ADDR").unwrap_or_else(|_| "[::1]:50052".into());
 
     let codec = CodecKind::default();
     let cancel = CancellationToken::new();
@@ -113,8 +111,14 @@ async fn main() -> anyhow::Result<()> {
         let experiment_store = experiment_store.clone();
         let project_store = project_store.clone();
         async move {
-            ingest_handler::handle_envelope(&svc, &run_store, &experiment_store, &project_store, &t)
-                .await;
+            ingest_handler::handle_envelope(
+                &svc,
+                &run_store,
+                &experiment_store,
+                &project_store,
+                &t,
+            )
+            .await;
         }
     }));
 

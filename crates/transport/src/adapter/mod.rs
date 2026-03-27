@@ -14,8 +14,7 @@ use self::websocket::WebSocketTransport;
 use crate::ports::{ByteTransport, TransportError};
 
 /// Transport protocol selection. Call [`connect`](Self::connect) to create a connected transport.
-#[derive(Clone, Copy, Debug)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum TransportKind {
     #[cfg(not(target_arch = "wasm32"))]
     #[default]
@@ -25,7 +24,6 @@ pub enum TransportKind {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-
 #[cfg(target_arch = "wasm32")]
 impl Default for TransportKind {
     fn default() -> Self {

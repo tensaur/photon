@@ -100,7 +100,8 @@ pub fn show(
         let header_text = match exp_id {
             Some(id) => experiments
                 .iter()
-                .find(|e| e.id == id).map_or_else(|| format!("Experiment {}", id.short()), |e| e.name.clone()),
+                .find(|e| e.id == id)
+                .map_or_else(|| format!("Experiment {}", id.short()), |e| e.name.clone()),
             None => "Ungrouped".to_string(),
         };
         let header = egui::CollapsingHeader::new(RichText::new(header_text).color(theme::TEXT_DIM))
@@ -175,5 +176,6 @@ fn matches_search(run: &Run, query: &str) -> bool {
         return true;
     }
     let q = query.to_lowercase();
-    run.name().to_lowercase().contains(&q) || run.tags().iter().any(|t| t.to_lowercase().contains(&q))
+    run.name().to_lowercase().contains(&q)
+        || run.tags().iter().any(|t| t.to_lowercase().contains(&q))
 }

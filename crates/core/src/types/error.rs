@@ -2,8 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// Transport-level error returned to clients. Separates public error
-/// information from internal domain error details.
+/// Transport-level error returned to clients.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ApiError {
     /// The requested resource was not found.

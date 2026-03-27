@@ -45,15 +45,13 @@ where
                 }
             }
         }
-        IngestMessage::RegisterProject(project) => {
-            match project_writer.upsert(&project).await {
-                Ok(()) => IngestResult::ProjectRegistered(project.id),
-                Err(e) => {
-                    tracing::error!("register project failed: {e}");
-                    IngestResult::Error(ApiError::Internal)
-                }
+        IngestMessage::RegisterProject(project) => match project_writer.upsert(&project).await {
+            Ok(()) => IngestResult::ProjectRegistered(project.id),
+            Err(e) => {
+                tracing::error!("register project failed: {e}");
+                IngestResult::Error(ApiError::Internal)
             }
-        }
+        },
         IngestMessage::QueryWatermark(run_id) => match service.watermark(&run_id).await {
             Ok(seq) => IngestResult::Watermark(seq),
             Err(e) => {
@@ -105,14 +103,7 @@ pub async fn handle_envelope<S, W, E, P, T>(
             }
         };
 
-        let result = dispatch(
-            service,
-            run_writer,
-            experiment_writer,
-            project_writer,
-            msg,
-        )
-        .await;
+        let result = dispatch(service, run_writer, experiment_writer, project_writer, msg).await;
 
         if transport.send(&result).await.is_err() {
             break;
