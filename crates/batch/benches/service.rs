@@ -6,7 +6,7 @@ use lasso::ThreadedRodeo;
 use photon_batch::domain::service::{BatchService, Service};
 use photon_batch::domain::types::BatchStats;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{MetricKey, RawPoint};
+use photon_core::types::metric::{MetricKey, RawPoint, Step};
 use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
@@ -35,7 +35,7 @@ fn make_raw_points(interner: &Arc<ThreadedRodeo>, n: usize) -> Vec<RawPoint> {
         .map(|i| RawPoint {
             key: keys[i % num_keys],
             value: 1.0 / (1.0 + i as f64 * 0.001),
-            step: i as u64,
+            step: Step::new(i as u64),
             timestamp_ns: i as u64 * 1_000_000,
         })
         .collect()

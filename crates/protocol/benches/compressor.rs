@@ -2,7 +2,7 @@ use bytes::BytesMut;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
+use photon_core::types::metric::{Metric, MetricBatch, MetricPoint, Step};
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_protocol::ports::codec::Codec;
@@ -28,7 +28,7 @@ fn make_metric_batch(run_id: RunId, n: usize) -> MetricBatch {
         .map(|i| MetricPoint {
             key_index: (i % num_keys) as u32,
             value: 1.0 / (1.0 + i as f64 * 0.001),
-            step: i as u64,
+            step: Step::new(i as u64),
             timestamp_ms: i as u64,
         })
         .collect();

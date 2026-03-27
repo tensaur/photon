@@ -7,7 +7,7 @@ use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_ma
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
+use photon_core::types::metric::{Metric, MetricBatch, MetricPoint, Step};
 use photon_core::types::sequence::SequenceNumber;
 use photon_ingest::domain::service::{IngestService, Service};
 use photon_protocol::codec::CodecKind;
@@ -42,7 +42,7 @@ fn make_wire_batch(
         .map(|i| MetricPoint {
             key_index: (i % num_keys) as u32,
             value: 1.0 / (1.0 + i as f64 * 0.001),
-            step: i as u64,
+            step: Step::new(i as u64),
             timestamp_ms: i as u64,
         })
         .collect();
