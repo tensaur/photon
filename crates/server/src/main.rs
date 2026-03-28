@@ -105,22 +105,27 @@ async fn main() -> anyhow::Result<()> {
     let ingest_listener = TcpListener::bind(&ingest_addr).await?;
     tracing::info!("ingest listening on {ingest_addr}");
 
-    let ingest_handle = tokio::spawn(photon_transport::serve(ingest_listener, codec, move |t| {
-        let svc = ingest_service.clone();
-        let run_store = run_store.clone();
-        let experiment_store = experiment_store.clone();
-        let project_store = project_store.clone();
-        async move {
-            ingest_handler::handle_envelope(
-                &svc,
-                &run_store,
-                &experiment_store,
-                &project_store,
-                &t,
-            )
-            .await;
-        }
-    }));
+    let ingest_handle = tokio::spawn(photon_transport::serve(
+        ingest_listener,
+        codec,
+        cancel.clone(),
+        move |t| {
+            let svc = ingest_service.clone();
+            let run_store = run_store.clone();
+            let experiment_store = experiment_store.clone();
+            let project_store = project_store.clone();
+            async move {
+                ingest_handler::handle_envelope(
+                    &svc,
+                    &run_store,
+                    &experiment_store,
+                    &project_store,
+                    &t,
+                )
+                .await;
+            }
+        },
+    ));
 
     let router = Router::new(codec)
         .request_response("/api/query", move |t| {
@@ -138,7 +143,8 @@ async fn main() -> anyhow::Result<()> {
     let api_listener = TcpListener::bind(&api_addr).await?;
     tracing::info!("api listening on http://{api_addr}");
 
-    let api_handle = tokio::spawn(async move { router.serve(api_listener).await });
+    let api_cancel = cancel.clone();
+    let api_handle = tokio::spawn(async move { router.serve(api_listener, api_cancel).await });
 
     tokio::signal::ctrl_c().await?;
     tracing::info!("shutting down");
