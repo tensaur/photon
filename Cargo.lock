@@ -2804,6 +2804,7 @@ version = "0.1.1"
 dependencies = [
  "photon-core",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2830,8 +2831,8 @@ version = "0.1.1"
 dependencies = [
  "bytes",
  "crc32fast",
- "futures-util",
  "photon-core",
+ "photon-downsample",
  "photon-protocol",
  "photon-store",
  "photon-wal",

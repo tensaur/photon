@@ -5,14 +5,22 @@ use photon_core::types::sequence::SequenceNumber;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Verdict {
+    /// Sequence matches `expected_next`. Accept and advance.
     Process,
+    /// Sequence is below `expected_next`. Already processed.
     Duplicate,
+    /// Sequence is above `expected_next`. Stream has a gap — session is broken.
+    Gap,
 }
 
-/// In-memory cache of the highest sequence number seen per run.
+/// Tracks the next expected sequence number per run.
+///
+/// Guarantees strict in-order processing: only `seq == expected_next` is
+/// accepted. Gaps indicate a broken session (TCP should guarantee ordering,
+/// so a gap means something is seriously wrong).
 #[derive(Clone)]
 pub struct DeduplicationCache {
-    seen: std::sync::Arc<DashMap<RunId, SequenceNumber>>,
+    expected_next: std::sync::Arc<DashMap<RunId, SequenceNumber>>,
 }
 
 impl Default for DeduplicationCache {
@@ -24,40 +32,52 @@ impl Default for DeduplicationCache {
 impl DeduplicationCache {
     pub fn new() -> Self {
         Self {
-            seen: std::sync::Arc::new(DashMap::new()),
+            expected_next: std::sync::Arc::new(DashMap::new()),
         }
     }
 
+    /// Seed `expected_next` from persisted watermarks.
+    /// Each watermark is the highest persisted sequence, so `expected_next` = watermark + 1.
     pub fn seed(&self, entries: &[(RunId, SequenceNumber)]) {
         for (run_id, seq) in entries {
-            self.seen.insert(*run_id, *seq);
+            self.expected_next
+                .entry(*run_id)
+                .and_modify(|existing| {
+                    let next = seq.next();
+                    if next > *existing {
+                        *existing = next;
+                    }
+                })
+                .or_insert_with(|| seq.next());
         }
     }
 
     pub fn check(&self, run_id: &RunId, seq: SequenceNumber) -> Verdict {
-        let highest = self
-            .seen
+        let expected = self
+            .expected_next
             .get(run_id)
-            .map_or(SequenceNumber::ZERO, |w| *w.value());
+            .map_or(SequenceNumber::from(1), |w| *w.value());
 
-        if seq <= highest {
-            Verdict::Duplicate
-        } else {
-            Verdict::Process
+        match seq.cmp(&expected) {
+            std::cmp::Ordering::Equal => Verdict::Process,
+            std::cmp::Ordering::Less => Verdict::Duplicate,
+            std::cmp::Ordering::Greater => Verdict::Gap,
         }
     }
 
     pub fn watermark(&self, run_id: &RunId) -> SequenceNumber {
-        self.seen
+        let expected = self
+            .expected_next
             .get(run_id)
-            .map_or(SequenceNumber::ZERO, |w| *w.value())
+            .map_or(SequenceNumber::from(1), |w| *w.value());
+        expected.prev_or_zero()
     }
 
     pub fn advance(&self, run_id: &RunId, seq: SequenceNumber) {
-        self.seen.insert(*run_id, seq);
+        self.expected_next.insert(*run_id, seq.next());
     }
 
     pub fn evict(&self, run_id: &RunId) {
-        self.seen.remove(run_id);
+        self.expected_next.remove(run_id);
     }
 }

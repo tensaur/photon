@@ -7,21 +7,21 @@ use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
+use photon_core::types::event::PhotonEvent;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
-use photon_persist::domain::service::Service as PersistService;
+use photon_persist::domain::service::{PersistConfig, Service as PersistService};
 use photon_persist::inbound::thread as persist_thread;
-use photon_persist::inbound::thread::PersistConfig;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_protocol::compressor::ZstdCompressor;
+use photon_store::clickhouse::bucket::ClickHouseBucketStore;
 use photon_store::clickhouse::experiment::ClickHouseExperimentStore;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::project::ClickHouseProjectStore;
 use photon_store::clickhouse::run::ClickHouseRunStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
-use photon_store::ports::watermark::WatermarkReader;
 use photon_transport::codec::CodecTransport;
 use photon_transport::tcp::TcpTransport;
 use photon_wal::{DiskWalConfig, open_disk_wal};
@@ -49,10 +49,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     migrate(&client).await?;
 
     let metric_store = ClickHouseMetricStore::new(client.clone());
+    let bucket_store = ClickHouseBucketStore::new(client.clone());
     let watermark_store = ClickHouseWatermarkStore::new(client.clone());
     let run_store = ClickHouseRunStore::new(client.clone());
     let experiment_store = ClickHouseExperimentStore::new(client.clone());
     let project_store = ClickHouseProjectStore::new(client);
+    let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(256);
 
     // Server WAL
     let (wal_appender, wal_manager) =
@@ -61,29 +63,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Ingest service (WAL-backed)
     let ingest_service = IngestService::new(wal_appender, notify.clone());
 
-    // Seed dedup cache from persisted watermarks
-    let watermarks = watermark_store.read_all().await?;
-    if !watermarks.is_empty() {
-        tracing::info!(
-            runs = watermarks.len(),
-            "seeded dedup cache from watermarks"
-        );
-        ingest_service.seed_watermarks(&watermarks);
-    }
+    // Seed dedup cache from persisted watermarks + unconsumed WAL tail
+    ingest_service.seed(&watermark_store, &wal_manager).await;
 
     // Persist consumer
+    let persist_config = PersistConfig::default();
     let persist_service = PersistService::new(
         ZstdCompressor::default(),
         codec,
         metric_store,
         watermark_store,
+        bucket_store,
+        event_tx,
+        persist_config.clone(),
     );
     let persist_cancel = cancel.clone();
     let persist_handle = tokio::spawn(persist_thread::run(
         wal_manager,
         notify,
         persist_service,
-        PersistConfig::default(),
+        persist_config,
         persist_cancel,
     ));
 

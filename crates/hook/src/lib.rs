@@ -1,34 +1,47 @@
 pub mod broadcast;
-pub mod composite;
-pub mod noop;
 
-pub use photon_core::domain::run::RunStatus;
-pub use photon_core::types::bucket::Bucket;
-pub use photon_core::types::id::RunId;
-pub use photon_core::types::metric::{Metric, MetricBatch, MetricPoint};
+use photon_core::types::event::PhotonEvent;
+use tokio::sync::broadcast as tokio_broadcast;
 
-/// Extension point for reacting to ingest pipeline events.
+/// Extension point for reacting to system events.
+///
+/// Hook authors implement [`handle`](Hook::handle) and call [`spawn`](Hook::spawn)
+/// to run the hook as a background task. Each hook receives every [`PhotonEvent`]
+/// and can react with side effects (notifications, alerts, logging, etc.).
 ///
 /// # Example
 ///
 /// ```ignore
-/// use photon_hook::IngestHook;
+/// use photon_hook::Hook;
+/// use photon_core::types::event::PhotonEvent;
 ///
+/// #[derive(Clone)]
 /// struct MyHook;
 ///
-/// impl IngestHook for MyHook {
-///     fn on_batch_decoded(&self, run_id: RunId, batch: &MetricBatch) {
-///         println!("run {run_id}: {} points", batch.len());
+/// impl Hook for MyHook {
+///     fn handle(&self, event: PhotonEvent) {
+///         // react to events
 ///     }
 /// }
 /// ```
-pub trait IngestHook: Send + Sync + 'static {
-    /// Called after a batch has been decompressed and decoded into domain types.
-    fn on_batch_decoded(&self, _run_id: RunId, _batch: &MetricBatch) {}
+pub trait Hook: Clone + Send + Sync + 'static {
+    fn handle(&self, event: PhotonEvent);
 
-    /// Called for each bucket that closed during aggregation.
-    fn on_buckets_closed(&self, _run_id: RunId, _key: &Metric, _tier: usize, _bucket: &Bucket) {}
-
-    /// Called when a run transitions between states.
-    fn on_run_status_change(&self, _run_id: RunId, _old: &RunStatus, _new: &RunStatus) {}
+    fn spawn(
+        &self,
+        mut events: tokio_broadcast::Receiver<PhotonEvent>,
+    ) -> tokio::task::JoinHandle<()> {
+        let hook = self.clone();
+        tokio::spawn(async move {
+            loop {
+                match events.recv().await {
+                    Ok(event) => hook.handle(event),
+                    Err(tokio_broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("hook lagged by {n} events");
+                    }
+                    Err(tokio_broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        })
+    }
 }

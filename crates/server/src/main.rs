@@ -4,12 +4,13 @@ use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
+use photon_core::types::event::PhotonEvent;
 use photon_downsample::selector::noop::NoOpSelector;
+use photon_hook::Hook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler as ingest_handler;
-use photon_persist::domain::service::Service as PersistService;
+use photon_persist::domain::service::{PersistConfig, Service as PersistService};
 use photon_persist::inbound::thread as persist_thread;
-use photon_persist::inbound::thread::PersistConfig;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::ZstdCompressor;
 use photon_query::domain::service::Service as QueryService;
@@ -23,7 +24,6 @@ use photon_store::clickhouse::project::ClickHouseProjectStore;
 use photon_store::clickhouse::run::ClickHouseRunStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
-use photon_store::ports::watermark::WatermarkReader;
 use photon_subscription::SubscriptionHook;
 use photon_transport::router::Router;
 use photon_wal::{DiskWalConfig, open_disk_wal};
@@ -57,7 +57,13 @@ async fn main() -> anyhow::Result<()> {
     let run_store = ClickHouseRunStore::new(client.clone());
     let experiment_store = ClickHouseExperimentStore::new(client.clone());
     let project_store = ClickHouseProjectStore::new(client);
+
+    // Pipeline event channel
+    let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(256);
+
+    // Subscription hook (maps pipeline events → WebSocket subscription events)
     let subscription = SubscriptionHook::new();
+    subscription.spawn(event_tx.subscribe());
 
     // Server WAL
     let (wal_appender, wal_manager) =
@@ -66,28 +72,25 @@ async fn main() -> anyhow::Result<()> {
     // Ingest hexagon (WAL-backed)
     let ingest_service = IngestService::new(wal_appender, notify.clone());
 
-    // Seed dedup cache from persisted watermarks
-    let watermarks = watermark_store.read_all().await?;
-    if !watermarks.is_empty() {
-        tracing::info!(
-            runs = watermarks.len(),
-            "seeded dedup cache from watermarks"
-        );
-        ingest_service.seed_watermarks(&watermarks);
-    }
+    // Seed dedup cache from persisted watermarks + unconsumed WAL tail
+    ingest_service.seed(&watermark_store, &wal_manager).await;
 
     // Persist hexagon
+    let persist_config = PersistConfig::default();
     let persist_service = PersistService::new(
         ZstdCompressor::default(),
         codec,
         metric_store.clone(),
         watermark_store,
+        bucket_store.clone(),
+        event_tx,
+        persist_config.clone(),
     );
     let persist_handle = tokio::spawn(persist_thread::run(
         wal_manager,
         notify,
         persist_service,
-        PersistConfig::default(),
+        persist_config,
         cancel.clone(),
     ));
 
