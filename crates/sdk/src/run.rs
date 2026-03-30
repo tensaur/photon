@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -40,7 +39,7 @@ pub struct Run {
     uplink_handle: Option<UplinkHandle>,
     wal: Arc<dyn Wal>,
     points_logged: u64,
-    last_step: HashMap<MetricKey, Step>,
+    last_step: Vec<Option<Step>>,
 }
 
 impl Run {
@@ -60,7 +59,7 @@ impl Run {
             uplink_handle,
             wal,
             points_logged: 0,
-            last_step: HashMap::new(),
+            last_step: Vec::new(),
         }
     }
 
@@ -74,16 +73,20 @@ impl Run {
         let metric_key = MetricKey::new(lasso::Key::into_usize(spur));
         let step = Step::new(step);
 
-        if let Some(&last) = self.last_step.get(&metric_key)
-            && step <= last
-        {
-            return Err(LogError::StepNotMonotonic {
-                key: key.to_owned(),
-                step: step.as_u64(),
-                last: last.as_u64(),
-            });
+        let idx = metric_key.index();
+        if idx >= self.last_step.len() {
+            self.last_step.resize(idx + 1, None);
         }
-        self.last_step.insert(metric_key, step);
+        if let Some(last) = self.last_step[idx] {
+            if step <= last {
+                return Err(LogError::StepNotMonotonic {
+                    key: key.to_owned(),
+                    step: step.as_u64(),
+                    last: last.as_u64(),
+                });
+            }
+        }
+        self.last_step[idx] = Some(step);
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
