@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use photon_core::types::wal::WalOffset;
 use photon_wal::Wal;
 
-use crate::domain::service::{PersistConfig, PersistService};
+use crate::domain::service::{ConsumerConfig, PersistService};
 
 #[derive(Clone, Debug, Default)]
 pub struct PersistStats {
@@ -17,8 +17,8 @@ pub struct PersistStats {
 pub async fn run<S, W>(
     wal: W,
     notify: Arc<tokio::sync::Notify>,
-    service: S,
-    config: PersistConfig,
+    mut service: S,
+    config: ConsumerConfig,
     cancel: CancellationToken,
 ) -> PersistStats
 where

@@ -10,7 +10,8 @@ use tokio_util::sync::CancellationToken;
 use photon_core::types::event::PhotonEvent;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
-use photon_persist::domain::service::{PersistConfig, Service as PersistService};
+use photon_persist::domain::projections::downsample::DownsampleConfig;
+use photon_persist::domain::service::{ConsumerConfig, Service as PersistService};
 use photon_persist::inbound::thread as persist_thread;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
@@ -67,7 +68,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ingest_service.seed(&watermark_store, &wal_manager).await;
 
     // Persist consumer
-    let persist_config = PersistConfig::default();
     let persist_service = PersistService::new(
         ZstdCompressor::default(),
         codec,
@@ -75,14 +75,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         watermark_store,
         bucket_store,
         event_tx,
-        persist_config.clone(),
+        DownsampleConfig::default(),
     );
     let persist_cancel = cancel.clone();
     let persist_handle = tokio::spawn(persist_thread::run(
         wal_manager,
         notify,
         persist_service,
-        persist_config,
+        ConsumerConfig::default(),
         persist_cancel,
     ));
 

@@ -80,6 +80,7 @@ where
         for &(step, value) in &points {
             for (tier, bucket) in reducer.push(step, value) {
                 entries.push(BucketEntry {
+                    run_id: *run_id,
                     key: key.clone(),
                     tier,
                     bucket,
@@ -90,6 +91,7 @@ where
         // Flush partial buckets
         for (tier, bucket) in reducer.flush() {
             entries.push(BucketEntry {
+                run_id: *run_id,
                 key: key.clone(),
                 tier,
                 bucket,
@@ -101,7 +103,7 @@ where
         }
 
         self.bucket_writer
-            .write_buckets(run_id, &entries)
+            .write_buckets(&entries)
             .await
             .map_err(CompactionError::Write)?;
 

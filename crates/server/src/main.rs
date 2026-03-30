@@ -9,7 +9,8 @@ use photon_downsample::selector::noop::NoOpSelector;
 use photon_hook::Hook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler as ingest_handler;
-use photon_persist::domain::service::{PersistConfig, Service as PersistService};
+use photon_persist::domain::projections::downsample::DownsampleConfig;
+use photon_persist::domain::service::{ConsumerConfig, Service as PersistService};
 use photon_persist::inbound::thread as persist_thread;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::ZstdCompressor;
@@ -76,7 +77,6 @@ async fn main() -> anyhow::Result<()> {
     ingest_service.seed(&watermark_store, &wal_manager).await;
 
     // Persist hexagon
-    let persist_config = PersistConfig::default();
     let persist_service = PersistService::new(
         ZstdCompressor::default(),
         codec,
@@ -84,13 +84,13 @@ async fn main() -> anyhow::Result<()> {
         watermark_store,
         bucket_store.clone(),
         event_tx,
-        persist_config.clone(),
+        DownsampleConfig::default(),
     );
     let persist_handle = tokio::spawn(persist_thread::run(
         wal_manager,
         notify,
         persist_service,
-        persist_config,
+        ConsumerConfig::default(),
         cancel.clone(),
     ));
 

@@ -1,16 +1,11 @@
-use std::collections::HashMap;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
 
 use bytes::BytesMut;
 use tokio::sync::broadcast;
 
 use photon_core::types::batch::WireBatch;
-use photon_core::types::bucket::BucketEntry;
 use photon_core::types::event::PhotonEvent;
-use photon_core::types::id::RunId;
 use photon_core::types::metric::MetricBatch;
-use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::bucket::BucketWriter;
@@ -19,8 +14,9 @@ use photon_store::ports::watermark::WatermarkWriter;
 
 use photon_downsample::aggregator::AggregatorKind;
 
+use super::changeset::ChangeSet;
 use super::projections::Projection;
-use super::projections::downsample::DownsampleProjection;
+use super::projections::downsample::{DownsampleConfig, DownsampleProjection};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PersistError {
@@ -41,28 +37,25 @@ pub enum PersistError {
 }
 
 #[derive(Clone)]
-pub struct PersistConfig {
-    pub downsample_widths: Vec<u64>,
+pub struct ConsumerConfig {
     pub poll_interval: std::time::Duration,
     pub max_batch_read: usize,
 }
 
-impl Default for PersistConfig {
+impl Default for ConsumerConfig {
     fn default() -> Self {
         Self {
-            downsample_widths: vec![100, 1000, 10000],
             poll_interval: std::time::Duration::from_millis(100),
             max_batch_read: 1000,
         }
     }
 }
 
-pub trait PersistService: Clone + Send + Sync + 'static {
-    fn write(&self, batches: &[WireBatch])
+pub trait PersistService: Send + Sync + 'static {
+    fn write(&mut self, batches: &[WireBatch])
     -> impl Future<Output = Result<(), PersistError>> + Send;
 }
 
-#[derive(Clone)]
 pub struct Service<C, K, M, W, B>
 where
     C: Compressor,
@@ -77,7 +70,7 @@ where
     watermark_writer: W,
     bucket_writer: B,
     event_tx: broadcast::Sender<PhotonEvent>,
-    downsample: Arc<Mutex<DownsampleProjection<AggregatorKind>>>,
+    downsample: DownsampleProjection<AggregatorKind>,
 }
 
 impl<C, K, M, W, B> Service<C, K, M, W, B>
@@ -95,10 +88,8 @@ where
         watermark_writer: W,
         bucket_writer: B,
         event_tx: broadcast::Sender<PhotonEvent>,
-        config: PersistConfig,
+        downsample_config: DownsampleConfig,
     ) -> Self {
-        let downsample =
-            DownsampleProjection::new(AggregatorKind::default(), config.downsample_widths);
         Self {
             compressor,
             codec,
@@ -106,7 +97,7 @@ where
             watermark_writer,
             bucket_writer,
             event_tx,
-            downsample: Arc::new(Mutex::new(downsample)),
+            downsample: DownsampleProjection::new(AggregatorKind::default(), downsample_config),
         }
     }
 }
@@ -119,11 +110,10 @@ where
     W: WatermarkWriter,
     B: BucketWriter,
 {
-    async fn write(&self, batches: &[WireBatch]) -> Result<(), PersistError> {
-        let mut decoded_batches = Vec::with_capacity(batches.len());
-        let mut watermarks: HashMap<RunId, SequenceNumber> = HashMap::new();
+    async fn write(&mut self, batches: &[WireBatch]) -> Result<(), PersistError> {
+        let mut changeset = ChangeSet::with_capacity(batches.len());
 
-        // Phase 1: Decode
+        // Decode + project each batch inline
         for batch in batches {
             let mut buf = BytesMut::with_capacity(batch.uncompressed_size);
             self.compressor
@@ -132,58 +122,17 @@ where
 
             let metric_batch: MetricBatch =
                 self.codec.decode(&buf).map_err(PersistError::Decode)?;
-            decoded_batches.push(metric_batch);
 
-            watermarks
-                .entry(batch.run_id)
-                .and_modify(|s| {
-                    if batch.sequence_number > *s {
-                        *s = batch.sequence_number;
-                    }
-                })
-                .or_insert(batch.sequence_number);
+            self.downsample.apply(batch.run_id, &metric_batch, &mut changeset);
+            changeset.add_decoded_batch(batch.run_id, batch.sequence_number, metric_batch);
         }
 
-        // Phase 2: Project (sync, lock held only during CPU work)
-        let bucket_entries = {
-            let mut downsample = self
-                .downsample
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Flush → publish
+        self.flush(&changeset).await?;
 
-            for batch in &decoded_batches {
-                downsample.process(batch.run_id, batch);
-            }
-            downsample.drain()
-        };
-
-        // Phase 3: Publish events
-        for batch in &decoded_batches {
-            let _ = self.event_tx.send(PhotonEvent::BatchDecoded {
-                run_id: batch.run_id,
-                batch: Arc::new(batch.clone()),
-            });
+        for event in changeset.events.drain(..) {
+            let _ = self.event_tx.send(event);
         }
-        for (run_id, entries) in &bucket_entries {
-            for entry in entries {
-                let _ = self.event_tx.send(PhotonEvent::BucketsReduced {
-                    run_id: *run_id,
-                    key: entry.key.clone(),
-                    tier: entry.tier,
-                    bucket: entry.bucket.clone(),
-                });
-            }
-        }
-
-        // Phase 4: Flush (parallel across tables)
-        let (metrics, watermarks, buckets) = tokio::join!(
-            self.flush_metrics(&decoded_batches),
-            self.flush_watermarks(watermarks),
-            self.flush_buckets(&bucket_entries),
-        );
-        metrics?;
-        watermarks?;
-        buckets?;
 
         Ok(())
     }
@@ -197,34 +146,31 @@ where
     W: WatermarkWriter,
     B: BucketWriter,
 {
-    async fn flush_metrics(&self, batches: &[MetricBatch]) -> Result<(), PersistError> {
-        self.metric_writer
-            .write_batches(batches)
-            .await
-            .map_err(PersistError::MetricWrite)
-    }
-
-    async fn flush_watermarks(
-        &self,
-        watermarks: HashMap<RunId, SequenceNumber>,
-    ) -> Result<(), PersistError> {
-        let entries: Vec<_> = watermarks.into_iter().collect();
-        self.watermark_writer
-            .write_watermarks(&entries)
-            .await
-            .map_err(PersistError::WatermarkWrite)
-    }
-
-    async fn flush_buckets(
-        &self,
-        bucket_entries: &HashMap<RunId, Vec<BucketEntry>>,
-    ) -> Result<(), PersistError> {
-        for (run_id, entries) in bucket_entries {
-            self.bucket_writer
-                .write_buckets(run_id, entries)
-                .await
-                .map_err(PersistError::BucketWrite)?;
-        }
+    async fn flush(&self, changeset: &ChangeSet) -> Result<(), PersistError> {
+        let (metrics, watermarks, buckets) = tokio::join!(
+            async {
+                self.metric_writer
+                    .write_batches(&changeset.decoded_batches)
+                    .await
+                    .map_err(PersistError::MetricWrite)
+            },
+            async {
+                let entries: Vec<_> = changeset.watermarks.iter().map(|(r, s)| (*r, *s)).collect();
+                self.watermark_writer
+                    .write_watermarks(&entries)
+                    .await
+                    .map_err(PersistError::WatermarkWrite)
+            },
+            async {
+                self.bucket_writer
+                    .write_buckets(&changeset.bucket_entries)
+                    .await
+                    .map_err(PersistError::BucketWrite)
+            },
+        );
+        metrics?;
+        watermarks?;
+        buckets?;
         Ok(())
     }
 }
@@ -296,9 +242,8 @@ mod tests {
             watermarks,
             buckets,
             tx,
-            PersistConfig {
-                downsample_widths: vec![5],
-                ..PersistConfig::default()
+            DownsampleConfig {
+                widths: vec![5],
             },
         )
     }
@@ -308,7 +253,7 @@ mod tests {
         let metric_store = InMemoryMetricStore::new();
         let watermark_store = InMemoryWatermarkStore::new();
         let bucket_store = InMemoryBucketStore::new();
-        let svc = new_service(metric_store.clone(), watermark_store.clone(), bucket_store);
+        let mut svc = new_service(metric_store.clone(), watermark_store.clone(), bucket_store);
 
         let run_id = RunId::new();
         let metric = Metric::new("train/loss").unwrap();
@@ -350,7 +295,7 @@ mod tests {
         let metric_store = InMemoryMetricStore::new();
         let watermark_store = InMemoryWatermarkStore::new();
         let bucket_store = InMemoryBucketStore::new();
-        let svc = new_service(metric_store, watermark_store.clone(), bucket_store);
+        let mut svc = new_service(metric_store, watermark_store.clone(), bucket_store);
 
         let run_a = RunId::new();
         let run_b = RunId::new();
@@ -404,7 +349,7 @@ mod tests {
         let metric_store = InMemoryMetricStore::new();
         let watermark_store = InMemoryWatermarkStore::new();
         let bucket_store = InMemoryBucketStore::new();
-        let svc = new_service(metric_store, watermark_store, bucket_store.clone());
+        let mut svc = new_service(metric_store, watermark_store, bucket_store.clone());
 
         let run_id = RunId::new();
         let metric = Metric::new("train/loss").unwrap();
@@ -432,5 +377,43 @@ mod tests {
 
         // steps 0-10, width 5 → [0,5) closes at step 5, [5,10) closes at step 10
         assert_eq!(buckets.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_events_published_after_flush() {
+        let metric_store = InMemoryMetricStore::new();
+        let watermark_store = InMemoryWatermarkStore::new();
+        let bucket_store = InMemoryBucketStore::new();
+        let (tx, mut rx) = broadcast::channel(16);
+
+        let mut svc = Service::new(
+            NoopCompressor,
+            PostcardCodec,
+            metric_store,
+            watermark_store,
+            bucket_store,
+            tx,
+            DownsampleConfig { widths: vec![5] },
+        );
+
+        let run_id = RunId::new();
+        let metric = Metric::new("train/loss").unwrap();
+
+        let batch = MetricBatch {
+            run_id,
+            keys: vec![metric],
+            points: vec![MetricPoint {
+                key_index: 0,
+                value: 1.0,
+                step: Step::new(0),
+                timestamp_ms: 0,
+            }],
+        };
+
+        let wire = make_wire_batch(&batch, run_id, SequenceNumber::ZERO);
+        svc.write(&[wire]).await.expect("write should succeed");
+
+        let event = rx.try_recv().expect("should have received an event");
+        assert!(matches!(event, PhotonEvent::BatchDecoded { .. }));
     }
 }
