@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use egui::{Color32, RichText, Sense, Stroke, StrokeKind, Ui, vec2};
-use egui_phosphor::regular::{EYE, EYE_SLASH, MAGNIFYING_GLASS};
+use photon_ui::egui_phosphor::regular::{EYE, EYE_SLASH, MAGNIFYING_GLASS};
 
 use photon_core::domain::experiment::Experiment;
 use photon_core::domain::run::{Run, RunStatus};
@@ -75,9 +75,6 @@ pub fn show(
 ) -> Option<SidebarAction> {
     let mut action: Option<SidebarAction> = None;
 
-    ui.heading(RichText::new("Runs").color(theme::DARK.text_primary));
-    ui.add_space(6.0);
-
     let search_frame = egui::Frame::new()
         .fill(theme::DARK.surface)
         .stroke(Stroke::new(1.0, theme::DARK.border))
@@ -88,9 +85,9 @@ pub fn show(
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             ui.label(
-                RichText::new(MAGNIFYING_GLASS.to_string())
-                    .color(theme::DARK.text_dim)
-                    .size(12.0),
+                RichText::new(MAGNIFYING_GLASS)
+                    .font(photon_ui::theme::icon_font_id(12.0))
+                    .color(theme::DARK.text_dim),
             );
             let te = egui::TextEdit::singleline(&mut state.search_query)
                 .frame(false)
@@ -138,17 +135,26 @@ pub fn show(
         };
 
         // Custom experiment header
-        let chevron = if expanded { "▾" } else { "▸" };
-        let header_label = format!("{chevron} {header_text}");
+        let chevron = if expanded {
+            photon_ui::egui_phosphor::regular::CARET_DOWN
+        } else {
+            photon_ui::egui_phosphor::regular::CARET_RIGHT
+        };
 
         let header_resp = ui
             .horizontal(|ui| {
+                ui.label(
+                    RichText::new(chevron)
+                        .font(photon_ui::theme::icon_font_id(10.0))
+                        .color(theme::DARK.text_secondary),
+                );
                 let resp = ui.add(
                     egui::Label::new(
-                        RichText::new(&header_label)
+                        RichText::new(&header_text)
                             .color(theme::DARK.text_secondary)
                             .size(10.0),
                     )
+                    .selectable(false)
                     .sense(Sense::click()),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -230,6 +236,7 @@ pub fn show(
                                         .color(name_color)
                                         .size(12.0),
                                 )
+                                .selectable(false)
                                 .sense(Sense::click()),
                             );
                             if name_resp.clicked() {
@@ -253,9 +260,9 @@ pub fn show(
                                     let eye_char = if is_visible { EYE } else { EYE_SLASH };
                                     let eye_resp = ui.add(
                                         egui::Label::new(
-                                            RichText::new(eye_char.to_string())
-                                                .color(eye_color)
-                                                .size(12.0),
+                                            RichText::new(eye_char)
+                                                .font(photon_ui::theme::icon_font_id(12.0))
+                                                .color(eye_color),
                                         )
                                         .sense(Sense::click()),
                                     );

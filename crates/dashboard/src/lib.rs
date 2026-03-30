@@ -15,7 +15,10 @@ pub fn run(server_url: String) -> eframe::Result {
     use photon_transport::http::HttpTransport;
     use photon_transport::websocket::WebSocketTransport;
 
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to create tokio runtime");
     let _guard = rt.enter();
 
     let options = eframe::NativeOptions {

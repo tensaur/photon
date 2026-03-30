@@ -27,7 +27,7 @@ pub fn show(ui: &mut egui::Ui, title: &str) {
 
         ui.label(
             RichText::new(egui_phosphor::regular::DOTS_SIX)
-                .size(10.0)
+                .font(crate::theme::icon_font_id(10.0))
                 .color(DARK.text_secondary),
         );
         ui.add_space(4.0);
@@ -56,7 +56,7 @@ pub fn show(ui: &mut egui::Ui, title: &str) {
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
                 icon,
-                egui::FontId::proportional(icon_size),
+                crate::theme::icon_font_id(icon_size),
                 color,
             );
             // No action yet — placeholder buttons

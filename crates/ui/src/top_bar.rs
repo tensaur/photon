@@ -1,4 +1,4 @@
-use egui::{Color32, RichText, Stroke, Vec2, vec2};
+use egui::{Color32, FontFamily, RichText, Stroke, Vec2, vec2};
 
 use crate::theme::DARK;
 
@@ -10,20 +10,20 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
 
         ui.add_space(12.0);
         ui.label(RichText::new("★").size(14.0).color(DARK.text_primary));
-        ui.label(RichText::new("▾").size(12.0).color(Color32::from_rgb(0x66, 0x66, 0x66)));
+        ui.label(RichText::new(egui_phosphor::regular::CARET_DOWN).font(crate::theme::icon_font_id(10.0)).color(Color32::from_rgb(0x66, 0x66, 0x66)));
         ui.add_space(8.0);
 
         ui.label(
             RichText::new(egui_phosphor::regular::FILE)
-                .size(13.0)
+                .font(crate::theme::icon_font_id(13.0))
                 .color(DARK.text_primary),
         );
         ui.label(RichText::new("my-project").size(13.0).color(DARK.text_primary));
-        ui.label(RichText::new("☆").size(12.0).color(Color32::from_rgb(0x66, 0x66, 0x66)));
+        ui.label(RichText::new(egui_phosphor::regular::STAR).font(crate::theme::icon_font_id(12.0)).color(Color32::from_rgb(0x66, 0x66, 0x66)));
         ui.label(RichText::new("/").size(12.0).color(Color32::from_rgb(0x55, 0x55, 0x55)));
         ui.label(
             RichText::new(egui_phosphor::regular::CHECK_SQUARE)
-                .size(13.0)
+                .font(crate::theme::icon_font_id(13.0))
                 .color(DARK.text_primary),
         );
         ui.label(
@@ -81,7 +81,7 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
                     ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
                     ui.label(
                         RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS)
-                            .size(13.0)
+                            .font(crate::theme::icon_font_id(13.0))
                             .color(DARK.text_dim),
                     );
                     ui.label(
@@ -105,20 +105,28 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
         ui.add_space(8.0);
 
         // "Add panel" button
-        if ui
-            .add(
-                egui::Button::new(
-                    RichText::new(format!(
-                        "{} Add panel",
-                        egui_phosphor::regular::GRID_FOUR
-                    ))
-                    .size(12.0)
-                    .color(DARK.text_secondary),
-                )
-                .frame(false),
-            )
-            .clicked()
-        {}
+        {
+            let mut job = egui::text::LayoutJob::default();
+            job.append(
+                egui_phosphor::regular::GRID_FOUR,
+                0.0,
+                egui::TextFormat {
+                    font_id: crate::theme::icon_font_id(12.0),
+                    color: DARK.text_secondary,
+                    ..Default::default()
+                },
+            );
+            job.append(
+                " Add panel",
+                4.0,
+                egui::TextFormat {
+                    font_id: egui::FontId::new(12.0, FontFamily::Proportional),
+                    color: DARK.text_secondary,
+                    ..Default::default()
+                },
+            );
+            if ui.add(egui::Button::new(job).frame(false)).clicked() {}
+        }
 
         ui.add_space(8.0);
 

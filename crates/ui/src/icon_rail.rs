@@ -24,7 +24,7 @@ impl Default for IconRailState {
 pub fn show(ui: &mut egui::Ui, state: &mut IconRailState) -> bool {
     let mut toggle = false;
 
-    ui.vertical(|ui| {
+    ui.vertical_centered(|ui| {
         ui.add_space(12.0);
         ui.spacing_mut().item_spacing = vec2(0.0, 4.0);
 
@@ -53,7 +53,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut IconRailState) -> bool {
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
                 icon,
-                egui::FontId::proportional(18.0),
+                crate::theme::icon_font_id(18.0),
                 color,
             );
 

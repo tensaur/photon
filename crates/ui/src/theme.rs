@@ -6,6 +6,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 
+const ICON_FAMILY_NAME: &str = "icons";
+
+/// Returns a `FontId` for rendering Phosphor icons at the given size.
+pub fn icon_font_id(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(ICON_FAMILY_NAME.into()))
+}
+
+
 pub const TOP_BAR_HEIGHT: f32 = 44.0;
 pub const ICON_RAIL_WIDTH: f32 = 36.0;
 pub const SIDEBAR_WIDTH: f32 = 210.0;
@@ -52,7 +60,7 @@ pub static DARK: Theme = Theme {
 
 
 pub fn apply(ctx: &egui::Context, theme: &Theme) {
-    let mut fonts = FontDefinitions::default();
+    let mut fonts = FontDefinitions::empty();
 
     fonts.font_data.insert(
         "inter_medium".into(),
@@ -68,22 +76,29 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
         ))),
     );
 
-    // Make Inter the primary proportional font (index 0).
+    // Add Phosphor font data.
+    fonts.font_data.insert(
+        "phosphor".into(),
+        egui_phosphor::Variant::Regular.font_data().into(),
+    );
+
+    // Proportional: Inter only (for regular text).
+    fonts.families.insert(
+        FontFamily::Proportional,
+        vec!["inter_medium".into()],
+    );
+
+    // Monospace: JetBrains Mono.
     fonts
         .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .insert(0, "inter_medium".into());
+        .insert(FontFamily::Monospace, vec!["jetbrains_mono".into()]);
 
-    // Make JetBrains Mono the primary monospace font.
-    fonts
-        .families
-        .entry(FontFamily::Monospace)
-        .or_default()
-        .insert(0, "jetbrains_mono".into());
-
-    // Phosphor icons — inserts at index 1 of Proportional so Inter stays first.
-    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+    // Icons: dedicated font family for Phosphor icons.
+    // Render icons with `theme::icon_font_id(size)` instead of Proportional.
+    fonts.families.insert(
+        FontFamily::Name(ICON_FAMILY_NAME.into()),
+        vec!["phosphor".into(), "inter_medium".into()],
+    );
 
     ctx.set_fonts(fonts);
 
