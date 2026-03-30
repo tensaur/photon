@@ -15,7 +15,7 @@ use photon_store::ports::bucket::BucketWriter;
 use photon_store::ports::metric::MetricWriter;
 use photon_store::ports::watermark::WatermarkWriter;
 
-use photon_downsample::aggregator::AggregatorKind;
+use photon_downsample::aggregator::m4::M4Aggregator;
 
 use super::changeset::ChangeSet;
 use super::projections::Projection;
@@ -73,7 +73,7 @@ where
     watermark_writer: W,
     bucket_writer: B,
     event_tx: broadcast::Sender<PhotonEvent>,
-    downsample: DownsampleProjection<AggregatorKind>,
+    downsample: DownsampleProjection<M4Aggregator>,
 }
 
 impl<C, K, M, W, B> Service<C, K, M, W, B>
@@ -100,7 +100,7 @@ where
             watermark_writer,
             bucket_writer,
             event_tx,
-            downsample: DownsampleProjection::new(AggregatorKind::default(), downsample_config),
+            downsample: DownsampleProjection::new(M4Aggregator, downsample_config),
         }
     }
 }
