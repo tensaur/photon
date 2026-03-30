@@ -9,6 +9,15 @@ pub enum Pane {
     Comparison(ComparisonState),
 }
 
+impl Pane {
+    pub fn title(&self) -> &str {
+        match self {
+            Pane::LineChart(s) => s.metric.as_str(),
+            Pane::Comparison(s) => s.metric.as_str(),
+        }
+    }
+}
+
 pub struct LineChartState {
     pub run_id: RunId,
     pub metric: Metric,
