@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 
 use bytes::BytesMut;
@@ -5,7 +6,9 @@ use tokio::sync::broadcast;
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::event::PhotonEvent;
+use photon_core::types::id::RunId;
 use photon_core::types::metric::MetricBatch;
+use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::bucket::BucketWriter;
@@ -112,8 +115,9 @@ where
 {
     async fn write(&mut self, batches: &[WireBatch]) -> Result<(), PersistError> {
         let mut changeset = ChangeSet::with_capacity(batches.len());
+        let mut watermarks: HashMap<RunId, SequenceNumber> = HashMap::new();
 
-        // Decode + project each batch inline
+        // Decode and project
         for batch in batches {
             let mut buf = BytesMut::with_capacity(batch.uncompressed_size);
             self.compressor
@@ -124,53 +128,34 @@ where
                 self.codec.decode(&buf).map_err(PersistError::Decode)?;
 
             self.downsample.apply(batch.run_id, &metric_batch, &mut changeset);
-            changeset.add_decoded_batch(batch.run_id, batch.sequence_number, metric_batch);
+            changeset.add_decoded_batch(batch.run_id, metric_batch);
+
+            watermarks
+                .entry(batch.run_id)
+                .and_modify(|s| {
+                    if batch.sequence_number > *s {
+                        *s = batch.sequence_number;
+                    }
+                })
+                .or_insert(batch.sequence_number);
         }
 
-        // Flush → publish
-        self.flush(&changeset).await?;
+        // Flush
+        let watermark_entries: Vec<_> = watermarks.into_iter().collect();
+        let (metrics_res, watermarks_res, buckets_res) = tokio::join!(
+            self.metric_writer.write_batches(&changeset.decoded_batches),
+            self.watermark_writer.write_watermarks(&watermark_entries),
+            self.bucket_writer.write_buckets(&changeset.bucket_entries),
+        );
+        metrics_res.map_err(PersistError::MetricWrite)?;
+        watermarks_res.map_err(PersistError::WatermarkWrite)?;
+        buckets_res.map_err(PersistError::BucketWrite)?;
 
+        // Publish events (only after all writes succeed)
         for event in changeset.events.drain(..) {
             let _ = self.event_tx.send(event);
         }
 
-        Ok(())
-    }
-}
-
-impl<C, K, M, W, B> Service<C, K, M, W, B>
-where
-    C: Compressor,
-    K: Codec<MetricBatch>,
-    M: MetricWriter,
-    W: WatermarkWriter,
-    B: BucketWriter,
-{
-    async fn flush(&self, changeset: &ChangeSet) -> Result<(), PersistError> {
-        let (metrics, watermarks, buckets) = tokio::join!(
-            async {
-                self.metric_writer
-                    .write_batches(&changeset.decoded_batches)
-                    .await
-                    .map_err(PersistError::MetricWrite)
-            },
-            async {
-                let entries: Vec<_> = changeset.watermarks.iter().map(|(r, s)| (*r, *s)).collect();
-                self.watermark_writer
-                    .write_watermarks(&entries)
-                    .await
-                    .map_err(PersistError::WatermarkWrite)
-            },
-            async {
-                self.bucket_writer
-                    .write_buckets(&changeset.bucket_entries)
-                    .await
-                    .map_err(PersistError::BucketWrite)
-            },
-        );
-        metrics?;
-        watermarks?;
-        buckets?;
         Ok(())
     }
 }
