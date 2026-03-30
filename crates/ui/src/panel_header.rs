@@ -3,73 +3,90 @@ use egui::{RichText, Sense, Stroke, Vec2, vec2};
 use crate::theme::DARK;
 
 const RIGHT_ICONS: &[&str] = &[
-    egui_phosphor::regular::DOTS_THREE,
-    egui_phosphor::regular::ARROWS_OUT,
-    egui_phosphor::regular::GRID_FOUR,
-    egui_phosphor::regular::CHART_LINE_UP,
     egui_phosphor::regular::PLUS,
+    egui_phosphor::regular::CHART_LINE_UP,
+    egui_phosphor::regular::GRID_FOUR,
+    egui_phosphor::regular::ARROWS_OUT,
+    egui_phosphor::regular::DOTS_THREE,
 ];
 
-pub fn show(ui: &mut egui::Ui, title: &str) {
-    let v_pad = 6.0;
-    let h_pad = 10.0;
+/// Returns true if the drag handle was dragged (signals tile rearrangement).
+pub fn show(ui: &mut egui::Ui, title: &str) -> bool {
     let icon_size = 13.0;
+    let header_height = 26.0;
 
-    // Draw surface background
-    let full_rect = ui.available_rect_before_wrap();
-    ui.painter().rect_filled(full_rect, egui::CornerRadius::ZERO, DARK.surface);
+    // Use Frame for background so it paints BEFORE content.
+    let frame_resp = egui::Frame::NONE
+        .fill(DARK.surface)
+        .inner_margin(egui::Margin::symmetric(8, 0))
+        .show(ui, |ui| {
+            ui.set_height(header_height);
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
 
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
-        ui.set_min_height(icon_size + v_pad * 2.0);
+                // Drag handle
+                let (drag_rect, drag_response) = ui.allocate_exact_size(
+                    Vec2::new(14.0, header_height),
+                    Sense::click_and_drag(),
+                );
+                ui.painter().text(
+                    drag_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    egui_phosphor::regular::DOTS_SIX,
+                    crate::theme::icon_font_id(10.0),
+                    DARK.text_secondary,
+                );
+                if drag_response.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
+                if drag_response.dragged() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                }
+                let dragged = drag_response.dragged();
 
-        ui.add_space(h_pad);
+                // Title
+                ui.add_space(4.0);
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(title).size(12.0).color(DARK.text_primary),
+                    )
+                    .truncate(),
+                );
 
-        ui.label(
-            RichText::new(egui_phosphor::regular::DOTS_SIX)
-                .font(crate::theme::icon_font_id(10.0))
-                .color(DARK.text_secondary),
-        );
-        ui.add_space(4.0);
-        ui.label(RichText::new(title).size(12.0).color(DARK.text_primary));
+                // Right-aligned icon buttons
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    for &icon in RIGHT_ICONS.iter() {
+                        let (rect, response) = ui.allocate_exact_size(
+                            Vec2::splat(icon_size + 4.0),
+                            Sense::click(),
+                        );
+                        let color = if response.hovered() {
+                            DARK.text_primary
+                        } else {
+                            DARK.text_secondary
+                        };
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            icon,
+                            crate::theme::icon_font_id(icon_size),
+                            color,
+                        );
+                    }
+                });
 
-        let available = ui.available_width();
-        // Push right by consuming the available space minus the icons width.
-        let icon_total = RIGHT_ICONS.len() as f32 * (icon_size + 6.0) + h_pad;
-        if available > icon_total {
-            ui.add_space(available - icon_total);
-        }
+                dragged
+            })
+            .inner
+        });
 
-        for &icon in RIGHT_ICONS {
-            let (rect, response) = ui.allocate_exact_size(
-                Vec2::splat(icon_size + 6.0),
-                Sense::click(),
-            );
-
-            let color = if response.hovered() {
-                DARK.text_primary
-            } else {
-                DARK.text_secondary
-            };
-
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                icon,
-                crate::theme::icon_font_id(icon_size),
-                color,
-            );
-            // No action yet — placeholder buttons
-        }
-
-        ui.add_space(h_pad);
-    });
-
-    // 1px bottom border
-    let rect = ui.min_rect();
+    // Bottom border
+    let rect = frame_resp.response.rect;
     ui.painter().hline(
         rect.x_range(),
         rect.bottom(),
         Stroke::new(1.0, DARK.border),
     );
+
+    frame_resp.inner
 }

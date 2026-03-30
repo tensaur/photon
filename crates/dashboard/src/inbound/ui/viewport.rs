@@ -15,7 +15,10 @@ pub struct ViewportBehavior<'a> {
 
 impl egui_tiles::Behavior<Pane> for ViewportBehavior<'_> {
     fn pane_ui(&mut self, ui: &mut Ui, _tile_id: TileId, pane: &mut Pane) -> UiResponse {
-        photon_ui::panel_header::show(ui, pane.title());
+        // Clip to the pane's allocated rect so content doesn't overflow.
+        ui.set_clip_rect(ui.max_rect());
+
+        let dragged = photon_ui::panel_header::show(ui, pane.title());
 
         match pane {
             Pane::LineChart(state) => {
@@ -25,7 +28,12 @@ impl egui_tiles::Behavior<Pane> for ViewportBehavior<'_> {
                 panes::comparison::show(ui, state, self.cache, self.sidebar_state, self.crosshair_x)
             }
         }
-        UiResponse::None
+
+        if dragged {
+            UiResponse::DragStarted
+        } else {
+            UiResponse::None
+        }
     }
 
     fn tab_title_for_pane(&mut self, pane: &Pane) -> WidgetText {

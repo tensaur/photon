@@ -21,6 +21,8 @@ pub struct SidebarState {
     pub expanded_experiments: HashMap<Option<ExperimentId>, bool>,
     pub run_colors: HashMap<RunId, usize>,
     next_color: usize,
+    /// Y coordinate where a drag-select started (None = no drag in progress).
+    drag_start_y: Option<f32>,
 }
 
 impl Default for SidebarState {
@@ -35,6 +37,7 @@ impl Default for SidebarState {
             expanded_experiments: HashMap::new(),
             run_colors: HashMap::new(),
             next_color: 0,
+            drag_start_y: None,
         }
     }
 }
@@ -59,10 +62,12 @@ impl SidebarState {
 }
 
 pub enum SidebarAction {
-    /// Click run name → select only this run.
+    /// Click run name → select only this run (clears others).
     SelectRun(RunId),
     /// Click eye icon → toggle chart visibility.
     ToggleVisibility(RunId),
+    /// Drag over a run → add to visible set (multi-select).
+    MakeVisible(RunId),
     /// Clear selection entirely.
     ClearSelection,
 }
@@ -72,8 +77,8 @@ pub fn show(
     state: &mut SidebarState,
     runs: &[Run],
     experiments: &[Experiment],
-) -> Option<SidebarAction> {
-    let mut action: Option<SidebarAction> = None;
+) -> Vec<SidebarAction> {
+    let mut actions: Vec<SidebarAction> = Vec::new();
 
     let search_frame = egui::Frame::new()
         .fill(theme::DARK.surface)
@@ -120,6 +125,9 @@ pub fn show(
 
     let mut exp_ids: Vec<Option<ExperimentId>> = by_experiment.keys().copied().collect();
     exp_ids.sort();
+
+    // Collect row rects for drag-select range detection.
+    let mut run_rows: Vec<(RunId, egui::Rect)> = Vec::new();
 
     for exp_id in exp_ids {
         let exp_runs = &by_experiment[&exp_id];
@@ -191,7 +199,7 @@ pub fn show(
                     .fill(row_color)
                     .inner_margin(egui::Margin::symmetric(4, 2));
 
-                let row_action = row_frame
+                let row_frame_resp = row_frame
                     .show(ui, |ui| {
                         let mut row_action: Option<SidebarAction> = None;
                         ui.horizontal(|ui| {
@@ -239,9 +247,12 @@ pub fn show(
                                 .selectable(false)
                                 .sense(Sense::click()),
                             );
+                            if name_resp.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                            }
                             if name_resp.clicked() {
-                                if is_selected && state.selected_runs.len() == 1 {
-                                    row_action = Some(SidebarAction::ClearSelection);
+                                if is_selected && is_visible {
+                                    row_action = Some(SidebarAction::ToggleVisibility(run.id()));
                                 } else {
                                     row_action = Some(SidebarAction::SelectRun(run.id()));
                                 }
@@ -264,8 +275,12 @@ pub fn show(
                                                 .font(photon_ui::theme::icon_font_id(12.0))
                                                 .color(eye_color),
                                         )
+                                        .selectable(false)
                                         .sense(Sense::click()),
                                     );
+                                    if eye_resp.hovered() {
+                                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                    }
                                     if eye_resp.clicked() {
                                         row_action =
                                             Some(SidebarAction::ToggleVisibility(run.id()));
@@ -283,19 +298,63 @@ pub fn show(
                             );
                         });
                         row_action
-                    })
-                    .inner;
+                    });
+                let row_rect = row_frame_resp.response.rect;
+                let row_action = row_frame_resp.inner;
 
-                if row_action.is_some() {
-                    action = row_action;
+                if let Some(a) = row_action {
+                    actions.push(a);
                 }
+
+                // Record row rect for drag-select range detection below.
+                run_rows.push((run.id(), row_rect));
             }
 
             ui.add_space(8.0);
         }
     }
 
-    action
+    // Track drag start/end Y positions and select all rows in the range,
+    // so fast drags don't skip rows between frames.
+    let (primary_down, just_pressed, pointer_pos) = ui.input(|i| {
+        (
+            i.pointer.primary_down(),
+            i.pointer.primary_pressed(),
+            i.pointer.interact_pos(),
+        )
+    });
+
+    if primary_down {
+        if let Some(pos) = pointer_pos {
+            if just_pressed {
+                // Check if the press started on a run row.
+                let on_row = run_rows.iter().any(|(_, rect)| rect.contains(pos));
+                if on_row {
+                    state.drag_start_y = Some(pos.y);
+                }
+            }
+
+            if let Some(start_y) = state.drag_start_y {
+                // Select all rows whose vertical center falls within [start_y, current_y].
+                let y_min = start_y.min(pos.y);
+                let y_max = start_y.max(pos.y);
+
+                for &(run_id, row_rect) in &run_rows {
+                    let row_center_y = row_rect.center().y;
+                    if row_center_y >= y_min
+                        && row_center_y <= y_max
+                        && !state.visible_runs.contains(&run_id)
+                    {
+                        actions.push(SidebarAction::MakeVisible(run_id));
+                    }
+                }
+            }
+        }
+    } else {
+        state.drag_start_y = None;
+    }
+
+    actions
 }
 
 fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {

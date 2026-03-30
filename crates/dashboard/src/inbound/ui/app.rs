@@ -157,31 +157,45 @@ impl DashboardApp {
     fn handle_sidebar_action(&mut self, action: SidebarAction) {
         match action {
             SidebarAction::SelectRun(run_id) => {
+                // Clear all other visible runs — show only this one.
+                self.unsubscribe_all();
+                self.sidebar.visible_runs.clear();
+                self.sidebar.run_colors.clear();
+
                 self.sidebar.selected_runs = vec![run_id];
-                // Also make visible if not already
-                if !self.sidebar.visible_runs.contains(&run_id) {
-                    self.sidebar.visible_runs.push(run_id);
-                    self.sidebar.assign_color(run_id);
-                    self.ensure_metrics_loaded(run_id);
-                    self.subscribe_if_active(run_id);
-                }
+                self.sidebar.visible_runs.push(run_id);
+                self.sidebar.assign_color(run_id);
+                self.ensure_metrics_loaded(run_id);
+                self.subscribe_if_active(run_id);
                 self.rebuild_viewport();
             }
             SidebarAction::ToggleVisibility(run_id) => {
                 if let Some(pos) = self.sidebar.visible_runs.iter().position(|&id| id == run_id) {
-                    // Hide run
+                    // Hide this run.
                     self.sidebar.visible_runs.remove(pos);
                     self.sidebar.release_color(&run_id);
                     self.sidebar.selected_runs.retain(|&id| id != run_id);
                     channel::send_cmd(&self.commands, Command::Unsubscribe { run_id });
                 } else {
-                    // Show run
+                    // Show this run (add to existing visible set).
                     self.sidebar.visible_runs.push(run_id);
                     self.sidebar.assign_color(run_id);
                     self.ensure_metrics_loaded(run_id);
                     self.subscribe_if_active(run_id);
                 }
+                // Select the toggled run for focus.
+                self.sidebar.selected_runs = vec![run_id];
                 self.rebuild_viewport();
+            }
+            SidebarAction::MakeVisible(run_id) => {
+                // Drag-select: add to visible set without clearing others.
+                if !self.sidebar.visible_runs.contains(&run_id) {
+                    self.sidebar.visible_runs.push(run_id);
+                    self.sidebar.assign_color(run_id);
+                    self.ensure_metrics_loaded(run_id);
+                    self.subscribe_if_active(run_id);
+                    self.rebuild_viewport();
+                }
             }
             SidebarAction::ClearSelection => {
                 self.unsubscribe_all();
@@ -222,22 +236,16 @@ impl DashboardApp {
             return;
         }
 
-        // Collect metrics for all visible runs that have loaded
-        let mut all_metrics_ready = true;
+        // Collect metrics for visible runs that have loaded (don't wait for all).
         let mut per_run_metrics: Vec<(RunId, Vec<Metric>)> = Vec::new();
         for &run_id in selected {
-            match self.cache.metrics.get(&run_id) {
-                Some(RequestState::Loaded(metrics)) => {
-                    per_run_metrics.push((run_id, metrics.clone()));
-                }
-                _ => {
-                    all_metrics_ready = false;
-                }
+            if let Some(RequestState::Loaded(metrics)) = self.cache.metrics.get(&run_id) {
+                per_run_metrics.push((run_id, metrics.clone()));
             }
         }
 
-        if !all_metrics_ready || per_run_metrics.is_empty() {
-            return; // wait for all metrics to arrive
+        if per_run_metrics.is_empty() {
+            return; // nothing loaded yet
         }
 
         // Request data for any runs we haven't queried yet
@@ -276,15 +284,14 @@ impl DashboardApp {
                 })
                 .collect();
             if tab_ids.is_empty() {
-                self.tile_tree = None;
-                return;
+                return; // no metrics yet — keep existing viewport
             }
             let root = tiles.insert_grid_tile(tab_ids);
             self.tile_tree = Some(egui_tiles::Tree::new("viewport", root, tiles));
         } else {
             // Multiple runs: comparison panes for shared metrics
             let shared_metrics = find_shared_metrics(&per_run_metrics);
-            let run_ids: Vec<RunId> = visible.clone();
+            let run_ids: Vec<RunId> = per_run_metrics.iter().map(|(id, _)| *id).collect();
 
             let tab_ids: Vec<_> = shared_metrics
                 .iter()
@@ -296,8 +303,7 @@ impl DashboardApp {
                 })
                 .collect();
             if tab_ids.is_empty() {
-                self.tile_tree = None;
-                return;
+                return; // no shared metrics — keep existing viewport
             }
             let root = tiles.insert_grid_tile(tab_ids);
             self.tile_tree = Some(egui_tiles::Tree::new("viewport", root, tiles));
@@ -334,7 +340,7 @@ impl eframe::App for DashboardApp {
             });
 
         // 3. Sidebar (collapsible, 210px)
-        let sidebar_action = if self.sidebar_visible {
+        let sidebar_actions = if self.sidebar_visible {
             egui::SidePanel::left("sidebar")
                 .exact_width(photon_ui::theme::SIDEBAR_WIDTH)
                 .resizable(false)
@@ -374,10 +380,10 @@ impl eframe::App for DashboardApp {
                 })
                 .inner
         } else {
-            None
+            Vec::new()
         };
 
-        if let Some(action) = sidebar_action {
+        for action in sidebar_actions {
             self.handle_sidebar_action(action);
         }
 
