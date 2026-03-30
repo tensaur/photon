@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 photon-core.workspace = true
 photon-protocol.workspace = true
 photon-transport.workspace = true
+photon-ui.workspace = true
 
 async-channel.workspace = true
 eframe.workspace = true
@@ -20,6 +21,7 @@ egui.workspace = true
 egui_plot.workspace = true
 egui_extras.workspace = true
 egui_tiles.workspace = true
+egui-phosphor = { version = "0.11", default-features = false, features = ["regular"] }
 
 uuid.workspace = true
 serde.workspace = true

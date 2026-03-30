@@ -1,9 +1,10 @@
 use egui::Vec2b;
 use egui_plot::{Legend, Line, Plot, PlotPoints};
 
+use photon_ui::theme;
+
 use super::ComparisonState;
 use crate::inbound::ui::app::DataCache;
-use crate::inbound::ui::theme;
 
 pub fn show(ui: &mut egui::Ui, state: &ComparisonState, cache: &DataCache) {
     let metric_name = state.metric.as_str().to_owned();
@@ -19,7 +20,7 @@ pub fn show(ui: &mut egui::Ui, state: &ComparisonState, cache: &DataCache) {
         })
         .show(ui, |plot_ui| {
             for (i, run_id) in state.run_ids.iter().enumerate() {
-                let color = theme::CHART_COLORS[i % theme::CHART_COLORS.len()];
+                let color = theme::DARK.chart_colors[i % theme::DARK.chart_colors.len()];
 
                 let points: Vec<[f64; 2]> = cache
                     .get_series(run_id, &state.metric)

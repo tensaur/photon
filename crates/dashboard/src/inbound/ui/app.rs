@@ -13,7 +13,6 @@ use crate::inbound::channel::{self, Command, CommandSender, Response, ResponseRe
 
 use super::panes::{ComparisonState, LineChartState, Pane};
 use super::sidebar::{self, SidebarAction, SidebarState};
-use super::theme;
 use super::viewport::ViewportBehavior;
 
 #[derive(Default)]
@@ -65,7 +64,7 @@ impl DashboardApp {
         commands: CommandSender,
         responses: ResponseReceiver,
     ) -> Self {
-        theme::apply(&cc.egui_ctx);
+        photon_ui::theme::apply(&cc.egui_ctx, &photon_ui::theme::DARK);
 
         // Request initial run and experiment lists.
         channel::send_cmd(&commands, Command::ListRuns);
@@ -320,7 +319,7 @@ impl eframe::App for DashboardApp {
                                 ui.spinner();
                             }
                             RequestState::Failed(msg) => {
-                                ui.colored_label(theme::STATUS_FAILED, format!("Error: {msg}"));
+                                ui.colored_label(photon_ui::theme::DARK.status_failed, format!("Error: {msg}"));
                                 if ui.button("Retry").clicked() {
                                     let () = channel::send_cmd(&self.commands, Command::ListRuns);
                                     self.cache.runs = RequestState::Pending;
@@ -347,7 +346,7 @@ impl eframe::App for DashboardApp {
                 ui.centered_and_justified(|ui| {
                     ui.label(
                         egui::RichText::new("Select a run to view metrics")
-                            .color(theme::TEXT_DIM)
+                            .color(photon_ui::theme::DARK.text_dim)
                             .size(18.0),
                     );
                 });

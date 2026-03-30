@@ -1,9 +1,10 @@
 use egui::{Color32, Ui, WidgetText};
 use egui_tiles::{TileId, Tiles, UiResponse};
 
+use photon_ui::theme;
+
 use super::app::DataCache;
 use super::panes::{self, Pane};
-use super::theme;
 
 pub struct ViewportBehavior<'a> {
     pub cache: &'a DataCache,
@@ -30,7 +31,7 @@ impl egui_tiles::Behavior<Pane> for ViewportBehavior<'_> {
     }
 
     fn tab_bar_color(&self, _visuals: &egui::Visuals) -> Color32 {
-        theme::BG_SIDEBAR
+        theme::DARK.bg
     }
 
     fn tab_bg_color(
@@ -41,9 +42,9 @@ impl egui_tiles::Behavior<Pane> for ViewportBehavior<'_> {
         active: &egui_tiles::TabState,
     ) -> Color32 {
         if active.active {
-            theme::BG_PRIMARY
+            theme::DARK.bg
         } else {
-            theme::BG_SURFACE
+            theme::DARK.surface
         }
     }
 

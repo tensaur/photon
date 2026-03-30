@@ -6,7 +6,7 @@ use photon_core::domain::experiment::Experiment;
 use photon_core::domain::run::{Run, RunStatus};
 use photon_core::types::id::{ExperimentId, RunId};
 
-use super::theme;
+use photon_ui::theme;
 
 pub struct SidebarState {
     pub search_query: String,
@@ -47,7 +47,7 @@ pub fn show(
 ) -> Option<SidebarAction> {
     let mut action: Option<SidebarAction> = None;
 
-    ui.heading(RichText::new("Runs").color(theme::TEXT_PRIMARY));
+    ui.heading(RichText::new("Runs").color(theme::DARK.text_primary));
     ui.add_space(6.0);
 
     ui.horizontal(|ui| {
@@ -60,16 +60,16 @@ pub fn show(
         status_toggle(
             ui,
             "Running",
-            theme::STATUS_RUNNING,
+            theme::DARK.status_running,
             &mut state.show_running,
         );
         status_toggle(
             ui,
             "Finished",
-            theme::STATUS_FINISHED,
+            theme::DARK.status_done,
             &mut state.show_finished,
         );
-        status_toggle(ui, "Failed", theme::STATUS_FAILED, &mut state.show_failed);
+        status_toggle(ui, "Failed", theme::DARK.status_failed, &mut state.show_failed);
     });
     ui.add_space(6.0);
 
@@ -104,7 +104,7 @@ pub fn show(
                 .map_or_else(|| format!("Experiment {}", id.short()), |e| e.name.clone()),
             None => "Ungrouped".to_string(),
         };
-        let header = egui::CollapsingHeader::new(RichText::new(header_text).color(theme::TEXT_DIM))
+        let header = egui::CollapsingHeader::new(RichText::new(header_text).color(theme::DARK.text_dim))
             .id_salt(exp_id)
             .default_open(*expanded)
             .show(ui, |ui| {
@@ -119,9 +119,9 @@ pub fn show(
                         ui.painter().circle_filled(rect.center(), 4.0, status_color);
 
                         let label = RichText::new(run.name()).color(if is_selected {
-                            theme::ACCENT
+                            theme::DARK.chart_colors[0]
                         } else {
-                            theme::TEXT_PRIMARY
+                            theme::DARK.text_primary
                         });
 
                         let response = ui.selectable_label(is_selected, label);
@@ -148,7 +148,7 @@ pub fn show(
 }
 
 fn status_toggle(ui: &mut Ui, label: &str, color: Color32, value: &mut bool) {
-    let text = RichText::new(label).color(if *value { color } else { theme::TEXT_DIM });
+    let text = RichText::new(label).color(if *value { color } else { theme::DARK.text_dim });
     if ui.selectable_label(*value, text).clicked() {
         *value = !*value;
     }
@@ -156,10 +156,10 @@ fn status_toggle(ui: &mut Ui, label: &str, color: Color32, value: &mut bool) {
 
 fn status_color(status: &RunStatus) -> Color32 {
     match status {
-        RunStatus::Running => theme::STATUS_RUNNING,
-        RunStatus::Finished => theme::STATUS_FINISHED,
-        RunStatus::Failed { .. } => theme::STATUS_FAILED,
-        RunStatus::Created => theme::TEXT_DIM,
+        RunStatus::Running => theme::DARK.status_running,
+        RunStatus::Finished => theme::DARK.status_done,
+        RunStatus::Failed { .. } => theme::DARK.status_failed,
+        RunStatus::Created => theme::DARK.text_dim,
     }
 }
 
