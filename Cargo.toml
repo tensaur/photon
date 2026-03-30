@@ -17,6 +17,7 @@ members = [
     "crates/subscription",
     "crates/server",
     "crates/dashboard",
+    "crates/ui",
 ]
 
 [workspace.package]
@@ -97,6 +98,8 @@ photon-wal = { path = "crates/wal", version = "0.1.1" }
 photon-batch = { path = "crates/batch", version = "0.1.1" }
 photon-uplink = { path = "crates/uplink", version = "0.1.1" }
 photon-hook = { path = "crates/hook", version = "0.1.1" }
+
+photon-ui = { path = "crates/ui" }
 
 # internal crates (server-only)
 photon-store = { path = "crates/store" }
