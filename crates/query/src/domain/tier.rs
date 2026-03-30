@@ -10,10 +10,7 @@ pub struct ResolutionPlan {
     pub envelope: Resolution,
 }
 
-/// Picks the right resolution tier for the line and envelope based on
-/// point count and target. Each tier width represents a step-width bucket
-/// size. The selector estimates how many buckets each tier would produce
-/// and picks the finest tier that stays within the target.
+/// Picks the right resolution tier for the line and envelope.
 #[derive(Clone)]
 pub struct TierSelector {
     widths: Vec<u64>,

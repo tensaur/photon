@@ -40,12 +40,12 @@ pub enum PersistError {
 }
 
 #[derive(Clone)]
-pub struct ConsumerConfig {
+pub struct PersistConfig {
     pub poll_interval: std::time::Duration,
     pub max_batch_read: usize,
 }
 
-impl Default for ConsumerConfig {
+impl Default for PersistConfig {
     fn default() -> Self {
         Self {
             poll_interval: std::time::Duration::from_millis(100),

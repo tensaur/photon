@@ -9,10 +9,6 @@ use crate::ports::aggregator::Aggregator;
 use crate::reducer::Reducer;
 
 /// Offline compactor for rebuild, backfill, and repair.
-///
-/// Reads raw points from the store and reduces them into buckets.
-/// Not the primary hot path — the streaming [`Reducer`] in the persist
-/// projection handles live downsampling.
 pub struct Compactor<A, M, B, C>
 where
     A: Aggregator,

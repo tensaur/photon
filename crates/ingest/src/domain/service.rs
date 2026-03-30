@@ -66,8 +66,6 @@ impl<A: WalAppender> Service<A> {
         }
     }
 
-    /// Seed the dedup cache from persisted watermarks and any unconsumed
-    /// WAL batches. Must be called before serving traffic.
     pub async fn seed(&self, watermarks: &impl WatermarkReader, wal: &impl Wal) {
         let mut entries = watermarks.read_all().await.unwrap_or_default();
         if let Ok(tail) = wal.read_from(WalOffset::ZERO) {

@@ -14,10 +14,6 @@ pub enum Verdict {
 }
 
 /// Tracks the next expected sequence number per run.
-///
-/// Guarantees strict in-order processing: only `seq == expected_next` is
-/// accepted. Gaps indicate a broken session (TCP should guarantee ordering,
-/// so a gap means something is seriously wrong).
 #[derive(Clone)]
 pub struct DeduplicationCache {
     expected_next: std::sync::Arc<DashMap<RunId, SequenceNumber>>,
@@ -36,8 +32,7 @@ impl DeduplicationCache {
         }
     }
 
-    /// Seed `expected_next` from persisted watermarks.
-    /// Each watermark is the highest persisted sequence, so `expected_next` = watermark + 1.
+    /// Seed `expected_next` from persisted watermarks and WAL.
     pub fn seed(&self, entries: &[(RunId, SequenceNumber)]) {
         for (run_id, seq) in entries {
             self.expected_next

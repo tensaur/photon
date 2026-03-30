@@ -11,7 +11,7 @@ use photon_core::types::event::PhotonEvent;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_persist::domain::projections::downsample::DownsampleConfig;
-use photon_persist::domain::service::{ConsumerConfig, Service as PersistService};
+use photon_persist::domain::service::{PersistConfig, Service as PersistService};
 use photon_persist::inbound::thread as persist_thread;
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wal_manager,
         notify,
         persist_service,
-        ConsumerConfig::default(),
+        PersistConfig::default(),
         persist_cancel,
     ));
 

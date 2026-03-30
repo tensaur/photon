@@ -5,10 +5,6 @@ use tokio::sync::broadcast as tokio_broadcast;
 
 /// Extension point for reacting to system events.
 ///
-/// Hook authors implement [`handle`](Hook::handle) and call [`spawn`](Hook::spawn)
-/// to run the hook as a background task. Each hook receives every [`PhotonEvent`]
-/// and can react with side effects (notifications, alerts, logging, etc.).
-///
 /// # Example
 ///
 /// ```ignore

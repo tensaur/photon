@@ -23,9 +23,6 @@ impl Default for DownsampleConfig {
 }
 
 /// Streaming downsample projection.
-///
-/// Maintains a [`Reducer`] per (run, metric) pair. As points flow through,
-/// closed buckets are written directly into the [`ChangeSet`].
 pub struct DownsampleProjection<A: Aggregator> {
     aggregator: A,
     widths: Vec<u64>,

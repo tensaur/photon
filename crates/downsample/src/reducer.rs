@@ -4,11 +4,6 @@ use photon_core::types::metric::Step;
 use crate::ports::aggregator::Aggregator;
 
 /// Multi-tier streaming reducer using step-width buckets.
-///
-/// Each tier defines a step width. Tier 0 aggregates raw points into
-/// buckets of that width. Coarser tiers aggregate closed buckets from
-/// the tier below via [`Aggregator::merge`], not raw points.
-///
 /// Buckets close when the stream advances into the next window.
 pub struct Reducer<A: Aggregator> {
     aggregator: A,
