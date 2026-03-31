@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 
 use photon_protocol::codec::CodecKind;
 
@@ -98,8 +99,10 @@ impl Router {
         self
     }
 
-    pub async fn serve(self, listener: TcpListener) {
-        axum::serve(listener, self.router)
+    pub async fn serve(self, listener: TcpListener, cancel: CancellationToken) {
+        let server = axum::serve(listener, self.router);
+        server
+            .with_graceful_shutdown(cancel.cancelled_owned())
             .await
             .expect("http server failed");
     }
