@@ -102,7 +102,6 @@ where
             event_tx,
         }
     }
-
 }
 
 impl<C, K, M, W, B> PersistService for Service<C, K, M, W, B>
@@ -127,7 +126,8 @@ where
             let metric_batch: MetricBatch =
                 self.codec.decode(&buf).map_err(PersistError::Decode)?;
 
-            self.downsample.project(batch.run_id, &metric_batch, changeset);
+            self.downsample
+                .project(batch.run_id, &metric_batch, changeset);
             changeset.add_decoded_batch(batch.run_id, metric_batch);
             changeset.add_watermark(batch.run_id, batch.sequence_number);
         }

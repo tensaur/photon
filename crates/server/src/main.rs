@@ -120,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
             let experiment_store = experiment_store.clone();
             let project_store = project_store.clone();
             let finished_runs_tx = finished_runs_tx.clone();
-          
+
             async move {
                 ingest_handler::handle_envelope(
                     &svc,

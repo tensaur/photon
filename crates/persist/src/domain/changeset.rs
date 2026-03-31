@@ -15,6 +15,12 @@ pub struct ChangeSet {
     pub events: Vec<PhotonEvent>,
 }
 
+impl Default for ChangeSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChangeSet {
     pub fn new() -> Self {
         Self::with_capacity(0)

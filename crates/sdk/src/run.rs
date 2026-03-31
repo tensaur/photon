@@ -77,14 +77,14 @@ impl Run {
         if idx >= self.last_step.len() {
             self.last_step.resize(idx + 1, None);
         }
-        if let Some(last) = self.last_step[idx] {
-            if step <= last {
-                return Err(LogError::StepNotMonotonic {
-                    key: key.to_owned(),
-                    step: step.as_u64(),
-                    last: last.as_u64(),
-                });
-            }
+        if let Some(last) = self.last_step[idx]
+            && step <= last
+        {
+            return Err(LogError::StepNotMonotonic {
+                key: key.to_owned(),
+                step: step.as_u64(),
+                last: last.as_u64(),
+            });
         }
         self.last_step[idx] = Some(step);
 

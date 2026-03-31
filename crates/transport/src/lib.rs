@@ -39,7 +39,7 @@ pub async fn serve<F, Fut>(
 {
     loop {
         let conn = tokio::select! {
-            _ = cancel.cancelled() => break,
+            () = cancel.cancelled() => break,
             res = listener.accept() => res,
         };
 
