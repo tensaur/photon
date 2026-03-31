@@ -2792,10 +2792,6 @@ name = "photon-downsample"
 version = "0.1.1"
 dependencies = [
  "photon-core",
- "photon-store",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
 ]
 
 [[package]]
