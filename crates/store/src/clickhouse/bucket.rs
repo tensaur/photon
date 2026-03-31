@@ -44,11 +44,7 @@ impl ClickHouseBucketStore {
 }
 
 impl BucketWriter for ClickHouseBucketStore {
-    async fn write_buckets(
-        &self,
-        run_id: &RunId,
-        entries: &[BucketEntry],
-    ) -> Result<(), WriteError> {
+    async fn write_buckets(&self, entries: &[BucketEntry]) -> Result<(), WriteError> {
         if entries.is_empty() {
             return Ok(());
         }
@@ -58,8 +54,8 @@ impl BucketWriter for ClickHouseBucketStore {
             .insert("buckets")
             .map_err(|e| WriteError::Store(Box::new(e)))?;
 
-        let run_uuid: uuid::Uuid = (*run_id).into();
         for entry in entries {
+            let run_uuid: uuid::Uuid = entry.run_id.into();
             insert
                 .write(&BucketWriteRow {
                     run_id: run_uuid,

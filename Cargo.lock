@@ -2792,10 +2792,6 @@ name = "photon-downsample"
 version = "0.1.1"
 dependencies = [
  "photon-core",
- "photon-store",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2804,6 +2800,7 @@ version = "0.1.1"
 dependencies = [
  "photon-core",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2830,7 +2827,6 @@ version = "0.1.1"
 dependencies = [
  "bytes",
  "crc32fast",
- "futures-util",
  "photon-core",
  "photon-protocol",
  "photon-store",

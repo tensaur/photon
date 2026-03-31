@@ -39,6 +39,7 @@ pub struct Run {
     uplink_handle: Option<UplinkHandle>,
     wal: Arc<dyn Wal>,
     points_logged: u64,
+    last_step: Vec<Option<Step>>,
 }
 
 impl Run {
@@ -58,14 +59,34 @@ impl Run {
             uplink_handle,
             wal,
             points_logged: 0,
+            last_step: Vec::new(),
         }
     }
 
     /// Log a single metric data point.
+    ///
+    /// Steps must be monotonically increasing per metric key. Logging a step
+    /// less than or equal to the previous step for the same key returns an error.
     pub fn log(&mut self, key: &str, value: f64, step: u64) -> Result<(), LogError> {
         Metric::new(key)?;
         let spur = self.interner.get_or_intern(key);
         let metric_key = MetricKey::new(lasso::Key::into_usize(spur));
+        let step = Step::new(step);
+
+        let idx = metric_key.index();
+        if idx >= self.last_step.len() {
+            self.last_step.resize(idx + 1, None);
+        }
+        if let Some(last) = self.last_step[idx]
+            && step <= last
+        {
+            return Err(LogError::StepNotMonotonic {
+                key: key.to_owned(),
+                step: step.as_u64(),
+                last: last.as_u64(),
+            });
+        }
+        self.last_step[idx] = Some(step);
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -75,7 +96,7 @@ impl Run {
         self.accumulator.push(RawPoint {
             key: metric_key,
             value,
-            step: Step::new(step),
+            step,
             timestamp_ns: now,
         });
 
@@ -145,5 +166,62 @@ impl Run {
             batches_acked,
             batches_rejected,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Run;
+    use crate::error::LogError;
+
+    fn new_run() -> Run {
+        Run::builder().start().expect("start should succeed")
+    }
+
+    #[test]
+    fn test_monotonic_steps_accepted() {
+        let mut run = new_run();
+        run.log("train/loss", 0.5, 1).unwrap();
+        run.log("train/loss", 0.4, 2).unwrap();
+        run.log("train/loss", 0.3, 3).unwrap();
+    }
+
+    #[test]
+    fn test_duplicate_step_rejected() {
+        let mut run = new_run();
+        run.log("train/loss", 0.5, 1).unwrap();
+        let err = run.log("train/loss", 0.4, 1).unwrap_err();
+        assert!(matches!(err, LogError::StepNotMonotonic { .. }));
+    }
+
+    #[test]
+    fn test_decreasing_step_rejected() {
+        let mut run = new_run();
+        run.log("train/loss", 0.5, 5).unwrap();
+        let err = run.log("train/loss", 0.4, 3).unwrap_err();
+        assert!(matches!(
+            err,
+            LogError::StepNotMonotonic {
+                step: 3,
+                last: 5,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_different_metrics_independent() {
+        let mut run = new_run();
+        run.log("train/loss", 0.5, 1).unwrap();
+        run.log("eval/loss", 0.6, 1).unwrap(); // same step, different metric — ok
+        run.log("train/loss", 0.4, 2).unwrap();
+        run.log("eval/loss", 0.5, 2).unwrap();
+    }
+
+    #[test]
+    fn test_large_step_gap_accepted() {
+        let mut run = new_run();
+        run.log("train/loss", 0.5, 1).unwrap();
+        run.log("train/loss", 0.4, 1000).unwrap(); // big jump is fine
     }
 }

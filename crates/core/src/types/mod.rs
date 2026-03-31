@@ -3,6 +3,7 @@ pub mod batch;
 pub mod bucket;
 pub mod config;
 pub mod error;
+pub mod event;
 pub mod id;
 pub mod ingest;
 pub mod metric;

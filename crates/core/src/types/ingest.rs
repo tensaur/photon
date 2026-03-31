@@ -14,6 +14,7 @@ use crate::types::sequence::SequenceNumber;
 pub enum IngestMessage {
     Batch(WireBatch),
     RegisterRun(Run),
+    FinishRun(RunId),
     RegisterExperiment(Experiment),
     RegisterProject(Project),
     QueryWatermark(RunId),
@@ -24,6 +25,7 @@ pub enum IngestMessage {
 pub enum IngestResult {
     Ack(AckResult),
     RunRegistered(RunId),
+    RunFinished(RunId),
     ExperimentRegistered(ExperimentId),
     ProjectRegistered(ProjectId),
     Watermark(SequenceNumber),

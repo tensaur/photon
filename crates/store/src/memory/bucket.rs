@@ -30,14 +30,10 @@ impl Default for InMemoryBucketStore {
 }
 
 impl BucketWriter for InMemoryBucketStore {
-    async fn write_buckets(
-        &self,
-        run_id: &RunId,
-        entries: &[BucketEntry],
-    ) -> Result<(), WriteError> {
+    async fn write_buckets(&self, entries: &[BucketEntry]) -> Result<(), WriteError> {
         for entry in entries {
             self.data
-                .entry((*run_id, entry.key.clone(), entry.tier))
+                .entry((entry.run_id, entry.key.clone(), entry.tier))
                 .or_default()
                 .push(entry.bucket.clone());
         }

@@ -10,44 +10,43 @@ pub struct ResolutionPlan {
     pub envelope: Resolution,
 }
 
-/// Picks the right resolution for the line and envelope based on
-/// the step range and target point count.
+/// Picks the right resolution tier for the line and envelope.
 #[derive(Clone)]
 pub struct TierSelector {
-    divisors: Vec<usize>,
+    widths: Vec<u64>,
 }
 
 impl Default for TierSelector {
     fn default() -> Self {
-        Self::new(vec![60, 3600])
+        Self::new(vec![100, 1000, 10000])
     }
 }
 
 impl TierSelector {
-    pub fn new(divisors: Vec<usize>) -> Self {
+    pub fn new(widths: Vec<u64>) -> Self {
         debug_assert!(
-            divisors.windows(2).all(|w| w[0] < w[1]),
-            "divisors must be sorted ascending"
+            widths.windows(2).all(|w| w[0] < w[1]),
+            "widths must be sorted ascending"
         );
-        Self { divisors }
+        Self { widths }
     }
 
     pub fn pick(&self, point_count: usize, target: usize) -> ResolutionPlan {
         let line = self
-            .divisors
+            .widths
             .iter()
             .enumerate()
-            .find(|(_, d)| point_count / **d >= target)
+            .find(|(_, w)| point_count / **w as usize >= target)
             .map_or(Resolution::Raw, |(i, _)| Resolution::Bucketed(i));
 
         let envelope = match line {
             Resolution::Raw => Resolution::Raw,
             Resolution::Bucketed(_) => self
-                .divisors
+                .widths
                 .iter()
                 .enumerate()
                 .rev()
-                .find(|(_, d)| point_count / **d >= target)
+                .find(|(_, w)| point_count / **w as usize >= target)
                 .map(|(i, _)| Resolution::Bucketed(i))
                 .unwrap_or(line.clone()),
         };
@@ -62,21 +61,19 @@ mod tests {
 
     #[test]
     fn test_raw_when_few_points() {
-        let selector = TierSelector::new(vec![60, 3600]);
-        // 100 points with a target of 200 and no divisor can satisfy
-        // point_count / d >= target, so we get Raw.
-        let plan = selector.pick(100, 200);
+        let selector = TierSelector::new(vec![100, 1000]);
+        let plan = selector.pick(50, 200);
         assert_eq!(plan.line, Resolution::Raw);
         assert_eq!(plan.envelope, Resolution::Raw);
     }
 
     #[test]
     fn test_bucketed_when_many_points() {
-        let selector = TierSelector::new(vec![60, 3600]);
-        // 720_000 points, target 200.
-        // divisor 60:   720_000 / 60   = 12_000 >= 200  -> Bucketed(0)  (line picks first match)
-        // divisor 3600: 720_000 / 3600 =    200 >= 200  -> Bucketed(1)  (envelope picks last match)
-        let plan = selector.pick(720_000, 200);
+        let selector = TierSelector::new(vec![100, 1000]);
+        // 200_000 points, target 200.
+        // width 100:  200_000 / 100  = 2_000 >= 200 -> Bucketed(0)
+        // width 1000: 200_000 / 1000 =   200 >= 200 -> Bucketed(1)
+        let plan = selector.pick(200_000, 200);
         assert_eq!(plan.line, Resolution::Bucketed(0));
         assert_eq!(plan.envelope, Resolution::Bucketed(1));
     }
@@ -84,13 +81,10 @@ mod tests {
     #[test]
     fn test_default_tier_selector() {
         let selector = TierSelector::default();
-        // Default divisors are [60, 3600] with 1-minute and 1-hour buckets.
-        // A small point count should still resolve to Raw.
         let plan = selector.pick(50, 500);
         assert_eq!(plan.line, Resolution::Raw);
         assert_eq!(plan.envelope, Resolution::Raw);
 
-        // A large point count should resolve to Bucketed.
         let plan = selector.pick(1_000_000, 500);
         assert_eq!(plan.line, Resolution::Bucketed(0));
         assert!(matches!(plan.envelope, Resolution::Bucketed(_)));

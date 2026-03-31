@@ -11,7 +11,6 @@ use super::{ReadError, WriteError};
 pub trait BucketWriter: Send + Sync + Clone + 'static {
     fn write_buckets(
         &self,
-        run_id: &RunId,
         entries: &[BucketEntry],
     ) -> impl Future<Output = Result<(), WriteError>> + Send;
 }

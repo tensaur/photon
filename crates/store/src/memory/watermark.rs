@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use dashmap::DashMap;
 
 use photon_core::types::id::RunId;
@@ -8,7 +10,7 @@ use crate::ports::{ReadError, WriteError};
 
 #[derive(Clone)]
 pub struct InMemoryWatermarkStore {
-    inner: DashMap<RunId, SequenceNumber>,
+    inner: Arc<DashMap<RunId, SequenceNumber>>,
 }
 
 impl Default for InMemoryWatermarkStore {
@@ -20,7 +22,7 @@ impl Default for InMemoryWatermarkStore {
 impl InMemoryWatermarkStore {
     pub fn new() -> Self {
         Self {
-            inner: DashMap::new(),
+            inner: Arc::new(DashMap::new()),
         }
     }
 }

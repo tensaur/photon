@@ -1,7 +1,7 @@
 [package]
 name = "photon-hook"
 version.workspace = true
-description = "Library crate to create ingest extensions for Photon"
+description = "Hook trait and broadcast primitives for reacting to Photon events"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -9,7 +9,8 @@ publish = true
 
 [dependencies]
 photon-core.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "rt"] }
+tracing.workspace = true
 
 [lints]
 workspace = true
