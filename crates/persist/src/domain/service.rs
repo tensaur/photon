@@ -1,34 +1,23 @@
-use std::collections::HashMap;
 use std::future::Future;
 
 use bytes::BytesMut;
-use tokio::sync::broadcast;
 
 use photon_core::types::batch::WireBatch;
 use photon_core::types::event::PhotonEvent;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::MetricBatch;
-use photon_core::types::sequence::SequenceNumber;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::bucket::BucketWriter;
 use photon_store::ports::metric::MetricWriter;
 use photon_store::ports::watermark::WatermarkWriter;
 
-use photon_downsample::aggregator::m4::M4Aggregator;
-
 use super::changeset::ChangeSet;
 use super::projections::Projection;
 use super::projections::downsample::{DownsampleConfig, DownsampleProjection};
 
 #[derive(Debug, thiserror::Error)]
-pub enum PersistError {
-    #[error("decompression failed")]
-    Decompress(#[source] photon_protocol::ports::compress::CompressionError),
-
-    #[error("decode failed")]
-    Decode(#[source] photon_protocol::ports::codec::CodecError),
-
+pub enum FlushError {
     #[error("metric write failed")]
     MetricWrite(#[source] photon_store::ports::WriteError),
 
@@ -39,24 +28,34 @@ pub enum PersistError {
     BucketWrite(#[source] photon_store::ports::WriteError),
 }
 
-#[derive(Clone)]
-pub struct PersistConfig {
-    pub poll_interval: std::time::Duration,
-    pub max_batch_read: usize,
-}
+#[derive(Debug, thiserror::Error)]
+pub enum PersistError {
+    #[error("decompression failed")]
+    Decompress(#[source] photon_protocol::ports::compress::CompressionError),
 
-impl Default for PersistConfig {
-    fn default() -> Self {
-        Self {
-            poll_interval: std::time::Duration::from_millis(100),
-            max_batch_read: 1000,
-        }
-    }
+    #[error("decode failed")]
+    Decode(#[source] photon_protocol::ports::codec::CodecError),
+
+    #[error(transparent)]
+    Flush(#[from] FlushError),
 }
 
 pub trait PersistService: Send + Sync + 'static {
-    fn write(&mut self, batches: &[WireBatch])
-    -> impl Future<Output = Result<(), PersistError>> + Send;
+    /// Decode and project wire batches into the changeset
+    fn write(
+        &mut self,
+        batches: &[WireBatch],
+        changeset: &mut ChangeSet,
+    ) -> Result<(), PersistError>;
+
+    /// Flush partial projection state for a finished run into the changeset
+    fn finish_run(&mut self, run_id: RunId, changeset: &mut ChangeSet);
+
+    /// Write the changeset to stores and publish events
+    fn flush(
+        &self,
+        changeset: &mut ChangeSet,
+    ) -> impl Future<Output = Result<(), FlushError>> + Send;
 }
 
 pub struct Service<C, K, M, W, B>
@@ -69,11 +68,11 @@ where
 {
     compressor: C,
     codec: K,
+    downsample: DownsampleProjection,
     metric_writer: M,
     watermark_writer: W,
     bucket_writer: B,
-    event_tx: broadcast::Sender<PhotonEvent>,
-    downsample: DownsampleProjection<M4Aggregator>,
+    event_tx: tokio::sync::broadcast::Sender<PhotonEvent>,
 }
 
 impl<C, K, M, W, B> Service<C, K, M, W, B>
@@ -90,19 +89,20 @@ where
         metric_writer: M,
         watermark_writer: W,
         bucket_writer: B,
-        event_tx: broadcast::Sender<PhotonEvent>,
+        event_tx: tokio::sync::broadcast::Sender<photon_core::types::event::PhotonEvent>,
         downsample_config: DownsampleConfig,
     ) -> Self {
         Self {
             compressor,
             codec,
+            downsample: DownsampleProjection::new(downsample_config),
             metric_writer,
             watermark_writer,
             bucket_writer,
             event_tx,
-            downsample: DownsampleProjection::new(M4Aggregator, downsample_config),
         }
     }
+
 }
 
 impl<C, K, M, W, B> PersistService for Service<C, K, M, W, B>
@@ -113,11 +113,11 @@ where
     W: WatermarkWriter,
     B: BucketWriter,
 {
-    async fn write(&mut self, batches: &[WireBatch]) -> Result<(), PersistError> {
-        let mut changeset = ChangeSet::with_capacity(batches.len());
-        let mut watermarks: HashMap<RunId, SequenceNumber> = HashMap::new();
-
-        // Decode and project
+    fn write(
+        &mut self,
+        batches: &[WireBatch],
+        changeset: &mut ChangeSet,
+    ) -> Result<(), PersistError> {
         for batch in batches {
             let mut buf = BytesMut::with_capacity(batch.uncompressed_size);
             self.compressor
@@ -127,31 +127,34 @@ where
             let metric_batch: MetricBatch =
                 self.codec.decode(&buf).map_err(PersistError::Decode)?;
 
-            self.downsample.apply(batch.run_id, &metric_batch, &mut changeset);
+            self.downsample.project(batch.run_id, &metric_batch, changeset);
             changeset.add_decoded_batch(batch.run_id, metric_batch);
-
-            watermarks
-                .entry(batch.run_id)
-                .and_modify(|s| {
-                    if batch.sequence_number > *s {
-                        *s = batch.sequence_number;
-                    }
-                })
-                .or_insert(batch.sequence_number);
+            changeset.add_watermark(batch.run_id, batch.sequence_number);
         }
 
-        // Flush
-        let watermark_entries: Vec<_> = watermarks.into_iter().collect();
+        Ok(())
+    }
+
+    fn finish_run(&mut self, run_id: RunId, changeset: &mut ChangeSet) {
+        self.downsample.finish_run(run_id, changeset);
+    }
+
+    async fn flush(&self, changeset: &mut ChangeSet) -> Result<(), FlushError> {
+        let watermarks: Vec<_> = changeset
+            .watermarks
+            .iter()
+            .map(|(run_id, seq)| (*run_id, *seq))
+            .collect();
+
         let (metrics_res, watermarks_res, buckets_res) = tokio::join!(
             self.metric_writer.write_batches(&changeset.decoded_batches),
-            self.watermark_writer.write_watermarks(&watermark_entries),
+            self.watermark_writer.write_watermarks(&watermarks),
             self.bucket_writer.write_buckets(&changeset.bucket_entries),
         );
-        metrics_res.map_err(PersistError::MetricWrite)?;
-        watermarks_res.map_err(PersistError::WatermarkWrite)?;
-        buckets_res.map_err(PersistError::BucketWrite)?;
+        metrics_res.map_err(FlushError::MetricWrite)?;
+        watermarks_res.map_err(FlushError::WatermarkWrite)?;
+        buckets_res.map_err(FlushError::BucketWrite)?;
 
-        // Publish events (only after all writes succeed)
         for event in changeset.events.drain(..) {
             let _ = self.event_tx.send(event);
         }
@@ -167,6 +170,7 @@ mod tests {
     use bytes::BytesMut;
     use std::time::SystemTime;
 
+    use photon_core::types::event::PhotonEvent;
     use photon_core::types::id::RunId;
     use photon_core::types::metric::{Metric, MetricBatch, MetricPoint, Step};
     use photon_core::types::sequence::SequenceNumber;
@@ -180,6 +184,9 @@ mod tests {
     use photon_store::ports::bucket::BucketReader;
     use photon_store::ports::metric::MetricReader;
     use photon_store::ports::watermark::WatermarkReader;
+    use tokio::sync::broadcast;
+
+    use crate::domain::projections::downsample::DownsampleConfig;
 
     fn make_wire_batch(batch: &MetricBatch, run_id: RunId, seq: SequenceNumber) -> WireBatch {
         let codec = PostcardCodec;
@@ -227,9 +234,7 @@ mod tests {
             watermarks,
             buckets,
             tx,
-            DownsampleConfig {
-                widths: vec![5],
-            },
+            DownsampleConfig { widths: vec![5] },
         )
     }
 
@@ -263,7 +268,12 @@ mod tests {
         };
 
         let wire = make_wire_batch(&batch, run_id, SequenceNumber::ZERO);
-        svc.write(&[wire]).await.expect("write should succeed");
+        let mut changeset = ChangeSet::new();
+        svc.write(&[wire], &mut changeset)
+            .expect("write should succeed");
+        svc.flush(&mut changeset)
+            .await
+            .expect("flush should succeed");
 
         let points = metric_store
             .read_points(&run_id, &metric, Step::ZERO..Step::MAX)
@@ -310,9 +320,12 @@ mod tests {
         let wire_a = make_wire_batch(&batch_a, run_a, SequenceNumber::from(3));
         let wire_b = make_wire_batch(&batch_b, run_b, SequenceNumber::from(7));
 
-        svc.write(&[wire_a, wire_b])
-            .await
+        let mut changeset = ChangeSet::new();
+        svc.write(&[wire_a, wire_b], &mut changeset)
             .expect("write should succeed");
+        svc.flush(&mut changeset)
+            .await
+            .expect("flush should succeed");
 
         let mut watermarks = watermark_store.read_all().await.expect("read_all");
         watermarks.sort_by_key(|(_, seq)| u64::from(*seq));
@@ -353,7 +366,12 @@ mod tests {
         };
 
         let wire = make_wire_batch(&batch, run_id, SequenceNumber::ZERO);
-        svc.write(&[wire]).await.expect("write should succeed");
+        let mut changeset = ChangeSet::new();
+        svc.write(&[wire], &mut changeset)
+            .expect("write should succeed");
+        svc.flush(&mut changeset)
+            .await
+            .expect("flush should succeed");
 
         let buckets = bucket_store
             .read_buckets(&run_id, &metric, 0, Step::ZERO..Step::MAX)
@@ -396,9 +414,56 @@ mod tests {
         };
 
         let wire = make_wire_batch(&batch, run_id, SequenceNumber::ZERO);
-        svc.write(&[wire]).await.expect("write should succeed");
+        let mut changeset = ChangeSet::new();
+        svc.write(&[wire], &mut changeset)
+            .expect("write should succeed");
+        svc.flush(&mut changeset)
+            .await
+            .expect("flush should succeed");
 
         let event = rx.try_recv().expect("should have received an event");
         assert!(matches!(event, PhotonEvent::BatchDecoded { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_finish_run_flushes_tail_bucket() {
+        let metric_store = InMemoryMetricStore::new();
+        let watermark_store = InMemoryWatermarkStore::new();
+        let bucket_store = InMemoryBucketStore::new();
+        let mut svc = new_service(metric_store, watermark_store, bucket_store.clone());
+
+        let run_id = RunId::new();
+        let metric = Metric::new("train/loss").unwrap();
+
+        let batch = MetricBatch {
+            run_id,
+            keys: vec![metric.clone()],
+            points: (0..3)
+                .map(|i| MetricPoint {
+                    key_index: 0,
+                    value: i as f64,
+                    step: Step::new(i),
+                    timestamp_ms: i * 1000,
+                })
+                .collect(),
+        };
+
+        let wire = make_wire_batch(&batch, run_id, SequenceNumber::ZERO);
+        let mut changeset = ChangeSet::new();
+        svc.write(&[wire], &mut changeset)
+            .expect("write should succeed");
+        svc.finish_run(run_id, &mut changeset);
+        svc.flush(&mut changeset)
+            .await
+            .expect("flush should succeed");
+
+        let buckets = bucket_store
+            .read_buckets(&run_id, &metric, 0, Step::ZERO..Step::MAX)
+            .await
+            .expect("read_buckets");
+
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].step_start, Step::new(0));
+        assert_eq!(buckets[0].step_end, Step::new(2));
     }
 }

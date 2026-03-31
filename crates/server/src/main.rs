@@ -10,8 +10,8 @@ use photon_hook::Hook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler as ingest_handler;
 use photon_persist::domain::projections::downsample::DownsampleConfig;
-use photon_persist::domain::service::{PersistConfig, Service as PersistService};
-use photon_persist::inbound::thread as persist_thread;
+use photon_persist::domain::service::Service as PersistService;
+use photon_persist::inbound::{PersistConfig, thread as persist_thread};
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::ZstdCompressor;
 use photon_query::domain::service::Service as QueryService;
@@ -46,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
     let codec = CodecKind::default();
     let cancel = CancellationToken::new();
     let notify = Arc::new(tokio::sync::Notify::new());
+    let (finished_runs_tx, finished_runs_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // ClickHouse
     let client = ClientBuilder::new().with_env().build();
@@ -90,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
         wal_manager,
         notify,
         persist_service,
+        finished_runs_rx,
         PersistConfig::default(),
         cancel.clone(),
     ));
@@ -113,12 +115,14 @@ async fn main() -> anyhow::Result<()> {
         let run_store = run_store.clone();
         let experiment_store = experiment_store.clone();
         let project_store = project_store.clone();
+        let finished_runs_tx = finished_runs_tx.clone();
         async move {
             ingest_handler::handle_envelope(
                 &svc,
                 &run_store,
                 &experiment_store,
                 &project_store,
+                &finished_runs_tx,
                 &t,
             )
             .await;

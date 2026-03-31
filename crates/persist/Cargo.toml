@@ -8,7 +8,6 @@ publish.workspace = true
 
 [dependencies]
 photon-core.workspace = true
-photon-downsample.workspace = true
 photon-protocol.workspace = true
 photon-store.workspace = true
 photon-wal.workspace = true

@@ -44,10 +44,7 @@ impl ClickHouseBucketStore {
 }
 
 impl BucketWriter for ClickHouseBucketStore {
-    async fn write_buckets(
-        &self,
-        entries: &[BucketEntry],
-    ) -> Result<(), WriteError> {
+    async fn write_buckets(&self, entries: &[BucketEntry]) -> Result<(), WriteError> {
         if entries.is_empty() {
             return Ok(());
         }

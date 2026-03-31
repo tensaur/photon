@@ -1,30 +1,30 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use photon_core::types::bucket::BucketEntry;
 use photon_core::types::event::PhotonEvent;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::MetricBatch;
+use photon_core::types::sequence::SequenceNumber;
 
-/// Collected projection output for a single write cycle.
+/// Collected output for a single persist write cycle.
 pub struct ChangeSet {
     pub decoded_batches: Vec<MetricBatch>,
     pub bucket_entries: Vec<BucketEntry>,
+    pub watermarks: HashMap<RunId, SequenceNumber>,
     pub events: Vec<PhotonEvent>,
 }
 
 impl ChangeSet {
     pub fn new() -> Self {
-        Self {
-            decoded_batches: Vec::new(),
-            bucket_entries: Vec::new(),
-            events: Vec::new(),
-        }
+        Self::with_capacity(0)
     }
 
     pub fn with_capacity(batch_count: usize) -> Self {
         Self {
             decoded_batches: Vec::with_capacity(batch_count),
             bucket_entries: Vec::new(),
+            watermarks: HashMap::new(),
             events: Vec::new(),
         }
     }
@@ -50,5 +50,17 @@ impl ChangeSet {
             });
         }
         self.bucket_entries.extend(entries);
+    }
+
+    /// Track the latest persisted sequence number for a run in this cycle.
+    pub fn add_watermark(&mut self, run_id: RunId, seq: SequenceNumber) {
+        self.watermarks
+            .entry(run_id)
+            .and_modify(|current| {
+                if seq > *current {
+                    *current = seq;
+                }
+            })
+            .or_insert(seq);
     }
 }

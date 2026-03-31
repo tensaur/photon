@@ -146,7 +146,9 @@ impl<A: Aggregator> Reducer<A> {
 
         // Merge the source bucket into this tier
         let tier = &mut self.tiers[tier_idx];
-        let source_bucket = self.aggregator.new_bucket(source.step_start, source.value);
+        let mut source_bucket = self.aggregator.new_bucket(source.step_start, source.min);
+        self.aggregator.push(&mut source_bucket, source.step_end, source.max);
+        self.aggregator.push(&mut source_bucket, source.step_end, source.value);
         if let Some(existing) = &tier.open {
             tier.open = Some(self.aggregator.merge(existing, &source_bucket));
         } else {
@@ -220,6 +222,45 @@ mod tests {
         // 1 tier-1 bucket: [0,30) closed when [30,40) arrived
         assert_eq!(tier_1.len(), 1);
         assert_eq!(tier_1[0].1.step_start, Step::new(0));
+    }
+
+    #[test]
+    fn test_coarser_tier_preserves_extrema() {
+        // Tier 0: width 10, Tier 1: width 30
+        let mut reducer = Reducer::new(M4Aggregator, vec![10, 30]);
+
+        let mut all_closed = Vec::new();
+
+        // Steps 0-9: min=0.0, max=100.0
+        all_closed.extend(reducer.push(Step::new(0), 0.0));
+        all_closed.extend(reducer.push(Step::new(5), 100.0));
+        all_closed.extend(reducer.push(Step::new(9), 50.0));
+
+        // Steps 10-19: min=-5.0, max=50.0
+        all_closed.extend(reducer.push(Step::new(10), 50.0));
+        all_closed.extend(reducer.push(Step::new(15), -5.0));
+        all_closed.extend(reducer.push(Step::new(19), 20.0));
+
+        // Steps 20-29: min=10.0, max=10.0
+        all_closed.extend(reducer.push(Step::new(20), 10.0));
+        all_closed.extend(reducer.push(Step::new(29), 10.0));
+
+        // Steps 30-39: push into next tier-1 window [30,60)
+        // This closes tier-0 [20,30) and feeds it into tier-1 [0,30).
+        // Then step 40 closes tier-0 [30,40), which is in tier-1 window [30,60),
+        // closing tier-1 [0,30).
+        all_closed.extend(reducer.push(Step::new(30), 0.0));
+        all_closed.extend(reducer.push(Step::new(40), 0.0));
+
+        let tier_1: Vec<_> = all_closed.iter().filter(|(t, _)| *t == 1).collect();
+        assert_eq!(tier_1.len(), 1);
+
+        let bucket = &tier_1[0].1;
+        assert_eq!(bucket.min, -5.0, "tier-1 should preserve min from children");
+        assert_eq!(
+            bucket.max, 100.0,
+            "tier-1 should preserve max from children"
+        );
     }
 
     #[test]

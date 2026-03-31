@@ -32,7 +32,8 @@ where
     C: IngestConnection,
     M: Wal + Clone,
 {
-    let mut service = Service::new(connection.clone(), wal.clone(), run.id(), start_sequence);
+    let run_id = run.id();
+    let mut service = Service::new(connection.clone(), wal.clone(), run_id, start_sequence);
     service.recover().await?;
 
     let _ = connection
@@ -50,6 +51,7 @@ where
     let mut conn = ConnectionState::new(&config);
     let tick_interval = config.idle_poll_interval;
     let mut shutdown_signaled = false;
+    let mut finish_sent = false;
 
     loop {
         let batch = batch_rx.try_recv().ok();
@@ -113,6 +115,19 @@ where
 
         if shutdown_signaled {
             if conn.in_flight_empty() {
+                if !finish_sent {
+                    match connection
+                        .send_message(IngestMessage::FinishRun(run_id))
+                        .await
+                    {
+                        Ok(()) => finish_sent = true,
+                        Err(UplinkTransportError::ConnectionLost { .. }) => {
+                            conn.enter_reconnecting();
+                            continue;
+                        }
+                        Err(e) => return Err(UplinkError::from(e).into()),
+                    }
+                }
                 service.sync()?;
                 conn.shutdown();
             } else if let Some(elapsed) = conn.check_drain_timeout() {

@@ -1,11 +1,12 @@
 use photon_core::domain::experiment::Experiment;
 use photon_core::domain::project::Project;
-use photon_core::domain::run::Run;
+use photon_core::domain::run::{Run, RunStatus};
 use photon_core::types::ack::{AckResult, AckStatus};
 use photon_core::types::batch::WireBatch;
 use photon_core::types::error::ApiError;
+use photon_core::types::id::RunId;
 use photon_core::types::ingest::{IngestMessage, IngestResult};
-use photon_store::ports::WriteRepository;
+use photon_store::ports::{ReadRepository, WriteRepository};
 use photon_transport::ports::{Transport, TransportError};
 
 use crate::domain::service::IngestService;
@@ -16,11 +17,12 @@ pub async fn dispatch<S, W, E, P>(
     run_writer: &W,
     experiment_writer: &E,
     project_writer: &P,
+    finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
     msg: IngestMessage,
 ) -> IngestResult
 where
     S: IngestService,
-    W: WriteRepository<Run>,
+    W: ReadRepository<Run> + WriteRepository<Run>,
     E: WriteRepository<Experiment>,
     P: WriteRepository<Project>,
 {
@@ -36,6 +38,7 @@ where
                 IngestResult::Error(ApiError::Internal)
             }
         },
+        IngestMessage::FinishRun(run_id) => finish_run(run_writer, finished_runs_tx, run_id).await,
         IngestMessage::RegisterExperiment(experiment) => {
             match experiment_writer.upsert(&experiment).await {
                 Ok(()) => IngestResult::ExperimentRegistered(experiment.id),
@@ -62,6 +65,46 @@ where
     }
 }
 
+async fn finish_run<W>(
+    run_writer: &W,
+    finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
+    run_id: RunId,
+) -> IngestResult
+where
+    W: ReadRepository<Run> + WriteRepository<Run>,
+{
+    let Some(mut run) = (match run_writer.get(&run_id).await {
+        Ok(run) => run,
+        Err(e) => {
+            tracing::error!("load run for finish failed: {e}");
+            return IngestResult::Error(ApiError::Internal);
+        }
+    }) else {
+        return IngestResult::Error(ApiError::NotFound {
+            message: format!("run {run_id} not found"),
+        });
+    };
+
+    if matches!(run.status(), RunStatus::Running) {
+        if let Err(e) = run.finish() {
+            tracing::error!("finish run transition failed: {e}");
+            return IngestResult::Error(ApiError::Internal);
+        }
+
+        if let Err(e) = run_writer.upsert(&run).await {
+            tracing::error!("persist finished run failed: {e}");
+            return IngestResult::Error(ApiError::Internal);
+        }
+    }
+
+    if finished_runs_tx.send(run_id).is_err() {
+        tracing::error!("persist finish_run notification failed: receiver dropped");
+        return IngestResult::Error(ApiError::Internal);
+    }
+
+    IngestResult::RunFinished(run_id)
+}
+
 /// Process a single wire batch, returning an ack.
 async fn ingest_batch<S: IngestService>(service: &S, batch: &WireBatch) -> AckResult {
     match service.ingest(batch).await {
@@ -85,10 +128,11 @@ pub async fn handle_envelope<S, W, E, P, T>(
     run_writer: &W,
     experiment_writer: &E,
     project_writer: &P,
+    finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
     transport: &T,
 ) where
     S: IngestService,
-    W: WriteRepository<Run>,
+    W: ReadRepository<Run> + WriteRepository<Run>,
     E: WriteRepository<Experiment>,
     P: WriteRepository<Project>,
     T: Transport<IngestResult, IngestMessage>,
@@ -103,7 +147,15 @@ pub async fn handle_envelope<S, W, E, P, T>(
             }
         };
 
-        let result = dispatch(service, run_writer, experiment_writer, project_writer, msg).await;
+        let result = dispatch(
+            service,
+            run_writer,
+            experiment_writer,
+            project_writer,
+            finished_runs_tx,
+            msg,
+        )
+        .await;
 
         if transport.send(&result).await.is_err() {
             break;

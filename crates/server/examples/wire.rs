@@ -11,8 +11,8 @@ use photon_core::types::event::PhotonEvent;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler;
 use photon_persist::domain::projections::downsample::DownsampleConfig;
-use photon_persist::domain::service::{PersistConfig, Service as PersistService};
-use photon_persist::inbound::thread as persist_thread;
+use photon_persist::domain::service::Service as PersistService;
+use photon_persist::inbound::{PersistConfig, thread as persist_thread};
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_protocol::compressor::ZstdCompressor;
@@ -44,6 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let compressor = CompressorKind::default();
     let cancel = CancellationToken::new();
     let notify = Arc::new(tokio::sync::Notify::new());
+    let (finished_runs_tx, finished_runs_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // ClickHouse
     let client = ClientBuilder::new().with_env().build();
@@ -82,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wal_manager,
         notify,
         persist_service,
+        finished_runs_rx,
         PersistConfig::default(),
         persist_cancel,
     ));
@@ -96,6 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let run_store = run_store.clone();
             let experiment_store = experiment_store.clone();
             let project_store = project_store.clone();
+            let finished_runs_tx = finished_runs_tx.clone();
 
             tokio::spawn(async move {
                 handler::handle_envelope(
@@ -103,6 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &run_store,
                     &experiment_store,
                     &project_store,
+                    &finished_runs_tx,
                     &transport,
                 )
                 .await;
@@ -129,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t0 = Instant::now();
 
         // Simulate a training loop
-        for step in 0..100_000_000u64 {
+        for step in 0..10_000_000u64 {
             let loss = 1.0 / (1.0 + step as f64 * 0.05);
             let accuracy = 1.0 - loss;
 

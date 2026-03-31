@@ -2832,7 +2832,6 @@ dependencies = [
  "bytes",
  "crc32fast",
  "photon-core",
- "photon-downsample",
  "photon-protocol",
  "photon-store",
  "photon-wal",
