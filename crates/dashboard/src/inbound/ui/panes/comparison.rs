@@ -1,5 +1,5 @@
 use egui::Vec2b;
-use egui_plot::{Legend, Line, LineStyle, Plot, PlotPoints, VLine};
+use egui_plot::{Corner, Legend, Line, LineStyle, Plot, PlotPoints, VLine};
 
 use photon_ui::theme;
 
@@ -16,7 +16,6 @@ pub fn show(
 ) {
     let metric_name = state.metric.as_str().to_owned();
 
-    // Collect all points and compute global x range for crosshair clamping.
     let mut all_series: Vec<(String, egui::Color32, Vec<[f64; 2]>)> = Vec::new();
     let mut global_x_min = f64::MAX;
     let mut global_x_max = f64::MIN;
@@ -38,7 +37,8 @@ pub fn show(
             global_x_max = global_x_max.max(last[0]);
         }
 
-        all_series.push((run_id.short(), color, points));
+        let run_name = cache.run_name(run_id).unwrap_or_else(|| run_id.short());
+        all_series.push((run_name, color, points));
     }
 
     if global_x_min > global_x_max {
@@ -52,7 +52,9 @@ pub fn show(
 
     let plot_response = Plot::new(ui.auto_id_with("comparison"))
         .link_axis("main_group", Vec2b::new(true, false))
-        .legend(Legend::default())
+        .show_background(false)
+        .show_grid(Vec2b::new(true, true))
+        .legend(Legend::default().position(Corner::RightBottom).background_alpha(0.8))
         .label_formatter(move |name, pt| {
             format!(
                 "{}\n{}\nstep: {:.0}\nvalue: {:.6}",
@@ -71,7 +73,7 @@ pub fn show(
             if let Some(x) = crosshair_val {
                 plot_ui.vline(
                     VLine::new("", x)
-                        .color(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 80))
+                        .color(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40))
                         .style(LineStyle::Dashed { length: 6.0 })
                         .width(1.0)
                         .highlight(false),

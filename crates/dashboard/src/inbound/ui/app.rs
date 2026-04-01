@@ -48,6 +48,16 @@ impl DataCache {
     pub fn get_series(&self, run_id: &RunId, metric: &Metric) -> Option<&MetricSeries> {
         self.series.get(&(*run_id, metric.clone()))
     }
+
+    pub fn run_name(&self, run_id: &RunId) -> Option<String> {
+        if let RequestState::Loaded(runs) = &self.runs {
+            runs.iter()
+                .find(|r| r.id() == *run_id)
+                .map(|r| r.name().to_string())
+        } else {
+            None
+        }
+    }
 }
 
 pub struct DashboardApp {
@@ -59,6 +69,7 @@ pub struct DashboardApp {
     sidebar_visible: bool,
     icon_rail_state: photon_ui::icon_rail::IconRailState,
     crosshair_x: Option<f64>,
+    expanded_tile: Option<egui_tiles::TileId>,
 }
 
 impl DashboardApp {
@@ -69,9 +80,9 @@ impl DashboardApp {
     ) -> Self {
         photon_ui::theme::apply(&cc.egui_ctx, &photon_ui::theme::DARK);
 
-        // Request initial run and experiment lists.
         channel::send_cmd(&commands, Command::ListRuns);
         channel::send_cmd(&commands, Command::ListExperiments);
+        channel::send_cmd(&commands, Command::ListProjects);
 
         Self {
             commands,
@@ -79,6 +90,7 @@ impl DashboardApp {
             cache: DataCache {
                 runs: RequestState::Pending,
                 experiments: RequestState::Pending,
+                projects: RequestState::Pending,
                 ..DataCache::default()
             },
             sidebar: SidebarState::default(),
@@ -86,6 +98,7 @@ impl DashboardApp {
             sidebar_visible: true,
             icon_rail_state: photon_ui::icon_rail::IconRailState::default(),
             crosshair_x: None,
+            expanded_tile: None,
         }
     }
 
@@ -114,7 +127,6 @@ impl DashboardApp {
                     self.cache
                         .metrics
                         .insert(run_id, RequestState::Loaded(metrics));
-                    // Rebuild viewport now that new metrics have arrived.
                     self.rebuild_viewport();
                 }
                 Err(e) => {
@@ -144,7 +156,6 @@ impl DashboardApp {
                 }
             }
             Response::RunsChanged => {
-                // Re-fetch the run and experiment lists
                 self.cache.runs = RequestState::Pending;
                 self.cache.experiments = RequestState::Pending;
                 channel::send_cmd(&self.commands, Command::ListRuns);
@@ -157,7 +168,6 @@ impl DashboardApp {
     fn handle_sidebar_action(&mut self, action: SidebarAction) {
         match action {
             SidebarAction::SelectRun(run_id) => {
-                // Clear all other visible runs — show only this one.
                 self.unsubscribe_all();
                 self.sidebar.visible_runs.clear();
                 self.sidebar.run_colors.clear();
@@ -171,24 +181,20 @@ impl DashboardApp {
             }
             SidebarAction::ToggleVisibility(run_id) => {
                 if let Some(pos) = self.sidebar.visible_runs.iter().position(|&id| id == run_id) {
-                    // Hide this run.
                     self.sidebar.visible_runs.remove(pos);
                     self.sidebar.release_color(&run_id);
                     self.sidebar.selected_runs.retain(|&id| id != run_id);
                     channel::send_cmd(&self.commands, Command::Unsubscribe { run_id });
                 } else {
-                    // Show this run (add to existing visible set).
                     self.sidebar.visible_runs.push(run_id);
                     self.sidebar.assign_color(run_id);
                     self.ensure_metrics_loaded(run_id);
                     self.subscribe_if_active(run_id);
                 }
-                // Select the toggled run for focus.
                 self.sidebar.selected_runs = vec![run_id];
                 self.rebuild_viewport();
             }
             SidebarAction::MakeVisible(run_id) => {
-                // Drag-select: add to visible set without clearing others.
                 if !self.sidebar.visible_runs.contains(&run_id) {
                     self.sidebar.visible_runs.push(run_id);
                     self.sidebar.assign_color(run_id);
@@ -196,13 +202,6 @@ impl DashboardApp {
                     self.subscribe_if_active(run_id);
                     self.rebuild_viewport();
                 }
-            }
-            SidebarAction::ClearSelection => {
-                self.unsubscribe_all();
-                self.sidebar.selected_runs.clear();
-                self.sidebar.visible_runs.clear();
-                self.sidebar.run_colors.clear();
-                self.tile_tree = None;
             }
         }
     }
@@ -230,13 +229,14 @@ impl DashboardApp {
     }
 
     fn rebuild_viewport(&mut self) {
+        self.expanded_tile = None;
+
         let selected = &self.sidebar.visible_runs;
         if selected.is_empty() {
             self.tile_tree = None;
             return;
         }
 
-        // Collect metrics for visible runs that have loaded (don't wait for all).
         let mut per_run_metrics: Vec<(RunId, Vec<Metric>)> = Vec::new();
         for &run_id in selected {
             if let Some(RequestState::Loaded(metrics)) = self.cache.metrics.get(&run_id) {
@@ -248,7 +248,6 @@ impl DashboardApp {
             return; // nothing loaded yet
         }
 
-        // Request data for any runs we haven't queried yet
         for (run_id, metrics) in &per_run_metrics {
             for m in metrics {
                 if self.cache.get_series(run_id, m).is_none() {
@@ -272,7 +271,6 @@ impl DashboardApp {
         let visible = &self.sidebar.visible_runs;
 
         if visible.len() == 1 {
-            // Single run: one line chart per metric
             let (run_id, metrics) = &per_run_metrics[0];
             let tab_ids: Vec<_> = metrics
                 .iter()
@@ -289,7 +287,6 @@ impl DashboardApp {
             let root = tiles.insert_grid_tile(tab_ids);
             self.tile_tree = Some(egui_tiles::Tree::new("viewport", root, tiles));
         } else {
-            // Multiple runs: comparison panes for shared metrics
             let shared_metrics = find_shared_metrics(&per_run_metrics);
             let run_ids: Vec<RunId> = per_run_metrics.iter().map(|(id, _)| *id).collect();
 
@@ -317,18 +314,36 @@ impl eframe::App for DashboardApp {
 
         let theme = &photon_ui::theme::DARK;
 
-        // Check if any run is live
-        let is_live = matches!(&self.cache.runs, RequestState::Loaded(runs) if runs.iter().any(|r| r.is_active()));
+        let is_live = matches!(&self.cache.runs, RequestState::Loaded(runs) if runs.iter().any(Run::is_active));
 
-        // 1. Top bar (full width, 44px)
+        let project_name = match &self.cache.projects {
+            RequestState::Loaded(projects) => projects.first().map_or("Photon", |p| p.name.as_str()),
+            _ => "Photon",
+        };
+        let experiment_name = match &self.cache.experiments {
+            RequestState::Loaded(experiments) => {
+                if let Some(&sel) = self.sidebar.selected_runs.first() {
+                    if let RequestState::Loaded(runs) = &self.cache.runs {
+                        let exp_id = runs.iter().find(|r| r.id() == sel).and_then(Run::experiment_id);
+                        exp_id.and_then(|eid| experiments.iter().find(|e| e.id == eid))
+                            .map_or("Dashboard", |e| e.name.as_str())
+                    } else {
+                        "Dashboard"
+                    }
+                } else {
+                    experiments.first().map_or("Dashboard", |e| e.name.as_str())
+                }
+            }
+            _ => "Dashboard",
+        };
+
         egui::TopBottomPanel::top("top_bar")
             .exact_height(photon_ui::theme::TOP_BAR_HEIGHT)
             .frame(egui::Frame::NONE.fill(theme.bg))
             .show(ctx, |ui| {
-                photon_ui::top_bar::show(ui, is_live);
+                photon_ui::top_bar::show(ui, is_live, project_name, experiment_name, &mut self.sidebar.search_query);
             });
 
-        // 2. Icon rail (left, 36px)
         egui::SidePanel::left("icon_rail")
             .exact_width(photon_ui::theme::ICON_RAIL_WIDTH)
             .resizable(false)
@@ -339,7 +354,6 @@ impl eframe::App for DashboardApp {
                 }
             });
 
-        // 3. Sidebar (collapsible, 210px)
         let sidebar_actions = if self.sidebar_visible {
             egui::SidePanel::left("sidebar")
                 .exact_width(photon_ui::theme::SIDEBAR_WIDTH)
@@ -387,23 +401,47 @@ impl eframe::App for DashboardApp {
             self.handle_sidebar_action(action);
         }
 
-        // 4. Central panel (tab bar + viewport)
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(theme.bg))
             .show(ctx, |ui| {
-                // Tab bar
                 photon_ui::tab_bar::show(ui, "Overview");
 
-                // Viewport
                 if let Some(tree) = &mut self.tile_tree {
                     let mut crosshair_x = self.crosshair_x.take();
-                    let mut behavior = ViewportBehavior {
-                        cache: &self.cache,
-                        sidebar_state: &self.sidebar,
-                        crosshair_x: &mut crosshair_x,
-                    };
-                    tree.ui(&mut behavior, ui);
+                    let mut expanded_tile = self.expanded_tile;
+
+                    if let Some(exp_id) = self.expanded_tile {
+                        // Render just the expanded pane directly (no tree layout).
+                        if let Some(egui_tiles::Tile::Pane(pane)) = tree.tiles.get_mut(exp_id) {
+                            egui::Frame::NONE.fill(theme.surface).show(ui, |ui| {
+                                let header = photon_ui::panel_header::show(ui, pane.title());
+                                if header.expand_clicked {
+                                    expanded_tile = None;
+                                }
+                                match pane {
+                                    super::panes::Pane::LineChart(state) => {
+                                        super::panes::line_chart::show(ui, state, &self.cache, &self.sidebar, &mut crosshair_x);
+                                    }
+                                    super::panes::Pane::Comparison(state) => {
+                                        super::panes::comparison::show(ui, state, &self.cache, &self.sidebar, &mut crosshair_x);
+                                    }
+                                }
+                            });
+                        } else {
+                            expanded_tile = None;
+                        }
+                    } else {
+                        let mut behavior = ViewportBehavior {
+                            cache: &self.cache,
+                            sidebar_state: &self.sidebar,
+                            crosshair_x: &mut crosshair_x,
+                            expanded_tile: &mut expanded_tile,
+                        };
+                        tree.ui(&mut behavior, ui);
+                    }
+
                     self.crosshair_x = crosshair_x;
+                    self.expanded_tile = expanded_tile;
                 } else {
                     ui.centered_and_justified(|ui| {
                         ui.label(

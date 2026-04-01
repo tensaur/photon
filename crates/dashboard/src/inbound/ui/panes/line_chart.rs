@@ -1,5 +1,5 @@
 use egui::Vec2b;
-use egui_plot::{Line, LineStyle, Plot, PlotPoints, VLine};
+use egui_plot::{Corner, Legend, Line, LineStyle, Plot, PlotPoints, VLine};
 
 use photon_ui::theme;
 
@@ -19,7 +19,6 @@ pub fn show(
         .map(|series| series.data.points().iter().map(Into::into).collect())
         .unwrap_or_default();
 
-    // Compute data x range for clamping crosshair.
     let x_min = points.first().map_or(0.0, |p| p[0]);
     let x_max = points.last().map_or(0.0, |p| p[0]);
 
@@ -28,19 +27,23 @@ pub fn show(
         .get_color(&state.run_id)
         .unwrap_or(theme::DARK.chart_colors[0]);
 
-    // Clamp crosshair to data range so VLine doesn't expand plot bounds.
     let crosshair_val = crosshair_x.and_then(|x| {
         if x >= x_min && x <= x_max { Some(x) } else { None }
     });
 
+    let run_name = cache.run_name(&state.run_id)
+        .unwrap_or_else(|| state.run_id.short());
+
     let plot_response = Plot::new(ui.auto_id_with("line_chart"))
         .link_axis("main_group", Vec2b::new(true, false))
+        .show_background(false)
+        .legend(Legend::default().position(Corner::RightBottom).background_alpha(0.8))
         .label_formatter(move |_name, pt| {
             format!("{}\nstep: {:.0}\nvalue: {:.6}", metric_name, pt.x, pt.y)
         })
         .show(ui, |plot_ui| {
             plot_ui.line(
-                Line::new(state.metric.as_str(), PlotPoints::new(points.clone()))
+                Line::new(run_name.as_str(), PlotPoints::new(points.clone()))
                     .width(2.0)
                     .color(color),
             );
@@ -48,7 +51,7 @@ pub fn show(
             if let Some(x) = crosshair_val {
                 plot_ui.vline(
                     VLine::new("", x)
-                        .color(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 80))
+                        .color(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 40))
                         .style(LineStyle::Dashed { length: 6.0 })
                         .width(1.0)
                         .highlight(false),
@@ -56,7 +59,6 @@ pub fn show(
             }
         });
 
-    // Only update crosshair if pointer is within data range.
     if let Some(hover_pos) = plot_response.response.hover_pos() {
         let plot_point = plot_response.transform.value_from_position(hover_pos);
         if plot_point.x >= x_min && plot_point.x <= x_max {

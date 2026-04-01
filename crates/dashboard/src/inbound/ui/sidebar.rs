@@ -62,14 +62,9 @@ impl SidebarState {
 }
 
 pub enum SidebarAction {
-    /// Click run name → select only this run (clears others).
     SelectRun(RunId),
-    /// Click eye icon → toggle chart visibility.
     ToggleVisibility(RunId),
-    /// Drag over a run → add to visible set (multi-select).
     MakeVisible(RunId),
-    /// Clear selection entirely.
-    ClearSelection,
 }
 
 pub fn show(
@@ -126,7 +121,6 @@ pub fn show(
     let mut exp_ids: Vec<Option<ExperimentId>> = by_experiment.keys().copied().collect();
     exp_ids.sort();
 
-    // Collect row rects for drag-select range detection.
     let mut run_rows: Vec<(RunId, egui::Rect)> = Vec::new();
 
     for exp_id in exp_ids {
@@ -142,7 +136,6 @@ pub fn show(
             None => "UNGROUPED".to_string(),
         };
 
-        // Custom experiment header
         let chevron = if expanded {
             photon_ui::egui_phosphor::regular::CARET_DOWN
         } else {
@@ -188,7 +181,6 @@ pub fn show(
                 let is_selected = state.selected_runs.contains(&run.id());
                 let is_visible = state.visible_runs.contains(&run.id());
 
-                // Row background
                 let row_color = if is_selected {
                     theme::DARK.surface
                 } else {
@@ -205,7 +197,6 @@ pub fn show(
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
 
-                            // Color swatch (11x11)
                             let (swatch_rect, _) =
                                 ui.allocate_exact_size(vec2(11.0, 11.0), Sense::hover());
                             let painter = ui.painter();
@@ -229,7 +220,6 @@ pub fn show(
                                 );
                             }
 
-                            // Run name (clickable)
                             let name_color = if is_selected {
                                 theme::DARK.text_primary
                             } else if is_visible {
@@ -258,11 +248,9 @@ pub fn show(
                                 }
                             }
 
-                            // Status dot + eye icon (right-aligned)
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    // Eye icon (far right)
                                     let eye_color = if is_visible {
                                         theme::DARK.text_secondary
                                     } else {
@@ -286,7 +274,6 @@ pub fn show(
                                             Some(SidebarAction::ToggleVisibility(run.id()));
                                     }
 
-                                    // Status dot (7px diameter)
                                     let (dot_rect, _) =
                                         ui.allocate_exact_size(vec2(7.0, 7.0), Sense::hover());
                                     ui.painter().circle_filled(
@@ -306,7 +293,6 @@ pub fn show(
                     actions.push(a);
                 }
 
-                // Record row rect for drag-select range detection below.
                 run_rows.push((run.id(), row_rect));
             }
 
@@ -314,8 +300,6 @@ pub fn show(
         }
     }
 
-    // Track drag start/end Y positions and select all rows in the range,
-    // so fast drags don't skip rows between frames.
     let (primary_down, just_pressed, pointer_pos) = ui.input(|i| {
         (
             i.pointer.primary_down(),
@@ -327,7 +311,6 @@ pub fn show(
     if primary_down {
         if let Some(pos) = pointer_pos {
             if just_pressed {
-                // Check if the press started on a run row.
                 let on_row = run_rows.iter().any(|(_, rect)| rect.contains(pos));
                 if on_row {
                     state.drag_start_y = Some(pos.y);
@@ -335,7 +318,6 @@ pub fn show(
             }
 
             if let Some(start_y) = state.drag_start_y {
-                // Select all rows whose vertical center falls within [start_y, current_y].
                 let y_min = start_y.min(pos.y);
                 let y_max = start_y.max(pos.y);
 
@@ -367,7 +349,6 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
 
     let painter = ui.painter();
 
-    // Outer border
     painter.rect_stroke(
         bar_rect,
         egui::CornerRadius::ZERO,
@@ -388,7 +369,6 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
             vec2(cell_width, bar_height),
         );
 
-        // Cell background
         let bg = if *active {
             theme::DARK.surface
         } else {
@@ -396,7 +376,6 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
         };
         painter.rect_filled(cell_rect, egui::CornerRadius::ZERO, bg);
 
-        // Divider between cells
         if i > 0 {
             painter.line_segment(
                 [
@@ -407,7 +386,6 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
             );
         }
 
-        // Cell label
         let text_color = *color;
         let galley = painter.layout_no_wrap(
             label.to_string(),
@@ -421,17 +399,16 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
         painter.galley(text_pos, galley, text_color);
     }
 
-    // Handle clicks
-    if bar_resp.clicked() {
-        if let Some(pos) = bar_resp.interact_pointer_pos() {
-            let rel_x = pos.x - bar_rect.min.x;
-            let cell_idx = (rel_x / cell_width) as usize;
-            match cell_idx {
-                0 => state.show_done = !state.show_done,
-                1 => state.show_running = !state.show_running,
-                2 => state.show_failed = !state.show_failed,
-                _ => {}
-            }
+    if bar_resp.clicked()
+        && let Some(pos) = bar_resp.interact_pointer_pos()
+    {
+        let rel_x = pos.x - bar_rect.min.x;
+        let cell_idx = (rel_x / cell_width) as usize;
+        match cell_idx {
+            0 => state.show_done = !state.show_done,
+            1 => state.show_running = !state.show_running,
+            2 => state.show_failed = !state.show_failed,
+            _ => {}
         }
     }
 }

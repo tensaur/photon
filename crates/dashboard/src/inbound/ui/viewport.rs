@@ -11,25 +11,34 @@ pub struct ViewportBehavior<'a> {
     pub cache: &'a DataCache,
     pub sidebar_state: &'a SidebarState,
     pub crosshair_x: &'a mut Option<f64>,
+    pub expanded_tile: &'a mut Option<TileId>,
 }
 
 impl egui_tiles::Behavior<Pane> for ViewportBehavior<'_> {
-    fn pane_ui(&mut self, ui: &mut Ui, _tile_id: TileId, pane: &mut Pane) -> UiResponse {
-        // Clip to the pane's allocated rect so content doesn't overflow.
+    fn pane_ui(&mut self, ui: &mut Ui, tile_id: TileId, pane: &mut Pane) -> UiResponse {
         ui.set_clip_rect(ui.max_rect());
 
-        let dragged = photon_ui::panel_header::show(ui, pane.title());
+        let is_expanded = *self.expanded_tile == Some(tile_id);
+        let header = photon_ui::panel_header::show(ui, pane.title());
 
-        match pane {
-            Pane::LineChart(state) => {
-                panes::line_chart::show(ui, state, self.cache, self.sidebar_state, self.crosshair_x)
-            }
-            Pane::Comparison(state) => {
-                panes::comparison::show(ui, state, self.cache, self.sidebar_state, self.crosshair_x)
+        if header.expand_clicked {
+            if is_expanded {
+                *self.expanded_tile = None;
+            } else {
+                *self.expanded_tile = Some(tile_id);
             }
         }
 
-        if dragged {
+        match pane {
+            Pane::LineChart(state) => {
+                panes::line_chart::show(ui, state, self.cache, self.sidebar_state, self.crosshair_x);
+            }
+            Pane::Comparison(state) => {
+                panes::comparison::show(ui, state, self.cache, self.sidebar_state, self.crosshair_x);
+            }
+        }
+
+        if header.dragged {
             UiResponse::DragStarted
         } else {
             UiResponse::None

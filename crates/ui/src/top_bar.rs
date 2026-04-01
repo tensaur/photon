@@ -2,7 +2,7 @@ use egui::{Color32, FontFamily, RichText, Stroke, Vec2, vec2};
 
 use crate::theme::DARK;
 
-pub fn show(ui: &mut egui::Ui, is_live: bool) {
+pub fn show(ui: &mut egui::Ui, is_live: bool, project_name: &str, context_name: &str, search_query: &mut String) {
     let total_width = ui.available_width();
 
     ui.horizontal(|ui| {
@@ -18,7 +18,7 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
                 .font(crate::theme::icon_font_id(13.0))
                 .color(DARK.text_primary),
         );
-        ui.label(RichText::new("my-project").size(13.0).color(DARK.text_primary));
+        ui.label(RichText::new(project_name).size(13.0).color(DARK.text_primary));
         ui.label(RichText::new(egui_phosphor::regular::STAR).font(crate::theme::icon_font_id(12.0)).color(Color32::from_rgb(0x66, 0x66, 0x66)));
         ui.label(RichText::new("/").size(12.0).color(Color32::from_rgb(0x55, 0x55, 0x55)));
         ui.label(
@@ -27,14 +27,12 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
                 .color(DARK.text_primary),
         );
         ui.label(
-            RichText::new("training-exp")
+            RichText::new(context_name)
                 .size(13.0)
                 .strong()
                 .color(DARK.text_primary),
         );
 
-        // Calculate how much space remains after left and right content,
-        // leaving room to center the command bar.
         let cmd_bar_width = 280.0;
         let right_content_est = 200.0; // avatar + buttons estimate
         let left_content_est = ui.cursor().left() - ui.min_rect().left();
@@ -51,15 +49,12 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
-                        // Green dot
-                        let dot_pos = ui.cursor().min;
                         let (rect, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
                         ui.painter().circle_filled(
                             rect.center(),
                             3.5,
                             DARK.status_done,
                         );
-                        let _ = dot_pos;
                         ui.label(
                             RichText::new("LIVE")
                                 .size(12.0)
@@ -84,10 +79,12 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
                             .font(crate::theme::icon_font_id(13.0))
                             .color(DARK.text_dim),
                     );
-                    ui.label(
-                        RichText::new("Search or command")
-                            .size(12.0)
-                            .color(DARK.text_dim),
+                    ui.add(
+                        egui::TextEdit::singleline(search_query)
+                            .frame(false)
+                            .hint_text("Search or command")
+                            .desired_width(f32::INFINITY)
+                            .text_color(DARK.text_primary),
                     );
                 });
             });
@@ -96,7 +93,6 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
         let right_spacer = (total_width - used - right_content_est).max(8.0);
         ui.add_space(right_spacer);
 
-        // Avatar circle
         {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(24.0), egui::Sense::hover());
             ui.painter()
@@ -104,7 +100,6 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
         }
         ui.add_space(8.0);
 
-        // "Add panel" button
         {
             let mut job = egui::text::LayoutJob::default();
             job.append(
@@ -130,7 +125,6 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
 
         ui.add_space(8.0);
 
-        // "Share" button
         egui::Frame::NONE
             .stroke(Stroke::new(1.0, Color32::from_rgb(0x33, 0x33, 0x33)))
             .inner_margin(egui::Margin::symmetric(10, 6))
@@ -141,7 +135,6 @@ pub fn show(ui: &mut egui::Ui, is_live: bool) {
         ui.add_space(12.0);
     });
 
-    // 1px bottom border
     let rect = ui.min_rect();
     ui.painter().hline(
         rect.x_range(),

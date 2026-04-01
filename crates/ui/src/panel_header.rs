@@ -2,20 +2,16 @@ use egui::{RichText, Sense, Stroke, Vec2, vec2};
 
 use crate::theme::DARK;
 
-const RIGHT_ICONS: &[&str] = &[
-    egui_phosphor::regular::PLUS,
-    egui_phosphor::regular::CHART_LINE_UP,
-    egui_phosphor::regular::GRID_FOUR,
-    egui_phosphor::regular::ARROWS_OUT,
-    egui_phosphor::regular::DOTS_THREE,
-];
+pub struct PanelHeaderResponse {
+    pub dragged: bool,
+    pub expand_clicked: bool,
+}
 
-/// Returns true if the drag handle was dragged (signals tile rearrangement).
-pub fn show(ui: &mut egui::Ui, title: &str) -> bool {
+pub fn show(ui: &mut egui::Ui, title: &str) -> PanelHeaderResponse {
     let icon_size = 13.0;
     let header_height = 26.0;
+    let mut expand_clicked = false;
 
-    // Use Frame for background so it paints BEFORE content.
     let frame_resp = egui::Frame::NONE
         .fill(DARK.surface)
         .inner_margin(egui::Margin::symmetric(8, 0))
@@ -24,7 +20,6 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> bool {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
 
-                // Drag handle
                 let (drag_rect, drag_response) = ui.allocate_exact_size(
                     Vec2::new(14.0, header_height),
                     Sense::click_and_drag(),
@@ -44,7 +39,6 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> bool {
                 }
                 let dragged = drag_response.dragged();
 
-                // Title
                 ui.add_space(4.0);
                 ui.add(
                     egui::Label::new(
@@ -53,9 +47,16 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> bool {
                     .truncate(),
                 );
 
-                // Right-aligned icon buttons
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    for &icon in RIGHT_ICONS.iter() {
+                    let icons: &[(&str, bool)] = &[
+                        (egui_phosphor::regular::DOTS_THREE, false),
+                        (egui_phosphor::regular::ARROWS_OUT, true),
+                        (egui_phosphor::regular::GRID_FOUR, false),
+                        (egui_phosphor::regular::CHART_LINE_UP, false),
+                        (egui_phosphor::regular::PLUS, false),
+                    ];
+
+                    for &(icon, is_expand) in icons {
                         let (rect, response) = ui.allocate_exact_size(
                             Vec2::splat(icon_size + 4.0),
                             Sense::click(),
@@ -72,6 +73,9 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> bool {
                             crate::theme::icon_font_id(icon_size),
                             color,
                         );
+                        if is_expand && response.clicked() {
+                            expand_clicked = true;
+                        }
                     }
                 });
 
@@ -80,7 +84,6 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> bool {
             .inner
         });
 
-    // Bottom border
     let rect = frame_resp.response.rect;
     ui.painter().hline(
         rect.x_range(),
@@ -88,5 +91,8 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> bool {
         Stroke::new(1.0, DARK.border),
     );
 
-    frame_resp.inner
+    PanelHeaderResponse {
+        dragged: frame_resp.inner,
+        expand_clicked,
+    }
 }

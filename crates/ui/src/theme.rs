@@ -1,10 +1,10 @@
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
 use egui::{
     Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
     Visuals, epaint::Shadow,
 };
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
 
 const ICON_FAMILY_NAME: &str = "icons";
 
@@ -13,13 +13,11 @@ pub fn icon_font_id(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(ICON_FAMILY_NAME.into()))
 }
 
-
 pub const TOP_BAR_HEIGHT: f32 = 44.0;
 pub const ICON_RAIL_WIDTH: f32 = 36.0;
 pub const SIDEBAR_WIDTH: f32 = 210.0;
 pub const TAB_BAR_HEIGHT: f32 = 28.0;
 pub const PANEL_GAP: f32 = 3.0;
-
 
 pub struct Theme {
     pub bg: Color32,
@@ -58,7 +56,6 @@ pub static DARK: Theme = Theme {
     ],
 };
 
-
 pub fn apply(ctx: &egui::Context, theme: &Theme) {
     let mut fonts = FontDefinitions::empty();
 
@@ -76,25 +73,20 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
         ))),
     );
 
-    // Add Phosphor font data.
     fonts.font_data.insert(
         "phosphor".into(),
         egui_phosphor::Variant::Regular.font_data().into(),
     );
 
-    // Proportional: Inter only (for regular text).
     fonts.families.insert(
         FontFamily::Proportional,
         vec!["inter_medium".into()],
     );
 
-    // Monospace: JetBrains Mono.
     fonts
         .families
         .insert(FontFamily::Monospace, vec!["jetbrains_mono".into()]);
 
-    // Icons: dedicated font family for Phosphor icons.
-    // Render icons with `theme::icon_font_id(size)` instead of Proportional.
     fonts.families.insert(
         FontFamily::Name(ICON_FAMILY_NAME.into()),
         vec!["phosphor".into(), "inter_medium".into()],
@@ -198,10 +190,12 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
     visuals.selection.bg_fill = Color32::from_rgb(0x55, 0x88, 0xFF).gamma_multiply(0.3);
     visuals.selection.stroke = Stroke::new(1.0, Color32::from_rgb(0x55, 0x88, 0xFF));
 
-    let mut spacing = egui::style::Spacing::default();
-    spacing.item_spacing = egui::vec2(6.0, 4.0);
-    spacing.button_padding = egui::vec2(6.0, 2.0);
-    spacing.interact_size = egui::vec2(40.0, 20.0);
+    let spacing = egui::style::Spacing {
+        item_spacing: egui::vec2(6.0, 4.0),
+        button_padding: egui::vec2(6.0, 2.0),
+        interact_size: egui::vec2(40.0, 20.0),
+        ..Default::default()
+    };
 
     ctx.set_style(egui::Style {
         text_styles,

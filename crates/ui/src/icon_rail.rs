@@ -10,14 +10,9 @@ const ICONS: &[&str] = &[
     egui_phosphor::regular::GRAPH,
 ];
 
+#[derive(Default)]
 pub struct IconRailState {
     pub active_index: usize,
-}
-
-impl Default for IconRailState {
-    fn default() -> Self {
-        Self { active_index: 0 }
-    }
 }
 
 /// Returns true if the already-active icon was clicked (VS Code-style sidebar toggle).
@@ -39,7 +34,6 @@ pub fn show(ui: &mut egui::Ui, state: &mut IconRailState) -> bool {
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
 
-            // Hover highlight
             if response.hovered() {
                 ui.painter().rect_filled(
                     rect,
@@ -48,7 +42,6 @@ pub fn show(ui: &mut egui::Ui, state: &mut IconRailState) -> bool {
                 );
             }
 
-            // Center the icon glyph in the hit area
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
