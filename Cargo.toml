@@ -21,7 +21,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tensaur/photon"
@@ -90,14 +90,14 @@ clickhouse = { version = "0.13", features = ["uuid", "inserter"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # internal crates (published)
-photon = { path = "crates/sdk", version = "0.1.1" }
-photon-core = { path = "crates/core", version = "0.1.1" }
-photon-protocol = { path = "crates/protocol", version = "0.1.1" }
-photon-transport = { path = "crates/transport", version = "0.1.1" }
-photon-wal = { path = "crates/wal", version = "0.1.1" }
-photon-batch = { path = "crates/batch", version = "0.1.1" }
-photon-uplink = { path = "crates/uplink", version = "0.1.1" }
-photon-hook = { path = "crates/hook", version = "0.1.1" }
+photon = { path = "crates/sdk", version = "0.2.0" }
+photon-core = { path = "crates/core", version = "0.2.0" }
+photon-protocol = { path = "crates/protocol", version = "0.2.0" }
+photon-transport = { path = "crates/transport", version = "0.2.0" }
+photon-wal = { path = "crates/wal", version = "0.2.0" }
+photon-batch = { path = "crates/batch", version = "0.2.0" }
+photon-uplink = { path = "crates/uplink", version = "0.2.0" }
+photon-hook = { path = "crates/hook", version = "0.2.0" }
 
 photon-ui = { path = "crates/ui" }
 
