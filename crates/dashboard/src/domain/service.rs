@@ -5,11 +5,13 @@ use photon_core::domain::project::Project;
 use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
-use photon_core::types::query::{MetricQuery, MetricSeries, QueryRequest, QueryResponse};
+use photon_core::types::query::{
+    MetricQuery, MetricSeries, QueryRequest, QueryResponse, SubscriptionId,
+};
 
 use crate::domain::error::{
-    ListExperimentsError, ListMetricsError, ListProjectsError, ListRunsError, QueryMetricsError,
-    SubscribeError, UnsubscribeError,
+    ListExperimentsError, ListMetricsError, ListProjectsError, ListRunsError,
+    QueryMetricsError, SubscribeError, UnsubscribeError,
 };
 use crate::domain::ports::{MetricQuerier, MetricSubscriber};
 
@@ -39,12 +41,20 @@ pub trait DashboardService: Clone + Send + Sync + 'static {
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryMetricsError>> + Send;
 
-    fn subscribe(&self, run_id: &RunId) -> impl Future<Output = Result<(), SubscribeError>> + Send;
+    fn subscribe_metric(
+        &self,
+        query: &MetricQuery,
+    ) -> impl Future<Output = Result<(), SubscribeError>> + Send;
 
-    fn unsubscribe(
+    fn unsubscribe_metric(
+        &self,
+        sub_id: SubscriptionId,
+    ) -> impl Future<Output = Result<(), UnsubscribeError>> + Send;
+
+    fn is_finalized(
         &self,
         run_id: &RunId,
-    ) -> impl Future<Output = Result<(), UnsubscribeError>> + Send;
+    ) -> impl Future<Output = Result<bool, QueryMetricsError>> + Send;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -72,9 +82,20 @@ pub trait DashboardService: 'static {
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryMetricsError>>;
 
-    fn subscribe(&self, run_id: &RunId) -> impl Future<Output = Result<(), SubscribeError>>;
+    fn subscribe_metric(
+        &self,
+        query: &MetricQuery,
+    ) -> impl Future<Output = Result<(), SubscribeError>>;
 
-    fn unsubscribe(&self, run_id: &RunId) -> impl Future<Output = Result<(), UnsubscribeError>>;
+    fn unsubscribe_metric(
+        &self,
+        sub_id: SubscriptionId,
+    ) -> impl Future<Output = Result<(), UnsubscribeError>>;
+
+    fn is_finalized(
+        &self,
+        run_id: &RunId,
+    ) -> impl Future<Output = Result<bool, QueryMetricsError>>;
 }
 
 #[derive(Debug, Clone)]
@@ -132,11 +153,15 @@ where
         self.querier.query_batch(request).await
     }
 
-    async fn subscribe(&self, run_id: &RunId) -> Result<(), SubscribeError> {
-        self.subscriber.subscribe(run_id).await
+    async fn subscribe_metric(&self, query: &MetricQuery) -> Result<(), SubscribeError> {
+        self.subscriber.subscribe_metric(query).await
     }
 
-    async fn unsubscribe(&self, run_id: &RunId) -> Result<(), UnsubscribeError> {
-        self.subscriber.unsubscribe(run_id).await
+    async fn unsubscribe_metric(&self, sub_id: SubscriptionId) -> Result<(), UnsubscribeError> {
+        self.subscriber.unsubscribe_metric(sub_id).await
+    }
+
+    async fn is_finalized(&self, run_id: &RunId) -> Result<bool, QueryMetricsError> {
+        self.querier.is_finalized(run_id).await
     }
 }

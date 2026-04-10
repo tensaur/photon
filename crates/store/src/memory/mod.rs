@@ -1,6 +1,6 @@
 pub mod bucket;
-pub mod compaction;
 pub mod experiment;
+pub mod finalized;
 pub mod metric;
 pub mod project;
 pub mod run;

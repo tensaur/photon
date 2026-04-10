@@ -29,6 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (wal_appender, _wal) = open_in_memory_wal();
     let notify = Arc::new(tokio::sync::Notify::new());
     let (finished_runs_tx, _finished_runs_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (event_tx, _) = tokio::sync::broadcast::channel(16);
 
     let ingest_service = IngestService::new(wal_appender, notify);
     let run_store = InMemoryRunStore::new();
@@ -45,10 +46,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let es = experiment_store.clone();
             let ps = project_store.clone();
             let finished_runs_tx = finished_runs_tx.clone();
+            let event_tx = event_tx.clone();
 
             tokio::spawn(async move {
-                handler::handle_envelope(&service, &rs, &es, &ps, &finished_runs_tx, &transport)
-                    .await;
+                handler::handle_envelope(
+                    &service, &rs, &es, &ps, &finished_runs_tx, &event_tx, &transport,
+                )
+                .await;
             });
         }
     });

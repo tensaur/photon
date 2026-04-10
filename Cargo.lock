@@ -2887,13 +2887,11 @@ dependencies = [
  "photon",
  "photon-core",
  "photon-downsample",
- "photon-hook",
  "photon-ingest",
  "photon-persist",
  "photon-protocol",
  "photon-query",
  "photon-store",
- "photon-subscription",
  "photon-transport",
  "photon-wal",
  "rust-embed",
@@ -2916,17 +2914,6 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "photon-subscription"
-version = "0.2.0"
-dependencies = [
- "photon-core",
- "photon-hook",
- "photon-transport",
- "tokio",
- "tracing",
 ]
 
 [[package]]

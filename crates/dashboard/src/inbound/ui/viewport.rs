@@ -31,10 +31,22 @@ impl egui_tiles::Behavior<Pane> for ViewportBehavior<'_> {
 
         match pane {
             Pane::LineChart(state) => {
-                panes::line_chart::show(ui, state, self.cache, self.sidebar_state, self.crosshair_x);
+                panes::line_chart::show(
+                    ui,
+                    state,
+                    self.cache,
+                    self.sidebar_state,
+                    self.crosshair_x,
+                );
             }
             Pane::Comparison(state) => {
-                panes::comparison::show(ui, state, self.cache, self.sidebar_state, self.crosshair_x);
+                panes::comparison::show(
+                    ui,
+                    state,
+                    self.cache,
+                    self.sidebar_state,
+                    self.crosshair_x,
+                );
             }
         }
 

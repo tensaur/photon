@@ -1,6 +1,6 @@
 pub mod bucket;
-pub mod compaction;
 pub mod experiment;
+pub mod finalized;
 pub mod metric;
 pub mod project;
 pub mod run;
@@ -117,6 +117,7 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
                 step_start UInt64,
                 step_end UInt64,
                 value Float64,
+                count UInt64,
                 min Float64,
                 max Float64
             ) ENGINE = MergeTree()
@@ -177,13 +178,11 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
 
     client
         .query(
-            "CREATE TABLE IF NOT EXISTS photon.compaction_cursors (
+            "CREATE TABLE IF NOT EXISTS photon.finalized (
                 run_id UUID,
-                key String,
-                tier UInt32,
-                offset UInt64
-            ) ENGINE = ReplacingMergeTree(offset)
-            ORDER BY (run_id, key, tier)",
+                finalized_at Int64
+            ) ENGINE = ReplacingMergeTree(finalized_at)
+            ORDER BY (run_id)",
         )
         .execute()
         .await?;

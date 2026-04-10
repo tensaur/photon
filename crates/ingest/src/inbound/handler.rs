@@ -4,10 +4,12 @@ use photon_core::domain::run::{Run, RunStatus};
 use photon_core::types::ack::{AckResult, AckStatus};
 use photon_core::types::batch::WireBatch;
 use photon_core::types::error::ApiError;
+use photon_core::types::event::PhotonEvent;
 use photon_core::types::id::RunId;
 use photon_core::types::ingest::{IngestMessage, IngestResult};
 use photon_store::ports::{ReadRepository, WriteRepository};
 use photon_transport::ports::{Transport, TransportError};
+use tokio::sync::broadcast;
 
 use crate::domain::service::IngestService;
 
@@ -18,6 +20,7 @@ pub async fn dispatch<S, W, E, P>(
     experiment_writer: &E,
     project_writer: &P,
     finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
+    event_tx: &broadcast::Sender<PhotonEvent>,
     msg: IngestMessage,
 ) -> IngestResult
 where
@@ -32,13 +35,22 @@ where
             IngestResult::Ack(ack)
         }
         IngestMessage::RegisterRun(run) => match run_writer.upsert(&run).await {
-            Ok(()) => IngestResult::RunRegistered(run.id()),
+            Ok(()) => {
+                let _ = event_tx.send(PhotonEvent::RunStatusChanged {
+                    run_id: run.id(),
+                    old: run.status().clone(),
+                    new: run.status().clone(),
+                });
+                IngestResult::RunRegistered(run.id())
+            }
             Err(e) => {
                 tracing::error!("register run failed: {e}");
                 IngestResult::Error(ApiError::Internal)
             }
         },
-        IngestMessage::FinishRun(run_id) => finish_run(run_writer, finished_runs_tx, run_id).await,
+        IngestMessage::FinishRun(run_id) => {
+            finish_run(run_writer, finished_runs_tx, event_tx, run_id).await
+        }
         IngestMessage::RegisterExperiment(experiment) => {
             match experiment_writer.upsert(&experiment).await {
                 Ok(()) => IngestResult::ExperimentRegistered(experiment.id),
@@ -68,6 +80,7 @@ where
 async fn finish_run<W>(
     run_writer: &W,
     finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
+    event_tx: &broadcast::Sender<PhotonEvent>,
     run_id: RunId,
 ) -> IngestResult
 where
@@ -95,6 +108,12 @@ where
             tracing::error!("persist finished run failed: {e}");
             return IngestResult::Error(ApiError::Internal);
         }
+
+        let _ = event_tx.send(PhotonEvent::RunStatusChanged {
+            run_id,
+            old: RunStatus::Running,
+            new: RunStatus::Finished,
+        });
     }
 
     if finished_runs_tx.send(run_id).is_err() {
@@ -129,6 +148,7 @@ pub async fn handle_envelope<S, W, E, P, T>(
     experiment_writer: &E,
     project_writer: &P,
     finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
+    event_tx: &broadcast::Sender<PhotonEvent>,
     transport: &T,
 ) where
     S: IngestService,
@@ -153,6 +173,7 @@ pub async fn handle_envelope<S, W, E, P, T>(
             experiment_writer,
             project_writer,
             finished_runs_tx,
+            event_tx,
             msg,
         )
         .await;

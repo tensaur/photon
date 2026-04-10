@@ -19,6 +19,7 @@ struct BucketWriteRow {
     step_start: u64,
     step_end: u64,
     value: f64,
+    count: u64,
     min: f64,
     max: f64,
 }
@@ -28,6 +29,7 @@ struct BucketReadRow {
     step_start: u64,
     step_end: u64,
     value: f64,
+    count: u64,
     min: f64,
     max: f64,
 }
@@ -64,6 +66,7 @@ impl BucketWriter for ClickHouseBucketStore {
                     step_start: entry.bucket.step_start.as_u64(),
                     step_end: entry.bucket.step_end.as_u64(),
                     value: entry.bucket.value,
+                    count: entry.bucket.count,
                     min: entry.bucket.min,
                     max: entry.bucket.max,
                 })
@@ -113,6 +116,7 @@ impl BucketReader for ClickHouseBucketStore {
                 step_start: Step::new(r.step_start),
                 step_end: Step::new(r.step_end),
                 value: r.value,
+                count: r.count,
                 min: r.min,
                 max: r.max,
             })

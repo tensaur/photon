@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use egui::{Color32, RichText, Sense, Stroke, StrokeKind, Ui, vec2};
 use photon_ui::egui_phosphor::regular::{EYE, EYE_SLASH, MAGNIFYING_GLASS};
@@ -72,6 +72,7 @@ pub fn show(
     state: &mut SidebarState,
     runs: &[Run],
     experiments: &[Experiment],
+    finalized: &HashSet<RunId>,
 ) -> Vec<SidebarAction> {
     let mut actions: Vec<SidebarAction> = Vec::new();
 
@@ -129,10 +130,10 @@ pub fn show(
         let expanded = *state.expanded_experiments.entry(exp_id).or_insert(true);
 
         let header_text = match exp_id {
-            Some(id) => experiments
-                .iter()
-                .find(|e| e.id == id)
-                .map_or_else(|| format!("EXPERIMENT {}", id.short()), |e| e.name.to_uppercase()),
+            Some(id) => experiments.iter().find(|e| e.id == id).map_or_else(
+                || format!("EXPERIMENT {}", id.short()),
+                |e| e.name.to_uppercase(),
+            ),
             None => "UNGROUPED".to_string(),
         };
 
@@ -191,101 +192,90 @@ pub fn show(
                     .fill(row_color)
                     .inner_margin(egui::Margin::symmetric(4, 2));
 
-                let row_frame_resp = row_frame
-                    .show(ui, |ui| {
-                        let mut row_action: Option<SidebarAction> = None;
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 6.0;
+                let row_frame_resp = row_frame.show(ui, |ui| {
+                    let mut row_action: Option<SidebarAction> = None;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
 
-                            let (swatch_rect, _) =
-                                ui.allocate_exact_size(vec2(11.0, 11.0), Sense::hover());
-                            let painter = ui.painter();
-                            let cr = egui::CornerRadius::same(2);
-                            if is_visible {
-                                if let Some(color) = state.get_color(&run.id()) {
-                                    painter.rect_filled(swatch_rect, cr, color);
-                                } else {
-                                    painter.rect_filled(
-                                        swatch_rect,
-                                        cr,
-                                        theme::DARK.text_dim,
-                                    );
-                                }
+                        let (swatch_rect, _) =
+                            ui.allocate_exact_size(vec2(11.0, 11.0), Sense::hover());
+                        let painter = ui.painter();
+                        let cr = egui::CornerRadius::same(2);
+                        if is_visible {
+                            if let Some(color) = state.get_color(&run.id()) {
+                                painter.rect_filled(swatch_rect, cr, color);
                             } else {
-                                painter.rect_stroke(
-                                    swatch_rect,
-                                    cr,
-                                    Stroke::new(1.0, Color32::from_rgb(0x44, 0x44, 0x44)),
-                                    StrokeKind::Inside,
-                                );
+                                painter.rect_filled(swatch_rect, cr, theme::DARK.text_dim);
                             }
+                        } else {
+                            painter.rect_stroke(
+                                swatch_rect,
+                                cr,
+                                Stroke::new(1.0, Color32::from_rgb(0x44, 0x44, 0x44)),
+                                StrokeKind::Inside,
+                            );
+                        }
 
-                            let name_color = if is_selected {
-                                theme::DARK.text_primary
-                            } else if is_visible {
+                        let name_color = if is_selected {
+                            theme::DARK.text_primary
+                        } else if is_visible {
+                            theme::DARK.text_secondary
+                        } else {
+                            theme::DARK.text_dim
+                        };
+
+                        let name_resp = ui.add(
+                            egui::Label::new(
+                                RichText::new(run.name()).color(name_color).size(12.0),
+                            )
+                            .selectable(false)
+                            .sense(Sense::click()),
+                        );
+                        if name_resp.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if name_resp.clicked() {
+                            if is_selected && is_visible {
+                                row_action = Some(SidebarAction::ToggleVisibility(run.id()));
+                            } else {
+                                row_action = Some(SidebarAction::SelectRun(run.id()));
+                            }
+                        }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let eye_color = if is_visible {
                                 theme::DARK.text_secondary
                             } else {
-                                theme::DARK.text_dim
+                                theme::DARK.text_dim.gamma_multiply(0.3)
                             };
-
-                            let name_resp = ui.add(
+                            let eye_char = if is_visible { EYE } else { EYE_SLASH };
+                            let eye_resp = ui.add(
                                 egui::Label::new(
-                                    RichText::new(run.name())
-                                        .color(name_color)
-                                        .size(12.0),
+                                    RichText::new(eye_char)
+                                        .font(photon_ui::theme::icon_font_id(12.0))
+                                        .color(eye_color),
                                 )
                                 .selectable(false)
                                 .sense(Sense::click()),
                             );
-                            if name_resp.hovered() {
+                            if eye_resp.hovered() {
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                             }
-                            if name_resp.clicked() {
-                                if is_selected && is_visible {
-                                    row_action = Some(SidebarAction::ToggleVisibility(run.id()));
-                                } else {
-                                    row_action = Some(SidebarAction::SelectRun(run.id()));
-                                }
+                            if eye_resp.clicked() {
+                                row_action = Some(SidebarAction::ToggleVisibility(run.id()));
                             }
 
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    let eye_color = if is_visible {
-                                        theme::DARK.text_secondary
-                                    } else {
-                                        theme::DARK.text_dim.gamma_multiply(0.3)
-                                    };
-                                    let eye_char = if is_visible { EYE } else { EYE_SLASH };
-                                    let eye_resp = ui.add(
-                                        egui::Label::new(
-                                            RichText::new(eye_char)
-                                                .font(photon_ui::theme::icon_font_id(12.0))
-                                                .color(eye_color),
-                                        )
-                                        .selectable(false)
-                                        .sense(Sense::click()),
-                                    );
-                                    if eye_resp.hovered() {
-                                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                                    }
-                                    if eye_resp.clicked() {
-                                        row_action =
-                                            Some(SidebarAction::ToggleVisibility(run.id()));
-                                    }
-
-                                    let (dot_rect, _) =
-                                        ui.allocate_exact_size(vec2(7.0, 7.0), Sense::hover());
-                                    ui.painter().circle_filled(
-                                        dot_rect.center(),
-                                        3.5,
-                                        status_color(run.status()),
-                                    );
-                                },
+                            let (dot_rect, _) =
+                                ui.allocate_exact_size(vec2(7.0, 7.0), Sense::hover());
+                            ui.painter().circle_filled(
+                                dot_rect.center(),
+                                3.5,
+                                status_color(run.status(), finalized.contains(&run.id())),
                             );
                         });
-                        row_action
                     });
+                    row_action
+                });
                 let row_rect = row_frame_resp.response.rect;
                 let row_action = row_frame_resp.inner;
 
@@ -364,10 +354,8 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
 
     for (i, (label, color, active)) in cells.iter().enumerate() {
         let x = bar_rect.min.x + i as f32 * cell_width;
-        let cell_rect = egui::Rect::from_min_size(
-            egui::pos2(x, bar_rect.min.y),
-            vec2(cell_width, bar_height),
-        );
+        let cell_rect =
+            egui::Rect::from_min_size(egui::pos2(x, bar_rect.min.y), vec2(cell_width, bar_height));
 
         let bg = if *active {
             theme::DARK.surface
@@ -378,10 +366,7 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
 
         if i > 0 {
             painter.line_segment(
-                [
-                    egui::pos2(x, bar_rect.min.y),
-                    egui::pos2(x, bar_rect.max.y),
-                ],
+                [egui::pos2(x, bar_rect.min.y), egui::pos2(x, bar_rect.max.y)],
                 Stroke::new(1.0, theme::DARK.border),
             );
         }
@@ -413,9 +398,12 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
     }
 }
 
-fn status_color(status: &RunStatus) -> Color32 {
+fn status_color(status: &RunStatus, finalized: bool) -> Color32 {
     match status {
         RunStatus::Running | RunStatus::Created => theme::DARK.status_running,
+        // A Finished run is still being processed by the persist pipeline
+        // until the Finalized event arrives. Show that as a distinct state.
+        RunStatus::Finished if !finalized => theme::DARK.status_processing,
         RunStatus::Finished => theme::DARK.status_done,
         RunStatus::Failed { .. } => theme::DARK.status_failed,
     }

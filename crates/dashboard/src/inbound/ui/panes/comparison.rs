@@ -1,9 +1,10 @@
 use egui::Vec2b;
 use egui_plot::{Corner, Legend, Line, LineStyle, Plot, PlotPoints, VLine};
 
+use photon_core::types::query::SeriesData;
 use photon_ui::theme;
 
-use super::ComparisonState;
+use super::{ComparisonState, EnvelopeBand};
 use crate::inbound::ui::app::DataCache;
 use crate::inbound::ui::sidebar::SidebarState;
 
@@ -16,7 +17,9 @@ pub fn show(
 ) {
     let metric_name = state.metric.as_str().to_owned();
 
-    let mut all_series: Vec<(String, egui::Color32, Vec<[f64; 2]>)> = Vec::new();
+    // (name, color, line_points, optional envelope as (x, min, max) triples)
+    let mut all_series: Vec<(String, egui::Color32, Vec<[f64; 2]>, Option<Vec<(f64, f64, f64)>>)> =
+        Vec::new();
     let mut global_x_min = f64::MAX;
     let mut global_x_max = f64::MIN;
 
@@ -25,10 +28,27 @@ pub fn show(
             .get_color(run_id)
             .unwrap_or(theme::DARK.chart_colors[i % 8]);
 
-        let points: Vec<[f64; 2]> = cache
-            .get_series(run_id, &state.metric)
-            .map(|series| series.data.points().iter().map(Into::into).collect())
-            .unwrap_or_default();
+        let series = cache.get_series(run_id, &state.metric);
+
+        let (points, envelope): (Vec<[f64; 2]>, Option<Vec<(f64, f64, f64)>>) =
+            match series.map(|s| &s.data) {
+                Some(SeriesData::Raw { points }) => {
+                    (points.iter().map(Into::into).collect(), None)
+                }
+                Some(SeriesData::Bucketed { buckets }) => (
+                    buckets
+                        .iter()
+                        .map(|b| [b.step_start.as_u64() as f64, b.value])
+                        .collect(),
+                    Some(
+                        buckets
+                            .iter()
+                            .map(|b| (b.step_start.as_u64() as f64, b.min, b.max))
+                            .collect(),
+                    ),
+                ),
+                None => (Vec::new(), None),
+            };
 
         if let Some(first) = points.first() {
             global_x_min = global_x_min.min(first[0]);
@@ -38,7 +58,7 @@ pub fn show(
         }
 
         let run_name = cache.run_name(run_id).unwrap_or_else(|| run_id.short());
-        all_series.push((run_name, color, points));
+        all_series.push((run_name, color, points, envelope));
     }
 
     if global_x_min > global_x_max {
@@ -62,7 +82,14 @@ pub fn show(
             )
         })
         .show(ui, |plot_ui| {
-            for (name, color, points) in &all_series {
+            for (name, color, points, envelope) in &all_series {
+                if let Some(ref envelope) = *envelope {
+                    let band_color = egui::Color32::from_rgba_unmultiplied(
+                        color.r(), color.g(), color.b(), 60,
+                    );
+                    plot_ui.add(EnvelopeBand::new(envelope, band_color));
+                }
+
                 plot_ui.line(
                     Line::new(name.as_str(), PlotPoints::new(points.clone()))
                         .width(2.0)

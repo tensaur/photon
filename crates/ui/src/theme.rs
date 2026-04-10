@@ -28,6 +28,7 @@ pub struct Theme {
     pub text_dim: Color32,
     pub status_done: Color32,
     pub status_running: Color32,
+    pub status_processing: Color32,
     pub status_failed: Color32,
     pub live_border: Color32,
     pub chart_colors: [Color32; 8],
@@ -42,6 +43,7 @@ pub static DARK: Theme = Theme {
     text_dim: Color32::from_rgb(0x55, 0x55, 0x55),
     status_done: Color32::from_rgb(0x44, 0xDD, 0x88),
     status_running: Color32::from_rgb(0xDD, 0xAA, 0x33),
+    status_processing: Color32::from_rgb(0xEE, 0xDD, 0x55),
     status_failed: Color32::from_rgb(0xEE, 0x55, 0x55),
     live_border: Color32::from_rgb(0x1E, 0x4D, 0x2E),
     chart_colors: [
@@ -78,10 +80,9 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
         egui_phosphor::Variant::Regular.font_data().into(),
     );
 
-    fonts.families.insert(
-        FontFamily::Proportional,
-        vec!["inter_medium".into()],
-    );
+    fonts
+        .families
+        .insert(FontFamily::Proportional, vec!["inter_medium".into()]);
 
     fonts
         .families
@@ -95,10 +96,7 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
     ctx.set_fonts(fonts);
 
     let text_styles: BTreeMap<TextStyle, FontId> = [
-        (
-            TextStyle::Body,
-            FontId::new(12.0, FontFamily::Proportional),
-        ),
+        (TextStyle::Body, FontId::new(12.0, FontFamily::Proportional)),
         (
             TextStyle::Small,
             FontId::new(10.0, FontFamily::Proportional),
