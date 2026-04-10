@@ -1,3 +1,4 @@
+pub mod envelope;
 pub mod icon_rail;
 pub mod panel_header;
 pub mod tab_bar;

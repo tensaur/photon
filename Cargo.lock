@@ -2942,6 +2942,7 @@ version = "0.2.0"
 dependencies = [
  "egui",
  "egui-phosphor",
+ "egui_plot",
 ]
 
 [[package]]

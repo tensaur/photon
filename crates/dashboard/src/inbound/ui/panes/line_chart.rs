@@ -2,9 +2,10 @@ use egui::Vec2b;
 use egui_plot::{Corner, Legend, Line, LineStyle, Plot, PlotPoints, VLine};
 
 use photon_core::types::query::SeriesData;
+use photon_ui::envelope::Envelope;
 use photon_ui::theme;
 
-use super::{EnvelopeBand, LineChartState};
+use super::LineChartState;
 use crate::inbound::ui::app::DataCache;
 use crate::inbound::ui::sidebar::SidebarState;
 
@@ -66,7 +67,7 @@ pub fn show(
                 let band_color = egui::Color32::from_rgba_unmultiplied(
                     color.r(), color.g(), color.b(), 60,
                 );
-                plot_ui.add(EnvelopeBand::new(envelope, band_color));
+                plot_ui.add(Envelope::new(envelope, band_color));
             }
 
             plot_ui.line(
