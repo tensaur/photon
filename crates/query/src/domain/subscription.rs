@@ -6,9 +6,8 @@ use tokio::sync::{broadcast, mpsc};
 use photon_core::types::event::PhotonEvent;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, Step};
-use photon_core::types::query::{
-    DataPoint, MetricQuery, MetricSeries, SeriesData, SubscriptionId,
-};
+use photon_core::types::id::SubscriptionId;
+use photon_core::types::query::{DataPoint, MetricQuery, MetricSeries, SeriesData};
 use photon_core::types::stream::{DeltaData, SubscriptionUpdate};
 
 /// Per-connection channel a `SubscriptionManager` uses to push updates back

@@ -86,3 +86,12 @@ impl ExperimentId {
         Self(Uuid::new_v5(&Uuid::NAMESPACE_OID, &key))
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SubscriptionId(u64);
+
+impl SubscriptionId {
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
+}

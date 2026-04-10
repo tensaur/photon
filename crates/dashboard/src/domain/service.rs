@@ -5,9 +5,8 @@ use photon_core::domain::project::Project;
 use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
-use photon_core::types::query::{
-    MetricQuery, MetricSeries, QueryRequest, QueryResponse, SubscriptionId,
-};
+use photon_core::types::id::SubscriptionId;
+use photon_core::types::query::{MetricQuery, MetricSeries, QueryRequest, QueryResponse};
 
 use crate::domain::error::{
     ListExperimentsError, ListMetricsError, ListProjectsError, ListRunsError,

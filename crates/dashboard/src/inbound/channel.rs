@@ -4,8 +4,9 @@ use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{
-    MetricQuery, MetricSeries, QueryMessage, QueryRequest, QueryResponse, SubscriptionId,
+    MetricQuery, MetricSeries, QueryMessage, QueryRequest, QueryResponse,
 };
+use photon_core::types::id::SubscriptionId;
 use photon_core::types::stream::{DeltaData, StreamFrame, SubscriptionUpdate};
 use photon_transport::Transport;
 

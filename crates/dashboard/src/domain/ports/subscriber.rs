@@ -1,6 +1,7 @@
 use std::future::Future;
 
-use photon_core::types::query::{MetricQuery, SubscriptionId};
+use photon_core::types::id::SubscriptionId;
+use photon_core::types::query::MetricQuery;
 
 use crate::domain::error::{SubscribeError, UnsubscribeError};
 

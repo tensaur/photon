@@ -1,4 +1,5 @@
-use photon_core::types::query::{MetricQuery, QueryMessage, SubscriptionId};
+use photon_core::types::id::SubscriptionId;
+use photon_core::types::query::{MetricQuery, QueryMessage};
 use photon_core::types::stream::StreamFrame;
 use photon_transport::Transport;
 

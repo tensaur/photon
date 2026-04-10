@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::bucket::Bucket;
 use crate::types::id::RunId;
-use crate::types::query::{DataPoint, MetricSeries, SubscriptionId};
+use crate::types::id::SubscriptionId;
+use crate::types::query::{DataPoint, MetricSeries};
 
 /// Updates that the server pushes for a *specific* subscription. The owning
 /// `SubscriptionId` is carried by the `StreamFrame::Subscription` wrapper,

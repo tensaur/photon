@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use photon_core::types::event::PhotonEvent;
-use photon_core::types::query::{QueryMessage, SubscriptionId};
+use photon_core::types::id::SubscriptionId;
+use photon_core::types::query::QueryMessage;
 use photon_core::types::stream::{StreamFrame, SubscriptionUpdate};
 use photon_transport::ports::Transport;
 use tokio::sync::{broadcast, mpsc};

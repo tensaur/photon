@@ -7,17 +7,8 @@ use crate::domain::project::Project;
 use crate::domain::run::Run;
 use crate::types::bucket::Bucket;
 use crate::types::error::ApiError;
-use crate::types::id::RunId;
+use crate::types::id::{RunId, SubscriptionId};
 use crate::types::metric::{Metric, Step};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SubscriptionId(u64);
-
-impl SubscriptionId {
-    pub fn new(id: u64) -> Self {
-        Self(id)
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetricQuery {
