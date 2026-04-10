@@ -38,7 +38,7 @@ pub struct DataCache {
     /// first `Snapshot` arrives.
     pub subscribed_keys: HashSet<(RunId, Metric)>,
     /// Reverse map: `SubscriptionId → (run_id, metric)`, populated from `Snapshot`.
-    /// Used to route `Delta` / `Resnapshot` / `Unsubscribed` messages, which
+    /// Used to route `Delta` / `Unsubscribed` messages, which
     /// only carry the id.
     pub subscriptions: HashMap<SubscriptionId, (RunId, Metric)>,
     /// Runs the server has marked as finalized — fully persisted and indexed.
@@ -182,19 +182,6 @@ impl DashboardApp {
                     .insert(subscription_id, key.clone());
                 self.cache.series.insert(key, series);
             }
-            Response::Resnapshot {
-                subscription_id,
-                series,
-            } => {
-                // Same subscription, coarser tier — replace the cached series.
-                let key = self
-                    .cache
-                    .subscriptions
-                    .get(&subscription_id)
-                    .cloned()
-                    .unwrap_or_else(|| (series.run_id, series.key.clone()));
-                self.cache.series.insert(key, series);
-            }
             Response::Delta {
                 subscription_id,
                 data,
@@ -321,7 +308,6 @@ impl DashboardApp {
                             key: m.clone(),
                             step_range: Step::ZERO..Step::MAX,
                             target_points: 100,
-                            subscribe: true,
                         },
                     },
                 );

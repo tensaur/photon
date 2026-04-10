@@ -4,10 +4,10 @@ use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{
-    MetricQuery, MetricSeries, QueryMessage, QueryRequest, QueryResponse,
+    MetricQuery, MetricSeries, QueryRequest, QueryResponse,
 };
 use photon_core::types::id::SubscriptionId;
-use photon_core::types::stream::{DeltaData, StreamFrame, SubscriptionUpdate};
+use photon_core::types::stream::{DeltaData, StreamFrame, SubscriptionCommand, SubscriptionUpdate};
 use photon_transport::Transport;
 
 use crate::domain::error::{
@@ -51,10 +51,6 @@ pub enum Response {
     Delta {
         subscription_id: SubscriptionId,
         data: DeltaData,
-    },
-    Resnapshot {
-        subscription_id: SubscriptionId,
-        series: MetricSeries,
     },
     Unsubscribed {
         subscription_id: SubscriptionId,
@@ -140,7 +136,7 @@ pub(crate) fn spawn_service<S, T>(
 ) -> (CommandSender, ResponseReceiver)
 where
     S: DashboardService,
-    T: Transport<QueryMessage, StreamFrame> + 'static,
+    T: Transport<SubscriptionCommand, StreamFrame> + 'static,
 {
     let (cmd_tx, cmd_rx) = channels();
     let (resp_tx, resp_rx) = channels();
@@ -157,7 +153,7 @@ where
 
 async fn subscription_reader<T>(ctx: egui::Context, transport: T, resp_tx: ResponseSender)
 where
-    T: Transport<QueryMessage, StreamFrame>,
+    T: Transport<SubscriptionCommand, StreamFrame>,
 {
     loop {
         match transport.recv().await {
@@ -170,10 +166,6 @@ where
                     SubscriptionUpdate::Delta(data) => Response::Delta {
                         subscription_id: id,
                         data,
-                    },
-                    SubscriptionUpdate::Resnapshot { series } => Response::Resnapshot {
-                        subscription_id: id,
-                        series,
                     },
                     SubscriptionUpdate::Unsubscribed => Response::Unsubscribed {
                         subscription_id: id,

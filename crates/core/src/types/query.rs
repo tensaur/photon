@@ -16,8 +16,6 @@ pub struct MetricQuery {
     pub key: Metric,
     pub step_range: Range<Step>,
     pub target_points: usize,
-    #[serde(default)]
-    pub subscribe: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -64,7 +62,6 @@ pub enum QueryMessage {
     ListMetrics(RunId),
     Query(MetricQuery),
     QueryBatch(QueryRequest),
-    Unsubscribe(SubscriptionId),
     IsFinalized(RunId),
 }
 

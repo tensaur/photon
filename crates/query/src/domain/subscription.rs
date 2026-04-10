@@ -391,7 +391,7 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
 
         let _ = state
             .response_tx
-            .send((sub_id, SubscriptionUpdate::Resnapshot { series }));
+            .send((sub_id, SubscriptionUpdate::Snapshot { series }));
 
         // Move subscription between indexes
         let old_lod = state.current_lod.clone();
@@ -518,7 +518,6 @@ mod tests {
                     key: metric,
                     step_range: Step::ZERO..Step::MAX,
                     target_points: 500,
-                    subscribe: true,
                 },
                 response_tx: resp_tx,
             })
@@ -558,7 +557,6 @@ mod tests {
                     key: metric.clone(),
                     step_range: Step::ZERO..Step::MAX,
                     target_points: 500,
-                    subscribe: true,
                 },
                 response_tx: resp_tx,
             })
@@ -653,7 +651,6 @@ mod tests {
                     key: metric.clone(),
                     step_range: Step::ZERO..Step::MAX,
                     target_points: 500,
-                    subscribe: true,
                 },
                 response_tx: resp_tx,
             })
@@ -724,8 +721,7 @@ mod tests {
                         key: metric.clone(),
                         step_range: Step::ZERO..Step::MAX,
                         target_points: 500,
-                        subscribe: true,
-                    },
+                        },
                     response_tx: resp_tx.clone(),
                 })
                 .unwrap();
@@ -756,7 +752,6 @@ mod tests {
                     key: m3.clone(),
                     step_range: Step::ZERO..Step::MAX,
                     target_points: 500,
-                    subscribe: true,
                 },
                 response_tx: resp_tx,
             })
@@ -823,7 +818,6 @@ mod tests {
                     key: metric,
                     step_range: Step::ZERO..Step::MAX,
                     target_points: 500,
-                    subscribe: true,
                 },
                 response_tx: resp_tx,
             })
@@ -892,7 +886,6 @@ mod tests {
                     key: metric.clone(),
                     step_range: Step::ZERO..Step::MAX,
                     target_points,
-                    subscribe: true,
                 },
                 response_tx: resp_tx,
             })
@@ -926,17 +919,17 @@ mod tests {
                 .unwrap();
         }
 
-        // Collect messages: expect Deltas then a Resnapshot
-        let mut saw_resnapshot = false;
+        // Collect messages: expect Deltas then a coarsened Snapshot (bucketed)
+        let mut saw_coarsen = false;
         let mut delta_count = 0;
         while let Ok(msg) =
             tokio::time::timeout(std::time::Duration::from_millis(200), resp_rx.recv()).await
         {
             match msg.unwrap() {
                 (_, SubscriptionUpdate::Delta(_)) => delta_count += 1,
-                (_, SubscriptionUpdate::Resnapshot { series }) => {
+                (_, SubscriptionUpdate::Snapshot { series }) => {
                     assert!(matches!(series.data, SeriesData::Bucketed { .. }));
-                    saw_resnapshot = true;
+                    saw_coarsen = true;
                     break;
                 }
                 other => panic!("unexpected message: {other:?}"),
@@ -944,8 +937,8 @@ mod tests {
         }
 
         assert!(
-            saw_resnapshot,
-            "expected Resnapshot after exceeding 1.5x budget (got {delta_count} deltas)"
+            saw_coarsen,
+            "expected coarsened Snapshot after exceeding 1.5x budget (got {delta_count} deltas)"
         );
         assert!(
             delta_count >= 5,

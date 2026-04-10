@@ -13,7 +13,7 @@ fn main() {
     // Simulate a ~30s training loop with 50k steps.
     // Enough points that the dashboard's subscription will start on Raw,
     // then auto-coarsen to Bucketed as the count exceeds the target_points
-    // budget — visible as a Resnapshot in the chart.
+    // budget — visible as a coarsened Snapshot in the chart.
     let total_steps: u64 = 50_000;
     let mut rng_state: u64 = 42;
     let mut noise = || -> f64 {

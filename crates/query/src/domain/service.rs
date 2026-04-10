@@ -98,10 +98,6 @@ pub async fn dispatch<S: QueryService>(service: &S, msg: QueryMessage) -> QueryR
                 QueryResult::Error(ApiError::Internal)
             }
         },
-        QueryMessage::Unsubscribe(_) => {
-            // Handled by the subscription manager, not the query service.
-            QueryResult::Error(ApiError::Internal)
-        }
         QueryMessage::IsFinalized(run_id) => match service.is_finalized(&run_id).await {
             Ok(finalized) => QueryResult::Finalized { run_id, finalized },
             Err(e) => {

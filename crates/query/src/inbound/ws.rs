@@ -2,24 +2,19 @@ use std::collections::HashSet;
 
 use photon_core::types::event::PhotonEvent;
 use photon_core::types::id::SubscriptionId;
-use photon_core::types::query::QueryMessage;
-use photon_core::types::stream::{StreamFrame, SubscriptionUpdate};
+use photon_core::types::stream::{StreamFrame, SubscriptionCommand, SubscriptionUpdate};
 use photon_transport::ports::Transport;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::domain::subscription::ManagerCommand;
 
 /// WebSocket handler for live subscriptions.
-///
-/// Accepts `QueryMessage`s from the client but only acts on subscription-related
-/// variants (`Query` with `subscribe: true`, `Unsubscribe`). One-shot queries
-/// should be sent over the `/api/query` HTTP endpoint instead.
 pub async fn handle<T>(
     transport: &T,
     cmd_tx: mpsc::UnboundedSender<ManagerCommand>,
     mut event_rx: broadcast::Receiver<PhotonEvent>,
 ) where
-    T: Transport<StreamFrame, QueryMessage>,
+    T: Transport<StreamFrame, SubscriptionCommand>,
 {
     // Per-connection channel: the manager pushes (id, update) pairs for any
     // subscription opened on this connection; we wrap each as a
@@ -37,18 +32,14 @@ pub async fn handle<T>(
         tokio::select! {
             msg = transport.recv() => {
                 match msg {
-                    Ok(QueryMessage::Query(ref q)) if q.subscribe => {
+                    Ok(SubscriptionCommand::Subscribe(ref q)) => {
                         let _ = cmd_tx.send(ManagerCommand::Subscribe {
                             query: q.clone(),
                             response_tx: stream_tx.clone(),
                         });
                     }
-                    Ok(QueryMessage::Unsubscribe(id)) => {
+                    Ok(SubscriptionCommand::Unsubscribe(id)) => {
                         let _ = cmd_tx.send(ManagerCommand::Unsubscribe(id));
-                    }
-                    Ok(_) => {
-                        // One-shot queries are not handled on the WS — use
-                        // /api/query instead.
                     }
                     Err(_) => break,
                 }
