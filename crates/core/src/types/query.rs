@@ -7,7 +7,7 @@ use crate::domain::project::Project;
 use crate::domain::run::Run;
 use crate::types::bucket::Bucket;
 use crate::types::error::ApiError;
-use crate::types::id::{RunId, SubscriptionId};
+use crate::types::id::RunId;
 use crate::types::metric::{Metric, Step};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

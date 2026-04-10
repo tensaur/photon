@@ -21,14 +21,14 @@ impl<T> MetricSubscriber for WsSubscriber<T>
 where
     T: Transport<SubscriptionCommand, StreamFrame>,
 {
-    async fn subscribe_metric(&self, query: &MetricQuery) -> Result<(), SubscribeError> {
+    async fn subscribe(&self, query: &MetricQuery) -> Result<(), SubscribeError> {
         self.transport
             .send(&SubscriptionCommand::Subscribe(query.clone()))
             .await
             .map_err(|e| SubscribeError::Unknown(Box::new(e)))
     }
 
-    async fn unsubscribe_metric(&self, sub_id: SubscriptionId) -> Result<(), UnsubscribeError> {
+    async fn unsubscribe(&self, sub_id: SubscriptionId) -> Result<(), UnsubscribeError> {
         self.transport
             .send(&SubscriptionCommand::Unsubscribe(sub_id))
             .await

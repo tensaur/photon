@@ -40,12 +40,12 @@ pub trait DashboardService: Clone + Send + Sync + 'static {
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryMetricsError>> + Send;
 
-    fn subscribe_metric(
+    fn subscribe(
         &self,
         query: &MetricQuery,
     ) -> impl Future<Output = Result<(), SubscribeError>> + Send;
 
-    fn unsubscribe_metric(
+    fn unsubscribe(
         &self,
         sub_id: SubscriptionId,
     ) -> impl Future<Output = Result<(), UnsubscribeError>> + Send;
@@ -81,12 +81,12 @@ pub trait DashboardService: 'static {
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryMetricsError>>;
 
-    fn subscribe_metric(
+    fn subscribe(
         &self,
         query: &MetricQuery,
     ) -> impl Future<Output = Result<(), SubscribeError>>;
 
-    fn unsubscribe_metric(
+    fn unsubscribe(
         &self,
         sub_id: SubscriptionId,
     ) -> impl Future<Output = Result<(), UnsubscribeError>>;
@@ -152,12 +152,12 @@ where
         self.querier.query_batch(request).await
     }
 
-    async fn subscribe_metric(&self, query: &MetricQuery) -> Result<(), SubscribeError> {
-        self.subscriber.subscribe_metric(query).await
+    async fn subscribe(&self, query: &MetricQuery) -> Result<(), SubscribeError> {
+        self.subscriber.subscribe(query).await
     }
 
-    async fn unsubscribe_metric(&self, sub_id: SubscriptionId) -> Result<(), UnsubscribeError> {
-        self.subscriber.unsubscribe_metric(sub_id).await
+    async fn unsubscribe(&self, sub_id: SubscriptionId) -> Result<(), UnsubscribeError> {
+        self.subscriber.unsubscribe(sub_id).await
     }
 
     async fn is_finalized(&self, run_id: &RunId) -> Result<bool, QueryMetricsError> {

@@ -220,10 +220,10 @@ async fn run_loop<S: DashboardService>(
                 send_resp(&resp_tx, Response::BatchSeries { request, result });
             }
             Command::SubscribeMetric { query } => {
-                let _ = service.subscribe_metric(&query).await;
+                let _ = service.subscribe(&query).await;
             }
             Command::UnsubscribeMetric { subscription_id } => {
-                let _ = service.unsubscribe_metric(subscription_id).await;
+                let _ = service.unsubscribe(subscription_id).await;
             }
             Command::CheckFinalized { run_id } => {
                 if let Ok(true) = service.is_finalized(&run_id).await {

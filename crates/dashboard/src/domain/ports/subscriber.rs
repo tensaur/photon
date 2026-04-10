@@ -7,11 +7,11 @@ use crate::domain::error::{SubscribeError, UnsubscribeError};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub trait MetricSubscriber: Clone + Send + Sync + 'static {
-    fn subscribe_metric(
+    fn subscribe(
         &self,
         query: &MetricQuery,
     ) -> impl Future<Output = Result<(), SubscribeError>> + Send;
-    fn unsubscribe_metric(
+    fn unsubscribe(
         &self,
         sub_id: SubscriptionId,
     ) -> impl Future<Output = Result<(), UnsubscribeError>> + Send;
@@ -19,11 +19,11 @@ pub trait MetricSubscriber: Clone + Send + Sync + 'static {
 
 #[cfg(target_arch = "wasm32")]
 pub trait MetricSubscriber: Clone + 'static {
-    fn subscribe_metric(
+    fn subscribe(
         &self,
         query: &MetricQuery,
     ) -> impl Future<Output = Result<(), SubscribeError>>;
-    fn unsubscribe_metric(
+    fn unsubscribe(
         &self,
         sub_id: SubscriptionId,
     ) -> impl Future<Output = Result<(), UnsubscribeError>>;
