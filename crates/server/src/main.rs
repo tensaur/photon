@@ -57,8 +57,8 @@ async fn main() -> anyhow::Result<()> {
     let run_store = ClickHouseRunStore::new(client.clone());
     let experiment_store = ClickHouseExperimentStore::new(client.clone());
     let project_store = ClickHouseProjectStore::new(client.clone());
-    let finalized_store =
-        photon_store::clickhouse::finalized::ClickHouseFinalizedStore::new(client);
+    let finalised_store =
+        photon_store::clickhouse::finalised::ClickHouseFinalisedStore::new(client);
 
     // Pipeline event channel
     let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(256);
@@ -89,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
         metric_store.clone(),
         watermark_store,
         bucket_store.clone(),
-        finalized_store.clone(),
+        finalised_store.clone(),
         event_tx.clone(),
         DownsampleConfig::default(),
     );
@@ -109,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
         run_store.clone(),
         experiment_store.clone(),
         project_store.clone(),
-        finalized_store,
+        finalised_store,
         TierSelector::default(),
     );
 

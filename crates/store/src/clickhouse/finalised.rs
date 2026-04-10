@@ -3,29 +3,29 @@ use serde::{Deserialize, Serialize};
 
 use photon_core::types::id::RunId;
 
-use crate::ports::finalized::FinalizedStore;
+use crate::ports::finalised::FinalisedStore;
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Row, Serialize, Deserialize)]
-struct FinalizedRow {
+struct FinalisedRow {
     #[serde(with = "clickhouse::serde::uuid")]
     run_id: uuid::Uuid,
-    finalized_at: i64,
+    finalised_at: i64,
 }
 
 #[derive(Clone)]
-pub struct ClickHouseFinalizedStore {
+pub struct ClickHouseFinalisedStore {
     client: clickhouse::Client,
 }
 
-impl ClickHouseFinalizedStore {
+impl ClickHouseFinalisedStore {
     pub fn new(client: clickhouse::Client) -> Self {
         Self { client }
     }
 }
 
-impl FinalizedStore for ClickHouseFinalizedStore {
-    async fn mark_finalized(&self, run_id: &RunId) -> Result<(), WriteError> {
+impl FinalisedStore for ClickHouseFinalisedStore {
+    async fn mark_finalised(&self, run_id: &RunId) -> Result<(), WriteError> {
         let run_uuid: uuid::Uuid = (*run_id).into();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -34,13 +34,13 @@ impl FinalizedStore for ClickHouseFinalizedStore {
 
         let mut insert = self
             .client
-            .insert("finalized")
+            .insert("finalised")
             .map_err(|e| WriteError::Store(Box::new(e)))?;
 
         insert
-            .write(&FinalizedRow {
+            .write(&FinalisedRow {
                 run_id: run_uuid,
-                finalized_at: now,
+                finalised_at: now,
             })
             .await
             .map_err(|e| WriteError::Store(Box::new(e)))?;
@@ -53,12 +53,12 @@ impl FinalizedStore for ClickHouseFinalizedStore {
         Ok(())
     }
 
-    async fn is_finalized(&self, run_id: &RunId) -> Result<bool, ReadError> {
+    async fn is_finalised(&self, run_id: &RunId) -> Result<bool, ReadError> {
         let run_uuid: uuid::Uuid = (*run_id).into();
 
         let count: u64 = self
             .client
-            .query("SELECT count() FROM finalized FINAL WHERE run_id = ?")
+            .query("SELECT count() FROM finalised FINAL WHERE run_id = ?")
             .bind(run_uuid)
             .fetch_one()
             .await

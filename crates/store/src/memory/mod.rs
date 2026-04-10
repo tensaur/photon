@@ -1,6 +1,6 @@
 pub mod bucket;
 pub mod experiment;
-pub mod finalized;
+pub mod finalised;
 pub mod metric;
 pub mod project;
 pub mod run;

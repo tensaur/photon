@@ -14,7 +14,7 @@ use photon_downsample::ports::selector::Selector;
 use photon_store::ports::ReadError;
 use photon_store::ports::ReadRepository;
 use photon_store::ports::bucket::BucketReader;
-use photon_store::ports::finalized::FinalizedStore;
+use photon_store::ports::finalised::FinalisedStore;
 use photon_store::ports::metric::MetricReader;
 
 use crate::domain::tier::{Lod, TierSelector};
@@ -47,7 +47,7 @@ pub trait QueryService: Clone + Send + Sync + 'static {
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryError>> + Send;
 
-    fn is_finalized(
+    fn is_finalised(
         &self,
         run_id: &RunId,
     ) -> impl Future<Output = Result<bool, QueryError>> + Send;
@@ -98,8 +98,8 @@ pub async fn dispatch<S: QueryService>(service: &S, msg: QueryMessage) -> QueryR
                 QueryResult::Error(ApiError::Internal)
             }
         },
-        QueryMessage::IsFinalized(run_id) => match service.is_finalized(&run_id).await {
-            Ok(finalized) => QueryResult::Finalized { run_id, finalized },
+        QueryMessage::IsFinalised(run_id) => match service.is_finalised(&run_id).await {
+            Ok(finalised) => QueryResult::Finalised { run_id, finalised },
             Err(e) => {
                 tracing::error!("query failed: {e}");
                 QueryResult::Error(ApiError::Internal)
@@ -117,7 +117,7 @@ where
     R: ReadRepository<Run>,
     E: ReadRepository<Experiment>,
     P: ReadRepository<Project>,
-    F: FinalizedStore,
+    F: FinalisedStore,
 {
     selector: S,
     bucket_reader: B,
@@ -125,7 +125,7 @@ where
     run_reader: R,
     experiment_reader: E,
     project_reader: P,
-    finalized_store: F,
+    finalised_store: F,
     tier_selector: TierSelector,
 }
 
@@ -137,7 +137,7 @@ where
     R: ReadRepository<Run>,
     E: ReadRepository<Experiment>,
     P: ReadRepository<Project>,
-    F: FinalizedStore,
+    F: FinalisedStore,
 {
     pub fn new(
         selector: S,
@@ -146,7 +146,7 @@ where
         run_reader: R,
         experiment_reader: E,
         project_reader: P,
-        finalized_store: F,
+        finalised_store: F,
         tier_selector: TierSelector,
     ) -> Self {
         Self {
@@ -156,7 +156,7 @@ where
             run_reader,
             experiment_reader,
             project_reader,
-            finalized_store,
+            finalised_store,
             tier_selector,
         }
     }
@@ -170,7 +170,7 @@ where
     R: ReadRepository<Run>,
     E: ReadRepository<Experiment>,
     P: ReadRepository<Project>,
-    F: FinalizedStore,
+    F: FinalisedStore,
 {
     async fn list_runs(&self) -> Result<Vec<Run>, QueryError> {
         Ok(self.run_reader.list().await?)
@@ -239,7 +239,7 @@ where
         Ok(QueryResponse { series })
     }
 
-    async fn is_finalized(&self, run_id: &RunId) -> Result<bool, QueryError> {
-        Ok(self.finalized_store.is_finalized(run_id).await?)
+    async fn is_finalised(&self, run_id: &RunId) -> Result<bool, QueryError> {
+        Ok(self.finalised_store.is_finalised(run_id).await?)
     }
 }

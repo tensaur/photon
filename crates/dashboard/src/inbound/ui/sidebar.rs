@@ -72,7 +72,7 @@ pub fn show(
     state: &mut SidebarState,
     runs: &[Run],
     experiments: &[Experiment],
-    finalized: &HashSet<RunId>,
+    finalised: &HashSet<RunId>,
 ) -> Vec<SidebarAction> {
     let mut actions: Vec<SidebarAction> = Vec::new();
 
@@ -270,7 +270,7 @@ pub fn show(
                             ui.painter().circle_filled(
                                 dot_rect.center(),
                                 3.5,
-                                status_color(run.status(), finalized.contains(&run.id())),
+                                status_color(run.status(), finalised.contains(&run.id())),
                             );
                         });
                     });
@@ -398,12 +398,12 @@ fn status_filter_bar(ui: &mut Ui, state: &mut SidebarState) {
     }
 }
 
-fn status_color(status: &RunStatus, finalized: bool) -> Color32 {
+fn status_color(status: &RunStatus, finalised: bool) -> Color32 {
     match status {
         RunStatus::Running | RunStatus::Created => theme::DARK.status_running,
         // A Finished run is still being processed by the persist pipeline
-        // until the Finalized event arrives. Show that as a distinct state.
-        RunStatus::Finished if !finalized => theme::DARK.status_processing,
+        // until the Finalised event arrives. Show that as a distinct state.
+        RunStatus::Finished if !finalised => theme::DARK.status_processing,
         RunStatus::Finished => theme::DARK.status_done,
         RunStatus::Failed { .. } => theme::DARK.status_failed,
     }

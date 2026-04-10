@@ -9,7 +9,7 @@ use photon_core::types::metric::MetricBatch;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
 use photon_store::ports::bucket::BucketWriter;
-use photon_store::ports::finalized::FinalizedStore;
+use photon_store::ports::finalised::FinalisedStore;
 use photon_store::ports::metric::MetricWriter;
 use photon_store::ports::watermark::WatermarkWriter;
 
@@ -28,8 +28,8 @@ pub enum FlushError {
     #[error("bucket write failed")]
     BucketWrite(#[source] photon_store::ports::WriteError),
 
-    #[error("finalized write failed")]
-    FinalizedWrite(#[source] photon_store::ports::WriteError),
+    #[error("finalised write failed")]
+    FinalisedWrite(#[source] photon_store::ports::WriteError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -69,7 +69,7 @@ where
     M: MetricWriter,
     W: WatermarkWriter,
     B: BucketWriter,
-    F: FinalizedStore,
+    F: FinalisedStore,
 {
     compressor: C,
     codec: K,
@@ -77,7 +77,7 @@ where
     metric_writer: M,
     watermark_writer: W,
     bucket_writer: B,
-    finalized_store: F,
+    finalised_store: F,
     event_tx: tokio::sync::broadcast::Sender<PhotonEvent>,
 }
 
@@ -88,7 +88,7 @@ where
     M: MetricWriter,
     W: WatermarkWriter,
     B: BucketWriter,
-    F: FinalizedStore,
+    F: FinalisedStore,
 {
     pub fn new(
         compressor: C,
@@ -96,7 +96,7 @@ where
         metric_writer: M,
         watermark_writer: W,
         bucket_writer: B,
-        finalized_store: F,
+        finalised_store: F,
         event_tx: tokio::sync::broadcast::Sender<photon_core::types::event::PhotonEvent>,
         downsample_config: DownsampleConfig,
     ) -> Self {
@@ -107,7 +107,7 @@ where
             metric_writer,
             watermark_writer,
             bucket_writer,
-            finalized_store,
+            finalised_store,
             event_tx,
         }
     }
@@ -120,7 +120,7 @@ where
     M: MetricWriter,
     W: WatermarkWriter,
     B: BucketWriter,
-    F: FinalizedStore,
+    F: FinalisedStore,
 {
     fn write(
         &mut self,
@@ -147,7 +147,7 @@ where
 
     fn finish_run(&mut self, run_id: RunId, changeset: &mut ChangeSet) {
         self.downsample.finish_run(run_id, changeset);
-        changeset.mark_finalized(run_id);
+        changeset.mark_finalised(run_id);
     }
 
     async fn flush(&self, changeset: &mut ChangeSet) -> Result<(), FlushError> {
@@ -157,18 +157,18 @@ where
             .map(|(run_id, seq)| (*run_id, *seq))
             .collect();
 
-        let finalized_futs = changeset
-            .finalized_runs
+        let finalised_futs = changeset
+            .finalised_runs
             .iter()
-            .map(|run_id| self.finalized_store.mark_finalized(run_id))
+            .map(|run_id| self.finalised_store.mark_finalised(run_id))
             .collect::<Vec<_>>();
 
-        let (metrics_res, watermarks_res, buckets_res, finalized_res) = tokio::join!(
+        let (metrics_res, watermarks_res, buckets_res, finalised_res) = tokio::join!(
             self.metric_writer.write_batches(&changeset.decoded_batches),
             self.watermark_writer.write_watermarks(&watermarks),
             self.bucket_writer.write_buckets(&changeset.bucket_entries),
             async {
-                for fut in finalized_futs {
+                for fut in finalised_futs {
                     fut.await?;
                 }
                 Ok::<(), photon_store::ports::WriteError>(())
@@ -177,7 +177,7 @@ where
         metrics_res.map_err(FlushError::MetricWrite)?;
         watermarks_res.map_err(FlushError::WatermarkWrite)?;
         buckets_res.map_err(FlushError::BucketWrite)?;
-        finalized_res.map_err(FlushError::FinalizedWrite)?;
+        finalised_res.map_err(FlushError::FinalisedWrite)?;
 
         for event in changeset.events.drain(..) {
             let _ = self.event_tx.send(event);
@@ -203,7 +203,7 @@ mod tests {
     use photon_protocol::ports::codec::Codec;
     use photon_protocol::ports::compress::Compressor;
     use photon_store::memory::bucket::InMemoryBucketStore;
-    use photon_store::memory::finalized::InMemoryFinalizedStore;
+    use photon_store::memory::finalised::InMemoryFinalisedStore;
     use photon_store::memory::metric::InMemoryMetricStore;
     use photon_store::memory::watermark::InMemoryWatermarkStore;
     use photon_store::ports::bucket::BucketReader;
@@ -250,7 +250,7 @@ mod tests {
         InMemoryMetricStore,
         InMemoryWatermarkStore,
         InMemoryBucketStore,
-        InMemoryFinalizedStore,
+        InMemoryFinalisedStore,
     > {
         let (tx, _) = broadcast::channel(16);
         Service::new(
@@ -259,7 +259,7 @@ mod tests {
             metrics,
             watermarks,
             buckets,
-            InMemoryFinalizedStore::new(),
+            InMemoryFinalisedStore::new(),
             tx,
             DownsampleConfig { widths: vec![5] },
         )
@@ -422,7 +422,7 @@ mod tests {
             metric_store,
             watermark_store,
             bucket_store,
-            InMemoryFinalizedStore::new(),
+            InMemoryFinalisedStore::new(),
             tx,
             DownsampleConfig { widths: vec![5] },
         );

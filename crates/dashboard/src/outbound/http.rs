@@ -157,9 +157,9 @@ where
         }
     }
 
-    async fn is_finalized(&self, run_id: &RunId) -> Result<bool, QueryMetricsError> {
+    async fn is_finalised(&self, run_id: &RunId) -> Result<bool, QueryMetricsError> {
         self.transport
-            .send(&QueryMessage::IsFinalized(*run_id))
+            .send(&QueryMessage::IsFinalised(*run_id))
             .await
             .map_err(|e| QueryMetricsError::Unknown(Box::new(e)))?;
 
@@ -170,7 +170,7 @@ where
             .map_err(|e| QueryMetricsError::Unknown(Box::new(e)))?;
 
         match result {
-            QueryResult::Finalized { finalized, .. } => Ok(finalized),
+            QueryResult::Finalised { finalised, .. } => Ok(finalised),
             QueryResult::Error(e) => Err(QueryMetricsError::Unknown(e.into())),
             other => Err(QueryMetricsError::Unknown(
                 format!("unexpected response: {other:?}").into(),

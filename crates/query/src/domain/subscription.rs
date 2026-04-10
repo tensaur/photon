@@ -324,7 +324,7 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
                     }
                 }
             }
-            // `PhotonEvent::Finalized` is handled directly by the WS handler,
+            // `PhotonEvent::Finalised` is handled directly by the WS handler,
             // not by the manager — it's a connection-broadcast event, not a
             // per-subscription update. Same goes for `RunStatusChanged`.
             _ => {}

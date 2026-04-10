@@ -32,5 +32,5 @@ pub enum PhotonEvent {
 
     /// All data for the run has been persisted and derived state is caught up.
     /// The run is safe to query at full fidelity and will receive no further writes.
-    Finalized { run_id: RunId },
+    Finalised { run_id: RunId },
 }

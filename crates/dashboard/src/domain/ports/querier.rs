@@ -37,7 +37,7 @@ pub trait MetricQuerier: Clone + Send + Sync + 'static {
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryMetricsError>> + Send;
 
-    fn is_finalized(
+    fn is_finalised(
         &self,
         run_id: &RunId,
     ) -> impl Future<Output = Result<bool, QueryMetricsError>> + Send;
@@ -68,7 +68,7 @@ pub trait MetricQuerier: Clone + 'static {
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryMetricsError>>;
 
-    fn is_finalized(
+    fn is_finalised(
         &self,
         run_id: &RunId,
     ) -> impl Future<Output = Result<bool, QueryMetricsError>>;

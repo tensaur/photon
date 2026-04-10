@@ -41,10 +41,10 @@ pub struct DataCache {
     /// Used to route `Delta` / `Unsubscribed` messages, which
     /// only carry the id.
     pub subscriptions: HashMap<SubscriptionId, (RunId, Metric)>,
-    /// Runs the server has marked as finalized — fully persisted and indexed.
-    /// Populated from `StreamFrame::RunFinalized`; drives the sidebar status
+    /// Runs the server has marked as finalised — fully persisted and indexed.
+    /// Populated from `StreamFrame::RunFinalised`; drives the sidebar status
     /// dot for `RunStatus::Finished` runs.
-    pub finalized: HashSet<RunId>,
+    pub finalised: HashSet<RunId>,
 }
 
 impl Default for DataCache {
@@ -57,7 +57,7 @@ impl Default for DataCache {
             series: HashMap::new(),
             subscribed_keys: HashSet::new(),
             subscriptions: HashMap::new(),
-            finalized: HashSet::new(),
+            finalised: HashSet::new(),
         }
     }
 }
@@ -132,11 +132,11 @@ impl DashboardApp {
                 Ok(runs) => {
                     for run in &runs {
                         if matches!(run.status(), RunStatus::Finished)
-                            && !self.cache.finalized.contains(&run.id())
+                            && !self.cache.finalised.contains(&run.id())
                         {
                             channel::send_cmd(
                                 &self.commands,
-                                Command::CheckFinalized { run_id: run.id() },
+                                Command::CheckFinalised { run_id: run.id() },
                             );
                         }
                     }
@@ -209,8 +209,8 @@ impl DashboardApp {
                     self.cache.subscribed_keys.remove(&key);
                 }
             }
-            Response::Finalized { run_id } => {
-                self.cache.finalized.insert(run_id);
+            Response::Finalised { run_id } => {
+                self.cache.finalised.insert(run_id);
             }
             Response::RunsChanged => {
                 self.cache.runs = RequestState::Pending;
@@ -302,7 +302,7 @@ impl DashboardApp {
                 self.cache.subscribed_keys.insert(key);
                 channel::send_cmd(
                     &self.commands,
-                    Command::SubscribeMetric {
+                    Command::Subscribe {
                         query: MetricQuery {
                             run_id: *run_id,
                             key: m.clone(),
@@ -445,7 +445,7 @@ impl eframe::App for DashboardApp {
                                 &mut self.sidebar,
                                 runs_slice,
                                 experiments_slice,
-                                &self.cache.finalized,
+                                &self.cache.finalised,
                             );
 
                             match &self.cache.runs {

@@ -56,8 +56,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let run_store = ClickHouseRunStore::new(client.clone());
     let experiment_store = ClickHouseExperimentStore::new(client.clone());
     let project_store = ClickHouseProjectStore::new(client.clone());
-    let finalized_store =
-        photon_store::clickhouse::finalized::ClickHouseFinalizedStore::new(client);
+    let finalised_store =
+        photon_store::clickhouse::finalised::ClickHouseFinalisedStore::new(client);
     let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(256);
 
     // Server WAL
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metric_store,
         watermark_store,
         bucket_store,
-        finalized_store,
+        finalised_store,
         event_tx,
         DownsampleConfig::default(),
     );

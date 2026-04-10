@@ -23,9 +23,9 @@ pub enum Command {
     ListMetrics { run_id: RunId },
     Query { query: MetricQuery },
     QueryBatch { request: QueryRequest },
-    SubscribeMetric { query: MetricQuery },
-    UnsubscribeMetric { subscription_id: SubscriptionId },
-    CheckFinalized { run_id: RunId },
+    Subscribe { query: MetricQuery },
+    Unsubscribe { subscription_id: SubscriptionId },
+    CheckFinalised { run_id: RunId },
 }
 
 pub enum Response {
@@ -55,7 +55,7 @@ pub enum Response {
     Unsubscribed {
         subscription_id: SubscriptionId,
     },
-    Finalized {
+    Finalised {
         run_id: RunId,
     },
     RunsChanged,
@@ -174,8 +174,8 @@ where
                 send_resp(&resp_tx, resp);
                 ctx.request_repaint();
             }
-            Ok(StreamFrame::RunFinalized { run_id }) => {
-                send_resp(&resp_tx, Response::Finalized { run_id });
+            Ok(StreamFrame::RunFinalised { run_id }) => {
+                send_resp(&resp_tx, Response::Finalised { run_id });
                 ctx.request_repaint();
             }
             Ok(StreamFrame::RunsChanged) => {
@@ -219,15 +219,15 @@ async fn run_loop<S: DashboardService>(
                 let result = service.query_batch(&request).await;
                 send_resp(&resp_tx, Response::BatchSeries { request, result });
             }
-            Command::SubscribeMetric { query } => {
+            Command::Subscribe { query } => {
                 let _ = service.subscribe(&query).await;
             }
-            Command::UnsubscribeMetric { subscription_id } => {
+            Command::Unsubscribe { subscription_id } => {
                 let _ = service.unsubscribe(subscription_id).await;
             }
-            Command::CheckFinalized { run_id } => {
-                if let Ok(true) = service.is_finalized(&run_id).await {
-                    send_resp(&resp_tx, Response::Finalized { run_id });
+            Command::CheckFinalised { run_id } => {
+                if let Ok(true) = service.is_finalised(&run_id).await {
+                    send_resp(&resp_tx, Response::Finalised { run_id });
                 }
             }
         }

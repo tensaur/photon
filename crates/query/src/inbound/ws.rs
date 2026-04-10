@@ -71,8 +71,8 @@ pub async fn handle<T>(
                             break;
                         }
                     }
-                    Ok(PhotonEvent::Finalized { run_id }) => {
-                        if transport.send(&StreamFrame::RunFinalized { run_id }).await.is_err() {
+                    Ok(PhotonEvent::Finalised { run_id }) => {
+                        if transport.send(&StreamFrame::RunFinalised { run_id }).await.is_err() {
                             break;
                         }
                     }

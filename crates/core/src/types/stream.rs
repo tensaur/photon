@@ -36,7 +36,7 @@ pub enum StreamFrame {
         id: SubscriptionId,
         update: SubscriptionUpdate,
     },
-    RunFinalized {
+    RunFinalised {
         run_id: RunId,
     },
     RunsChanged,

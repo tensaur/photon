@@ -50,7 +50,7 @@ pub trait DashboardService: Clone + Send + Sync + 'static {
         sub_id: SubscriptionId,
     ) -> impl Future<Output = Result<(), UnsubscribeError>> + Send;
 
-    fn is_finalized(
+    fn is_finalised(
         &self,
         run_id: &RunId,
     ) -> impl Future<Output = Result<bool, QueryMetricsError>> + Send;
@@ -91,7 +91,7 @@ pub trait DashboardService: 'static {
         sub_id: SubscriptionId,
     ) -> impl Future<Output = Result<(), UnsubscribeError>>;
 
-    fn is_finalized(
+    fn is_finalised(
         &self,
         run_id: &RunId,
     ) -> impl Future<Output = Result<bool, QueryMetricsError>>;
@@ -160,7 +160,7 @@ where
         self.subscriber.unsubscribe(sub_id).await
     }
 
-    async fn is_finalized(&self, run_id: &RunId) -> Result<bool, QueryMetricsError> {
-        self.querier.is_finalized(run_id).await
+    async fn is_finalised(&self, run_id: &RunId) -> Result<bool, QueryMetricsError> {
+        self.querier.is_finalised(run_id).await
     }
 }

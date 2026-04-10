@@ -62,7 +62,7 @@ pub enum QueryMessage {
     ListMetrics(RunId),
     Query(MetricQuery),
     QueryBatch(QueryRequest),
-    IsFinalized(RunId),
+    IsFinalised(RunId),
 }
 
 /// Envelope for query responses over a transport.
@@ -74,6 +74,6 @@ pub enum QueryResult {
     Metrics(Vec<Metric>),
     Series(MetricSeries),
     BatchResponse(QueryResponse),
-    Finalized { run_id: RunId, finalized: bool },
+    Finalised { run_id: RunId, finalised: bool },
     Error(ApiError),
 }

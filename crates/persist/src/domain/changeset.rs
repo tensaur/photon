@@ -12,7 +12,7 @@ pub struct ChangeSet {
     pub decoded_batches: Vec<MetricBatch>,
     pub bucket_entries: Vec<BucketEntry>,
     pub watermarks: HashMap<RunId, SequenceNumber>,
-    pub finalized_runs: Vec<RunId>,
+    pub finalised_runs: Vec<RunId>,
     pub events: Vec<PhotonEvent>,
 }
 
@@ -32,7 +32,7 @@ impl ChangeSet {
             decoded_batches: Vec::with_capacity(batch_count),
             bucket_entries: Vec::new(),
             watermarks: HashMap::new(),
-            finalized_runs: Vec::new(),
+            finalised_runs: Vec::new(),
             events: Vec::new(),
         }
     }
@@ -60,10 +60,10 @@ impl ChangeSet {
         self.bucket_entries.extend(entries);
     }
 
-    /// Mark a run as finalized. Queues a `Finalized` event.
-    pub fn mark_finalized(&mut self, run_id: RunId) {
-        self.finalized_runs.push(run_id);
-        self.events.push(PhotonEvent::Finalized { run_id });
+    /// Mark a run as finalised. Queues a `Finalised` event.
+    pub fn mark_finalised(&mut self, run_id: RunId) {
+        self.finalised_runs.push(run_id);
+        self.events.push(PhotonEvent::Finalised { run_id });
     }
 
     /// Track the latest persisted sequence number for a run in this cycle.

@@ -4,15 +4,15 @@ use dashmap::DashMap;
 
 use photon_core::types::id::RunId;
 
-use crate::ports::finalized::FinalizedStore;
+use crate::ports::finalised::FinalisedStore;
 use crate::ports::{ReadError, WriteError};
 
 #[derive(Clone)]
-pub struct InMemoryFinalizedStore {
+pub struct InMemoryFinalisedStore {
     data: Arc<DashMap<RunId, ()>>,
 }
 
-impl InMemoryFinalizedStore {
+impl InMemoryFinalisedStore {
     pub fn new() -> Self {
         Self {
             data: Arc::new(DashMap::new()),
@@ -20,19 +20,19 @@ impl InMemoryFinalizedStore {
     }
 }
 
-impl Default for InMemoryFinalizedStore {
+impl Default for InMemoryFinalisedStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FinalizedStore for InMemoryFinalizedStore {
-    async fn mark_finalized(&self, run_id: &RunId) -> Result<(), WriteError> {
+impl FinalisedStore for InMemoryFinalisedStore {
+    async fn mark_finalised(&self, run_id: &RunId) -> Result<(), WriteError> {
         self.data.insert(*run_id, ());
         Ok(())
     }
 
-    async fn is_finalized(&self, run_id: &RunId) -> Result<bool, ReadError> {
+    async fn is_finalised(&self, run_id: &RunId) -> Result<bool, ReadError> {
         Ok(self.data.contains_key(run_id))
     }
 }

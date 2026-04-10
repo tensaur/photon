@@ -1,6 +1,6 @@
 pub mod bucket;
 pub mod experiment;
-pub mod finalized;
+pub mod finalised;
 pub mod metric;
 pub mod project;
 pub mod run;
@@ -178,10 +178,10 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
 
     client
         .query(
-            "CREATE TABLE IF NOT EXISTS photon.finalized (
+            "CREATE TABLE IF NOT EXISTS photon.finalised (
                 run_id UUID,
-                finalized_at Int64
-            ) ENGINE = ReplacingMergeTree(finalized_at)
+                finalised_at Int64
+            ) ENGINE = ReplacingMergeTree(finalised_at)
             ORDER BY (run_id)",
         )
         .execute()
