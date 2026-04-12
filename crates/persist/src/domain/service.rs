@@ -157,22 +157,11 @@ where
             .map(|(run_id, seq)| (*run_id, *seq))
             .collect();
 
-        let finalised_futs = changeset
-            .finalised_runs
-            .iter()
-            .map(|run_id| self.finalised_store.mark_finalised(run_id))
-            .collect::<Vec<_>>();
-
         let (metrics_res, watermarks_res, buckets_res, finalised_res) = tokio::join!(
             self.metric_writer.write_batches(&changeset.decoded_batches),
             self.watermark_writer.write_watermarks(&watermarks),
             self.bucket_writer.write_buckets(&changeset.bucket_entries),
-            async {
-                for fut in finalised_futs {
-                    fut.await?;
-                }
-                Ok::<(), photon_store::ports::WriteError>(())
-            },
+            self.finalised_store.mark_finalised_many(&changeset.finalised_runs),
         );
         metrics_res.map_err(FlushError::MetricWrite)?;
         watermarks_res.map_err(FlushError::WatermarkWrite)?;

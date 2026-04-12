@@ -13,6 +13,11 @@ pub trait FinalisedStore: Send + Sync + Clone + 'static {
         run_id: &RunId,
     ) -> impl Future<Output = Result<(), WriteError>> + Send;
 
+    fn mark_finalised_many(
+        &self,
+        run_ids: &[RunId],
+    ) -> impl Future<Output = Result<(), WriteError>> + Send;
+
     fn is_finalised(
         &self,
         run_id: &RunId,

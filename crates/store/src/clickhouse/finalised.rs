@@ -53,6 +53,40 @@ impl FinalisedStore for ClickHouseFinalisedStore {
         Ok(())
     }
 
+    async fn mark_finalised_many(&self, run_ids: &[RunId]) -> Result<(), WriteError> {
+        if run_ids.is_empty() {
+            return Ok(());
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        let mut insert = self
+            .client
+            .insert("finalised")
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
+
+        for run_id in run_ids {
+            let run_uuid: uuid::Uuid = (*run_id).into();
+            insert
+                .write(&FinalisedRow {
+                    run_id: run_uuid,
+                    finalised_at: now,
+                })
+                .await
+                .map_err(|e| WriteError::Store(Box::new(e)))?;
+        }
+
+        insert
+            .end()
+            .await
+            .map_err(|e| WriteError::Store(Box::new(e)))?;
+
+        Ok(())
+    }
+
     async fn is_finalised(&self, run_id: &RunId) -> Result<bool, ReadError> {
         let run_uuid: uuid::Uuid = (*run_id).into();
 

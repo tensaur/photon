@@ -32,6 +32,13 @@ impl FinalisedStore for InMemoryFinalisedStore {
         Ok(())
     }
 
+    async fn mark_finalised_many(&self, run_ids: &[RunId]) -> Result<(), WriteError> {
+        for run_id in run_ids {
+            self.data.insert(*run_id, ());
+        }
+        Ok(())
+    }
+
     async fn is_finalised(&self, run_id: &RunId) -> Result<bool, ReadError> {
         Ok(self.data.contains_key(run_id))
     }
