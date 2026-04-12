@@ -1,16 +1,23 @@
-#[derive(Clone, Debug, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Resolution {
     Raw,
     Bucketed(usize),
 }
 
-#[derive(Clone, Debug)]
-pub struct ResolutionPlan {
-    pub line: Resolution,
-    pub envelope: Resolution,
+impl Resolution {
+    /// Returns true if `self` is a coarser resolution than `other`.
+    pub fn is_coarser_than(&self, other: &Resolution) -> bool {
+        match (self, other) {
+            (Resolution::Raw, _) => false,
+            (Resolution::Bucketed(_), Resolution::Raw) => true,
+            (Resolution::Bucketed(a), Resolution::Bucketed(b)) => a > b,
+        }
+    }
 }
 
-/// Picks the right resolution tier for the line and envelope.
+/// Picks the resolution tier that best fits the target point budget.
 #[derive(Clone)]
 pub struct TierSelector {
     widths: Vec<u64>,
@@ -31,27 +38,26 @@ impl TierSelector {
         Self { widths }
     }
 
-    pub fn pick(&self, point_count: usize, target: usize) -> ResolutionPlan {
-        let line = self
-            .widths
-            .iter()
-            .enumerate()
-            .find(|(_, w)| point_count / **w as usize >= target)
-            .map_or(Resolution::Raw, |(i, _)| Resolution::Bucketed(i));
+    /// Pick the tier whose bucket count is closest to `target_points` from above.
+    pub fn pick(&self, point_count: usize, target_points: usize) -> Resolution {
+        if target_points == 0 {
+            return Resolution::Raw;
+        }
 
-        let envelope = match line {
-            Resolution::Raw => Resolution::Raw,
-            Resolution::Bucketed(_) => self
-                .widths
-                .iter()
-                .enumerate()
-                .rev()
-                .find(|(_, w)| point_count / **w as usize >= target)
-                .map(|(i, _)| Resolution::Bucketed(i))
-                .unwrap_or(line.clone()),
-        };
+        let mut best: Option<(usize, usize)> = None; // (tier_index, bucket_count)
 
-        ResolutionPlan { line, envelope }
+        for (i, w) in self.widths.iter().enumerate() {
+            let buckets = point_count / *w as usize;
+            if buckets >= target_points {
+                match best {
+                    None => best = Some((i, buckets)),
+                    Some((_, prev)) if buckets < prev => best = Some((i, buckets)),
+                    _ => {}
+                }
+            }
+        }
+
+        best.map_or(Resolution::Raw, |(i, _)| Resolution::Bucketed(i))
     }
 }
 
@@ -60,33 +66,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_raw_when_few_points() {
+    fn raw_when_few_points() {
         let selector = TierSelector::new(vec![100, 1000]);
-        let plan = selector.pick(50, 200);
-        assert_eq!(plan.line, Resolution::Raw);
-        assert_eq!(plan.envelope, Resolution::Raw);
+        assert_eq!(selector.pick(50, 200), Resolution::Raw);
     }
 
     #[test]
-    fn test_bucketed_when_many_points() {
+    fn raw_when_no_tier_meets_budget() {
         let selector = TierSelector::new(vec![100, 1000]);
-        // 200_000 points, target 200.
-        // width 100:  200_000 / 100  = 2_000 >= 200 -> Bucketed(0)
-        // width 1000: 200_000 / 1000 =   200 >= 200 -> Bucketed(1)
-        let plan = selector.pick(200_000, 200);
-        assert_eq!(plan.line, Resolution::Bucketed(0));
-        assert_eq!(plan.envelope, Resolution::Bucketed(1));
+        assert_eq!(selector.pick(5_000, 200), Resolution::Raw);
     }
 
     #[test]
-    fn test_default_tier_selector() {
+    fn picks_closest_fit_above_budget() {
+        let selector = TierSelector::new(vec![100, 1000]);
+        assert_eq!(selector.pick(200_000, 500), Resolution::Bucketed(0));
+    }
+
+    #[test]
+    fn prefers_tighter_fit() {
+        let selector = TierSelector::new(vec![100, 1000]);
+        assert_eq!(selector.pick(200_000, 150), Resolution::Bucketed(1));
+    }
+
+    #[test]
+    fn falls_back_to_finer_tier() {
+        let selector = TierSelector::default(); // [100, 1000, 10000]
+        assert_eq!(selector.pick(20_000, 100), Resolution::Bucketed(0));
+    }
+
+    #[test]
+    fn coarsest_tier_for_large_dataset() {
+        let selector = TierSelector::default(); // [100, 1000, 10000]
+        assert_eq!(selector.pick(10_000_000, 500), Resolution::Bucketed(2));
+    }
+
+    #[test]
+    fn raw_when_zero_budget() {
         let selector = TierSelector::default();
-        let plan = selector.pick(50, 500);
-        assert_eq!(plan.line, Resolution::Raw);
-        assert_eq!(plan.envelope, Resolution::Raw);
-
-        let plan = selector.pick(1_000_000, 500);
-        assert_eq!(plan.line, Resolution::Bucketed(0));
-        assert!(matches!(plan.envelope, Resolution::Bucketed(_)));
+        assert_eq!(selector.pick(1_000_000, 0), Resolution::Raw);
     }
 }

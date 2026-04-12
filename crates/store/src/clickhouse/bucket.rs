@@ -18,7 +18,9 @@ struct BucketWriteRow {
     tier: u32,
     step_start: u64,
     step_end: u64,
-    value: f64,
+    sum: f64,
+    mean: f64,
+    count: u64,
     min: f64,
     max: f64,
 }
@@ -27,7 +29,9 @@ struct BucketWriteRow {
 struct BucketReadRow {
     step_start: u64,
     step_end: u64,
-    value: f64,
+    sum: f64,
+    mean: f64,
+    count: u64,
     min: f64,
     max: f64,
 }
@@ -63,7 +67,9 @@ impl BucketWriter for ClickHouseBucketStore {
                     tier: entry.tier as u32,
                     step_start: entry.bucket.step_start.as_u64(),
                     step_end: entry.bucket.step_end.as_u64(),
-                    value: entry.bucket.value,
+                    sum: entry.bucket.sum,
+                    mean: entry.bucket.mean,
+                    count: entry.bucket.count,
                     min: entry.bucket.min,
                     max: entry.bucket.max,
                 })
@@ -112,7 +118,9 @@ impl BucketReader for ClickHouseBucketStore {
             .map(|r| Bucket {
                 step_start: Step::new(r.step_start),
                 step_end: Step::new(r.step_end),
-                value: r.value,
+                sum: r.sum,
+                mean: r.mean,
+                count: r.count,
                 min: r.min,
                 max: r.max,
             })

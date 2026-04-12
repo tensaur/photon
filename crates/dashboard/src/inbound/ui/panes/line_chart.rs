@@ -1,6 +1,8 @@
 use egui::Vec2b;
 use egui_plot::{Corner, Legend, Line, LineStyle, Plot, PlotPoints, VLine};
 
+use photon_core::types::query::SeriesData;
+use photon_ui::envelope::Envelope;
 use photon_ui::theme;
 
 use super::LineChartState;
@@ -14,10 +16,29 @@ pub fn show(
     sidebar_state: &SidebarState,
     crosshair_x: &mut Option<f64>,
 ) {
-    let points: Vec<[f64; 2]> = cache
-        .get_series(&state.run_id, &state.metric)
-        .map(|series| series.data.points().iter().map(Into::into).collect())
-        .unwrap_or_default();
+    let series = cache.get_series(&state.run_id, &state.metric);
+
+    let (points, envelope): (Vec<[f64; 2]>, Option<Vec<(f64, f64, f64)>>) = match series
+        .map(|s| &s.data)
+    {
+        Some(SeriesData::Raw { points }) => (
+            points.iter().map(Into::into).collect(),
+            None,
+        ),
+        Some(SeriesData::Bucketed { buckets }) => (
+            buckets
+                .iter()
+                .map(|b| [b.step_start.as_u64() as f64, b.mean])
+                .collect(),
+            Some(
+                buckets
+                    .iter()
+                    .map(|b| (b.step_start.as_u64() as f64, b.min, b.max))
+                    .collect(),
+            ),
+        ),
+        None => (Vec::new(), None),
+    };
 
     let x_min = points.first().map_or(0.0, |p| p[0]);
     let x_max = points.last().map_or(0.0, |p| p[0]);
@@ -42,6 +63,13 @@ pub fn show(
             format!("{}\nstep: {:.0}\nvalue: {:.6}", metric_name, pt.x, pt.y)
         })
         .show(ui, |plot_ui| {
+            if let Some(ref envelope) = envelope {
+                let band_color = egui::Color32::from_rgba_unmultiplied(
+                    color.r(), color.g(), color.b(), 60,
+                );
+                plot_ui.add(Envelope::new(envelope, band_color));
+            }
+
             plot_ui.line(
                 Line::new(run_name.as_str(), PlotPoints::new(points.clone()))
                     .width(2.0)

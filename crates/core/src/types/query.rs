@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::experiment::Experiment;
 use crate::domain::project::Project;
 use crate::domain::run::Run;
+use crate::types::bucket::Bucket;
 use crate::types::error::ApiError;
 use crate::types::id::RunId;
 use crate::types::metric::{Metric, Step};
@@ -26,21 +27,8 @@ pub struct MetricSeries {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SeriesData {
-    Raw {
-        points: Vec<DataPoint>,
-    },
-    Aggregated {
-        points: Vec<DataPoint>,
-        envelope: Vec<RangePoint>,
-    },
-}
-
-impl SeriesData {
-    pub fn points(&self) -> &[DataPoint] {
-        match self {
-            Self::Raw { points } | Self::Aggregated { points, .. } => points,
-        }
-    }
+    Raw { points: Vec<DataPoint> },
+    Bucketed { buckets: Vec<Bucket> },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -53,14 +41,6 @@ impl From<&DataPoint> for [f64; 2] {
     fn from(p: &DataPoint) -> Self {
         [p.step.as_u64() as f64, p.value]
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RangePoint {
-    pub step_start: Step,
-    pub step_end: Step,
-    pub min: f64,
-    pub max: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,6 +62,7 @@ pub enum QueryMessage {
     ListMetrics(RunId),
     Query(MetricQuery),
     QueryBatch(QueryRequest),
+    IsFinalised(RunId),
 }
 
 /// Envelope for query responses over a transport.
@@ -93,5 +74,6 @@ pub enum QueryResult {
     Metrics(Vec<Metric>),
     Series(MetricSeries),
     BatchResponse(QueryResponse),
+    Finalised { run_id: RunId, finalised: bool },
     Error(ApiError),
 }

@@ -29,27 +29,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (wal_appender, _wal) = open_in_memory_wal();
     let notify = Arc::new(tokio::sync::Notify::new());
     let (finished_runs_tx, _finished_runs_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (event_tx, _) = tokio::sync::broadcast::channel(16);
 
-    let ingest_service = IngestService::new(wal_appender, notify);
-    let run_store = InMemoryRunStore::new();
-    let experiment_store = InMemoryExperimentStore::new();
-    let project_store = InMemoryProjectStore::new();
+    let ingest_service = IngestService::new(
+        wal_appender,
+        notify,
+        InMemoryRunStore::new(),
+        InMemoryExperimentStore::new(),
+        InMemoryProjectStore::new(),
+        event_tx,
+        finished_runs_tx,
+    );
 
     tokio::spawn(async move {
         loop {
             let (stream, _) = listener.accept().await.expect("accept failed");
             let bt = TcpTransport::accept(stream);
             let transport = CodecTransport::new(codec, bt);
-            let service = ingest_service.clone();
-            let rs = run_store.clone();
-            let es = experiment_store.clone();
-            let ps = project_store.clone();
-            let finished_runs_tx = finished_runs_tx.clone();
-
-            tokio::spawn(async move {
-                handler::handle_envelope(&service, &rs, &es, &ps, &finished_runs_tx, &transport)
-                    .await;
-            });
+            let svc = ingest_service.clone();
+            tokio::spawn(async move { handler::handle_envelope(&svc, &transport).await });
         }
     });
 

@@ -5,7 +5,8 @@ struct OpenBucket {
     width: u64,
     step_start: Step,
     step_end: Step,
-    last: f64,
+    sum: f64,
+    count: u64,
     min: f64,
     max: f64,
 }
@@ -16,7 +17,8 @@ impl OpenBucket {
             width,
             step_start: window_start,
             step_end: step,
-            last: value,
+            sum: value,
+            count: 1,
             min: value,
             max: value,
         }
@@ -29,7 +31,8 @@ impl OpenBucket {
     fn observe_point(&mut self, step: Step, value: f64) -> Option<Bucket> {
         let closed = self.advance_window(self.window_start(step));
         self.step_end = step;
-        self.last = value;
+        self.sum += value;
+        self.count += 1;
         self.min = self.min.min(value);
         self.max = self.max.max(value);
         closed
@@ -38,17 +41,25 @@ impl OpenBucket {
     fn observe_bucket(&mut self, bucket: &Bucket) -> Option<Bucket> {
         let closed = self.advance_window(self.window_start(bucket.step_start));
         self.step_end = bucket.step_end;
-        self.last = bucket.value;
+        self.sum += bucket.sum;
+        self.count += bucket.count;
         self.min = self.min.min(bucket.min);
         self.max = self.max.max(bucket.max);
         closed
     }
 
     fn flush(&mut self) -> Bucket {
+        let mean = if self.count > 0 {
+            self.sum / self.count as f64
+        } else {
+            0.0
+        };
         Bucket {
             step_start: self.step_start,
             step_end: self.step_end,
-            value: self.last,
+            sum: self.sum,
+            mean,
+            count: self.count,
             min: self.min,
             max: self.max,
         }
@@ -61,7 +72,8 @@ impl OpenBucket {
         let closed = self.flush();
         self.step_start = next_window;
         self.step_end = next_window;
-        self.last = 0.0;
+        self.sum = 0.0;
+        self.count = 0;
         self.min = f64::INFINITY;
         self.max = f64::NEG_INFINITY;
         Some(closed)
@@ -154,14 +166,16 @@ impl Reducer {
         } else {
             self.initialized[next] = true;
             let window = self.buckets[next].window_start(bucket.step_start);
-            self.buckets[next] = OpenBucket::new(
-                self.buckets[next].width,
-                window,
-                bucket.step_end,
-                bucket.value,
-            );
-            self.buckets[next].min = bucket.min;
-            self.buckets[next].max = bucket.max;
+            let width = self.buckets[next].width;
+            self.buckets[next] = OpenBucket {
+                width,
+                step_start: window,
+                step_end: bucket.step_end,
+                sum: bucket.sum,
+                count: bucket.count,
+                min: bucket.min,
+                max: bucket.max,
+            };
             None
         };
 

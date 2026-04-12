@@ -4,9 +4,10 @@ use photon_core::domain::run::Run;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::Metric;
 use photon_core::types::query::{
-    DataPoint, MetricQuery, MetricSeries, QueryRequest, QueryResponse,
+    MetricQuery, MetricSeries, QueryRequest, QueryResponse,
 };
-use photon_core::types::subscription::{SubscriptionEvent, SubscriptionMessage};
+use photon_core::types::id::SubscriptionId;
+use photon_core::types::stream::{StreamMessage, SubscriptionMessage, SubscriptionUpdate};
 use photon_transport::Transport;
 
 use crate::domain::error::{
@@ -22,8 +23,9 @@ pub enum Command {
     ListMetrics { run_id: RunId },
     Query { query: MetricQuery },
     QueryBatch { request: QueryRequest },
-    Subscribe { run_id: RunId },
-    Unsubscribe { run_id: RunId },
+    Subscribe { query: MetricQuery },
+    Unsubscribe { subscription_id: SubscriptionId },
+    CheckFinalised { run_id: RunId },
 }
 
 pub enum Response {
@@ -42,12 +44,22 @@ pub enum Response {
         request: QueryRequest,
         result: Result<QueryResponse, QueryMetricsError>,
     },
-    LivePoints {
-        run_id: RunId,
-        metric: Metric,
-        points: Vec<DataPoint>,
+    Snapshot {
+        subscription_id: SubscriptionId,
+        series: MetricSeries,
     },
-    SubscriptionEnded {
+    DeltaPoints {
+        subscription_id: SubscriptionId,
+        points: Vec<photon_core::types::query::DataPoint>,
+    },
+    DeltaBuckets {
+        subscription_id: SubscriptionId,
+        buckets: Vec<photon_core::types::bucket::Bucket>,
+    },
+    Unsubscribed {
+        subscription_id: SubscriptionId,
+    },
+    Finalised {
         run_id: RunId,
     },
     RunsChanged,
@@ -128,7 +140,7 @@ pub(crate) fn spawn_service<S, T>(
 ) -> (CommandSender, ResponseReceiver)
 where
     S: DashboardService,
-    T: Transport<SubscriptionMessage, SubscriptionEvent> + 'static,
+    T: Transport<SubscriptionMessage, StreamMessage> + 'static,
 {
     let (cmd_tx, cmd_rx) = channels();
     let (resp_tx, resp_rx) = channels();
@@ -145,26 +157,36 @@ where
 
 async fn subscription_reader<T>(ctx: egui::Context, transport: T, resp_tx: ResponseSender)
 where
-    T: Transport<SubscriptionMessage, SubscriptionEvent>,
+    T: Transport<SubscriptionMessage, StreamMessage>,
 {
     loop {
         match transport.recv().await {
-            Ok(SubscriptionEvent::LivePoints {
-                run_id,
-                metric,
-                points,
-            }) => {
-                send_resp(
-                    &resp_tx,
-                    Response::LivePoints {
-                        run_id,
-                        metric,
+            Ok(StreamMessage::Subscription { id, update }) => {
+                let resp = match update {
+                    SubscriptionUpdate::Snapshot { series } => Response::Snapshot {
+                        subscription_id: id,
+                        series,
+                    },
+                    SubscriptionUpdate::DeltaPoints(points) => Response::DeltaPoints {
+                        subscription_id: id,
                         points,
                     },
-                );
+                    SubscriptionUpdate::DeltaBuckets(buckets) => Response::DeltaBuckets {
+                        subscription_id: id,
+                        buckets,
+                    },
+                    SubscriptionUpdate::Unsubscribed => Response::Unsubscribed {
+                        subscription_id: id,
+                    },
+                };
+                send_resp(&resp_tx, resp);
                 ctx.request_repaint();
             }
-            Ok(SubscriptionEvent::RunsChanged) => {
+            Ok(StreamMessage::RunFinalised { run_id }) => {
+                send_resp(&resp_tx, Response::Finalised { run_id });
+                ctx.request_repaint();
+            }
+            Ok(StreamMessage::RunsChanged) => {
                 send_resp(&resp_tx, Response::RunsChanged);
                 ctx.request_repaint();
             }
@@ -205,11 +227,16 @@ async fn run_loop<S: DashboardService>(
                 let result = service.query_batch(&request).await;
                 send_resp(&resp_tx, Response::BatchSeries { request, result });
             }
-            Command::Subscribe { run_id } => {
-                let _ = service.subscribe(&run_id).await;
+            Command::Subscribe { query } => {
+                let _ = service.subscribe(&query).await;
             }
-            Command::Unsubscribe { run_id } => {
-                let _ = service.unsubscribe(&run_id).await;
+            Command::Unsubscribe { subscription_id } => {
+                let _ = service.unsubscribe(subscription_id).await;
+            }
+            Command::CheckFinalised { run_id } => {
+                if let Ok(true) = service.is_finalised(&run_id).await {
+                    send_resp(&resp_tx, Response::Finalised { run_id });
+                }
             }
         }
         ctx.request_repaint();

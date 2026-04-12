@@ -1,46 +1,34 @@
-use photon_core::domain::experiment::Experiment;
-use photon_core::domain::project::Project;
-use photon_core::domain::run::{Run, RunStatus};
 use photon_core::types::ack::{AckResult, AckStatus};
 use photon_core::types::batch::WireBatch;
 use photon_core::types::error::ApiError;
-use photon_core::types::id::RunId;
 use photon_core::types::ingest::{IngestMessage, IngestResult};
-use photon_store::ports::{ReadRepository, WriteRepository};
 use photon_transport::ports::{Transport, TransportError};
 
 use crate::domain::service::IngestService;
 
-/// Map an ingest message to a result using the given service and entity writers.
-pub async fn dispatch<S, W, E, P>(
-    service: &S,
-    run_writer: &W,
-    experiment_writer: &E,
-    project_writer: &P,
-    finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
-    msg: IngestMessage,
-) -> IngestResult
-where
-    S: IngestService,
-    W: ReadRepository<Run> + WriteRepository<Run>,
-    E: WriteRepository<Experiment>,
-    P: WriteRepository<Project>,
-{
+/// Map an ingest message to a result using the domain service.
+pub async fn dispatch<S: IngestService>(service: &S, msg: IngestMessage) -> IngestResult {
     match msg {
         IngestMessage::Batch(batch) => {
             let ack = ingest_batch(service, &batch).await;
             IngestResult::Ack(ack)
         }
-        IngestMessage::RegisterRun(run) => match run_writer.upsert(&run).await {
+        IngestMessage::RegisterRun(run) => match service.register_run(&run).await {
             Ok(()) => IngestResult::RunRegistered(run.id()),
             Err(e) => {
                 tracing::error!("register run failed: {e}");
                 IngestResult::Error(ApiError::Internal)
             }
         },
-        IngestMessage::FinishRun(run_id) => finish_run(run_writer, finished_runs_tx, run_id).await,
+        IngestMessage::FinishRun(run_id) => match service.finish_run(run_id).await {
+            Ok(()) => IngestResult::RunFinished(run_id),
+            Err(e) => {
+                tracing::error!("finish run failed: {e}");
+                IngestResult::Error(ApiError::Internal)
+            }
+        },
         IngestMessage::RegisterExperiment(experiment) => {
-            match experiment_writer.upsert(&experiment).await {
+            match service.register_experiment(&experiment).await {
                 Ok(()) => IngestResult::ExperimentRegistered(experiment.id),
                 Err(e) => {
                     tracing::error!("register experiment failed: {e}");
@@ -48,13 +36,15 @@ where
                 }
             }
         }
-        IngestMessage::RegisterProject(project) => match project_writer.upsert(&project).await {
-            Ok(()) => IngestResult::ProjectRegistered(project.id),
-            Err(e) => {
-                tracing::error!("register project failed: {e}");
-                IngestResult::Error(ApiError::Internal)
+        IngestMessage::RegisterProject(project) => {
+            match service.register_project(&project).await {
+                Ok(()) => IngestResult::ProjectRegistered(project.id),
+                Err(e) => {
+                    tracing::error!("register project failed: {e}");
+                    IngestResult::Error(ApiError::Internal)
+                }
             }
-        },
+        }
         IngestMessage::QueryWatermark(run_id) => match service.watermark(&run_id).await {
             Ok(seq) => IngestResult::Watermark(seq),
             Err(e) => {
@@ -63,46 +53,6 @@ where
             }
         },
     }
-}
-
-async fn finish_run<W>(
-    run_writer: &W,
-    finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
-    run_id: RunId,
-) -> IngestResult
-where
-    W: ReadRepository<Run> + WriteRepository<Run>,
-{
-    let Some(mut run) = (match run_writer.get(&run_id).await {
-        Ok(run) => run,
-        Err(e) => {
-            tracing::error!("load run for finish failed: {e}");
-            return IngestResult::Error(ApiError::Internal);
-        }
-    }) else {
-        return IngestResult::Error(ApiError::NotFound {
-            message: format!("run {run_id} not found"),
-        });
-    };
-
-    if matches!(run.status(), RunStatus::Running) {
-        if let Err(e) = run.finish() {
-            tracing::error!("finish run transition failed: {e}");
-            return IngestResult::Error(ApiError::Internal);
-        }
-
-        if let Err(e) = run_writer.upsert(&run).await {
-            tracing::error!("persist finished run failed: {e}");
-            return IngestResult::Error(ApiError::Internal);
-        }
-    }
-
-    if finished_runs_tx.send(run_id).is_err() {
-        tracing::error!("persist finish_run notification failed: receiver dropped");
-        return IngestResult::Error(ApiError::Internal);
-    }
-
-    IngestResult::RunFinished(run_id)
 }
 
 /// Process a single wire batch, returning an ack.
@@ -122,21 +72,11 @@ async fn ingest_batch<S: IngestService>(service: &S, batch: &WireBatch) -> AckRe
     }
 }
 
-/// Transport-agnostic ingest handler using envelope types.
-pub async fn handle_envelope<S, W, E, P, T>(
+/// Transport-agnostic ingest handler.
+pub async fn handle_envelope<S: IngestService, T: Transport<IngestResult, IngestMessage>>(
     service: &S,
-    run_writer: &W,
-    experiment_writer: &E,
-    project_writer: &P,
-    finished_runs_tx: &tokio::sync::mpsc::UnboundedSender<RunId>,
     transport: &T,
-) where
-    S: IngestService,
-    W: ReadRepository<Run> + WriteRepository<Run>,
-    E: WriteRepository<Experiment>,
-    P: WriteRepository<Project>,
-    T: Transport<IngestResult, IngestMessage>,
-{
+) {
     loop {
         let msg = match transport.recv().await {
             Ok(msg) => msg,
@@ -147,15 +87,7 @@ pub async fn handle_envelope<S, W, E, P, T>(
             }
         };
 
-        let result = dispatch(
-            service,
-            run_writer,
-            experiment_writer,
-            project_writer,
-            finished_runs_tx,
-            msg,
-        )
-        .await;
+        let result = dispatch(service, msg).await;
 
         if transport.send(&result).await.is_err() {
             break;

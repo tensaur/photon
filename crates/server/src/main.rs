@@ -6,7 +6,6 @@ use tracing_subscriber::EnvFilter;
 
 use photon_core::types::event::PhotonEvent;
 use photon_downsample::selector::noop::NoOpSelector;
-use photon_hook::Hook;
 use photon_ingest::domain::service::Service as IngestService;
 use photon_ingest::inbound::handler as ingest_handler;
 use photon_persist::domain::projections::downsample::DownsampleConfig;
@@ -15,17 +14,17 @@ use photon_persist::inbound::{PersistConfig, thread as persist_thread};
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::ZstdCompressor;
 use photon_query::domain::service::Service as QueryService;
+use photon_query::domain::subscription::SubscriptionManager;
 use photon_query::domain::tier::TierSelector;
 use photon_query::inbound::handler as query_handler;
+use photon_query::inbound::ws as query_ws;
 use photon_store::clickhouse::bucket::ClickHouseBucketStore;
-use photon_store::clickhouse::compaction::ClickHouseCompactionCursor;
 use photon_store::clickhouse::experiment::ClickHouseExperimentStore;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
 use photon_store::clickhouse::project::ClickHouseProjectStore;
 use photon_store::clickhouse::run::ClickHouseRunStore;
 use photon_store::clickhouse::watermark::ClickHouseWatermarkStore;
 use photon_store::clickhouse::{ClientBuilder, migrate};
-use photon_subscription::SubscriptionHook;
 use photon_transport::router::Router;
 use photon_wal::{DiskWalConfig, open_disk_wal};
 
@@ -54,25 +53,39 @@ async fn main() -> anyhow::Result<()> {
 
     let metric_store = ClickHouseMetricStore::new(client.clone());
     let bucket_store = ClickHouseBucketStore::new(client.clone());
-    let compaction_cursor = ClickHouseCompactionCursor::new(client.clone());
     let watermark_store = ClickHouseWatermarkStore::new(client.clone());
     let run_store = ClickHouseRunStore::new(client.clone());
     let experiment_store = ClickHouseExperimentStore::new(client.clone());
-    let project_store = ClickHouseProjectStore::new(client);
+    let project_store = ClickHouseProjectStore::new(client.clone());
+    let finalised_store =
+        photon_store::clickhouse::finalised::ClickHouseFinalisedStore::new(client);
 
     // Pipeline event channel
     let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(256);
 
-    // Subscription hook (maps pipeline events → WebSocket subscription events)
-    let subscription = SubscriptionHook::new();
-    subscription.spawn(event_tx.subscribe());
+    // Subscription manager
+    let (manager_cmd_tx, manager_cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+    let manager = SubscriptionManager::new(
+        bucket_store.clone(),
+        metric_store.clone(),
+        TierSelector::default(),
+    );
+    tokio::spawn(manager.run(event_tx.subscribe(), manager_cmd_rx));
 
     // Server WAL
     let (wal_appender, wal_manager) =
         open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
-    // Ingest hexagon (WAL-backed)
-    let ingest_service = IngestService::new(wal_appender, notify.clone());
+    // Ingest hexagon
+    let ingest_service = IngestService::new(
+        wal_appender,
+        notify.clone(),
+        run_store.clone(),
+        experiment_store.clone(),
+        project_store.clone(),
+        event_tx.clone(),
+        finished_runs_tx,
+    );
 
     // Seed dedup cache from persisted watermarks + unconsumed WAL tail
     ingest_service.seed(&watermark_store, &wal_manager).await;
@@ -84,7 +97,8 @@ async fn main() -> anyhow::Result<()> {
         metric_store.clone(),
         watermark_store,
         bucket_store.clone(),
-        event_tx,
+        finalised_store.clone(),
+        event_tx.clone(),
         DownsampleConfig::default(),
     );
     let persist_handle = tokio::spawn(persist_thread::run(
@@ -100,10 +114,10 @@ async fn main() -> anyhow::Result<()> {
         NoOpSelector,
         bucket_store,
         metric_store,
-        compaction_cursor,
         run_store.clone(),
         experiment_store.clone(),
         project_store.clone(),
+        finalised_store,
         TierSelector::default(),
     );
 
@@ -116,22 +130,7 @@ async fn main() -> anyhow::Result<()> {
         cancel.clone(),
         move |t| {
             let svc = ingest_service.clone();
-            let run_store = run_store.clone();
-            let experiment_store = experiment_store.clone();
-            let project_store = project_store.clone();
-            let finished_runs_tx = finished_runs_tx.clone();
-
-            async move {
-                ingest_handler::handle_envelope(
-                    &svc,
-                    &run_store,
-                    &experiment_store,
-                    &project_store,
-                    &finished_runs_tx,
-                    &t,
-                )
-                .await;
-            }
+            async move { ingest_handler::handle_envelope(&svc, &t).await }
         },
     ));
 
@@ -141,8 +140,9 @@ async fn main() -> anyhow::Result<()> {
             async move { query_handler::handle(&svc, &t).await }
         })
         .websocket("/api/ws", move |t| {
-            let events = subscription.subscribe();
-            async move { photon_subscription::handle(&t, events).await }
+            let cmd_tx = manager_cmd_tx.clone();
+            let events = event_tx.subscribe();
+            async move { query_ws::handle(&t, cmd_tx, events).await }
         });
 
     #[cfg(feature = "dashboard")]

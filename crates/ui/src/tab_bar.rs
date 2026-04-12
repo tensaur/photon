@@ -6,7 +6,8 @@ pub fn show(ui: &mut egui::Ui, active_tab: &str) {
     let tab_bar_height = crate::theme::TAB_BAR_HEIGHT;
 
     let full_rect = ui.available_rect_before_wrap();
-    ui.painter().rect_filled(full_rect, egui::CornerRadius::ZERO, DARK.bg);
+    ui.painter()
+        .rect_filled(full_rect, egui::CornerRadius::ZERO, DARK.bg);
 
     ui.horizontal(|ui| {
         ui.set_height(tab_bar_height);
@@ -44,18 +45,13 @@ pub fn show(ui: &mut egui::Ui, active_tab: &str) {
 
         ui.add_space(4.0);
         ui.add(
-            egui::Button::new(
-                RichText::new("+").size(14.0).color(DARK.text_dim),
-            )
-            .frame(false)
-            .min_size(vec2(20.0, tab_bar_height)),
+            egui::Button::new(RichText::new("+").size(14.0).color(DARK.text_dim))
+                .frame(false)
+                .min_size(vec2(20.0, tab_bar_height)),
         );
     });
 
     let rect = ui.min_rect();
-    ui.painter().hline(
-        rect.x_range(),
-        rect.bottom(),
-        Stroke::new(1.0, DARK.border),
-    );
+    ui.painter()
+        .hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, DARK.border));
 }

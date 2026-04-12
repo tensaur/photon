@@ -1,5 +1,5 @@
 pub mod bucket;
-pub mod compaction;
+pub mod finalised;
 pub mod metric;
 pub mod repository;
 pub mod watermark;
