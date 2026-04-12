@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use photon_core::types::event::PhotonEvent;
 use photon_core::types::id::SubscriptionId;
-use photon_core::types::stream::{StreamFrame, SubscriptionCommand, SubscriptionUpdate};
+use photon_core::types::stream::{StreamMessage, SubscriptionMessage, SubscriptionUpdate};
 use photon_transport::ports::Transport;
 use tokio::sync::{broadcast, mpsc};
 
@@ -14,11 +14,11 @@ pub async fn handle<T>(
     cmd_tx: mpsc::UnboundedSender<ManagerCommand>,
     mut event_rx: broadcast::Receiver<PhotonEvent>,
 ) where
-    T: Transport<StreamFrame, SubscriptionCommand>,
+    T: Transport<StreamMessage, SubscriptionMessage>,
 {
     // Per-connection channel: the manager pushes (id, update) pairs for any
     // subscription opened on this connection; we wrap each as a
-    // StreamFrame::Subscription for transmission.
+    // StreamMessage::Subscription for transmission.
     let (stream_tx, mut stream_rx) =
         mpsc::unbounded_channel::<(SubscriptionId, SubscriptionUpdate)>();
 
@@ -32,13 +32,13 @@ pub async fn handle<T>(
         tokio::select! {
             msg = transport.recv() => {
                 match msg {
-                    Ok(SubscriptionCommand::Subscribe(ref q)) => {
+                    Ok(SubscriptionMessage::Subscribe(ref q)) => {
                         let _ = cmd_tx.send(ManagerCommand::Subscribe {
                             query: q.clone(),
                             response_tx: stream_tx.clone(),
                         });
                     }
-                    Ok(SubscriptionCommand::Unsubscribe(id)) => {
+                    Ok(SubscriptionMessage::Unsubscribe(id)) => {
                         let _ = cmd_tx.send(ManagerCommand::Unsubscribe(id));
                     }
                     Err(_) => break,
@@ -56,7 +56,7 @@ pub async fn handle<T>(
                             }
                             _ => {}
                         }
-                        let msg = StreamFrame::Subscription { id, update };
+                        let msg = StreamMessage::Subscription { id, update };
                         if transport.send(&msg).await.is_err() {
                             break;
                         }
@@ -67,12 +67,12 @@ pub async fn handle<T>(
             event = event_rx.recv() => {
                 match event {
                     Ok(PhotonEvent::RunStatusChanged { .. }) => {
-                        if transport.send(&StreamFrame::RunsChanged).await.is_err() {
+                        if transport.send(&StreamMessage::RunsChanged).await.is_err() {
                             break;
                         }
                     }
                     Ok(PhotonEvent::Finalised { run_id }) => {
-                        if transport.send(&StreamFrame::RunFinalised { run_id }).await.is_err() {
+                        if transport.send(&StreamMessage::RunFinalised { run_id }).await.is_err() {
                             break;
                         }
                     }

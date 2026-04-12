@@ -8,11 +8,11 @@ use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, Step};
 use photon_core::types::id::SubscriptionId;
 use photon_core::types::query::{DataPoint, MetricQuery, MetricSeries, SeriesData};
-use photon_core::types::stream::{DeltaData, SubscriptionUpdate};
+use photon_core::types::stream::SubscriptionUpdate;
 
 /// Per-connection channel a `SubscriptionManager` uses to push updates back
 /// to the WS handler. The handler is responsible for wrapping each pair into
-/// a `StreamFrame::Subscription { id, update }` for transmission.
+/// a `StreamMessage::Subscription { id, update }` for transmission.
 pub type SubscriptionSender = mpsc::UnboundedSender<(SubscriptionId, SubscriptionUpdate)>;
 use photon_store::ports::bucket::BucketReader;
 use photon_store::ports::metric::MetricReader;
@@ -281,7 +281,7 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
 
                         let _ = state.response_tx.send((
                             sub_id,
-                            SubscriptionUpdate::Delta(DeltaData::RawPoints(new_points)),
+                            SubscriptionUpdate::DeltaPoints(new_points),
                         ));
 
                         if needs_coarsen(state) {
@@ -316,7 +316,7 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
 
                     let _ = state.response_tx.send((
                         sub_id,
-                        SubscriptionUpdate::Delta(DeltaData::Buckets(vec![bucket.clone()])),
+                        SubscriptionUpdate::DeltaBuckets(vec![bucket.clone()]),
                     ));
 
                     if needs_coarsen(state) {
@@ -585,7 +585,7 @@ mod tests {
 
         let msg = resp_rx.recv().await.unwrap();
         match msg {
-            (_, SubscriptionUpdate::Delta(DeltaData::RawPoints(points))) => {
+            (_, SubscriptionUpdate::DeltaPoints(points)) => {
                 assert_eq!(points.len(), 1);
                 assert_eq!(points[0].step, Step::new(10));
             }
@@ -681,7 +681,7 @@ mod tests {
 
         let msg = resp_rx.recv().await.unwrap();
         match msg {
-            (_, SubscriptionUpdate::Delta(DeltaData::Buckets(b))) => {
+            (_, SubscriptionUpdate::DeltaBuckets(b)) => {
                 assert_eq!(b.len(), 1);
                 assert_eq!(b[0], new_bucket);
             }
@@ -926,7 +926,9 @@ mod tests {
             tokio::time::timeout(std::time::Duration::from_millis(200), resp_rx.recv()).await
         {
             match msg.unwrap() {
-                (_, SubscriptionUpdate::Delta(_)) => delta_count += 1,
+                (_, SubscriptionUpdate::DeltaPoints(_) | SubscriptionUpdate::DeltaBuckets(_)) => {
+                    delta_count += 1;
+                }
                 (_, SubscriptionUpdate::Snapshot { series }) => {
                     assert!(matches!(series.data, SeriesData::Bucketed { .. }));
                     saw_coarsen = true;

@@ -7,7 +7,7 @@ use photon_core::types::query::{
     MetricQuery, MetricSeries, QueryRequest, QueryResponse,
 };
 use photon_core::types::id::SubscriptionId;
-use photon_core::types::stream::{DeltaData, StreamFrame, SubscriptionCommand, SubscriptionUpdate};
+use photon_core::types::stream::{StreamMessage, SubscriptionMessage, SubscriptionUpdate};
 use photon_transport::Transport;
 
 use crate::domain::error::{
@@ -48,9 +48,13 @@ pub enum Response {
         subscription_id: SubscriptionId,
         series: MetricSeries,
     },
-    Delta {
+    DeltaPoints {
         subscription_id: SubscriptionId,
-        data: DeltaData,
+        points: Vec<photon_core::types::query::DataPoint>,
+    },
+    DeltaBuckets {
+        subscription_id: SubscriptionId,
+        buckets: Vec<photon_core::types::bucket::Bucket>,
     },
     Unsubscribed {
         subscription_id: SubscriptionId,
@@ -136,7 +140,7 @@ pub(crate) fn spawn_service<S, T>(
 ) -> (CommandSender, ResponseReceiver)
 where
     S: DashboardService,
-    T: Transport<SubscriptionCommand, StreamFrame> + 'static,
+    T: Transport<SubscriptionMessage, StreamMessage> + 'static,
 {
     let (cmd_tx, cmd_rx) = channels();
     let (resp_tx, resp_rx) = channels();
@@ -153,19 +157,23 @@ where
 
 async fn subscription_reader<T>(ctx: egui::Context, transport: T, resp_tx: ResponseSender)
 where
-    T: Transport<SubscriptionCommand, StreamFrame>,
+    T: Transport<SubscriptionMessage, StreamMessage>,
 {
     loop {
         match transport.recv().await {
-            Ok(StreamFrame::Subscription { id, update }) => {
+            Ok(StreamMessage::Subscription { id, update }) => {
                 let resp = match update {
                     SubscriptionUpdate::Snapshot { series } => Response::Snapshot {
                         subscription_id: id,
                         series,
                     },
-                    SubscriptionUpdate::Delta(data) => Response::Delta {
+                    SubscriptionUpdate::DeltaPoints(points) => Response::DeltaPoints {
                         subscription_id: id,
-                        data,
+                        points,
+                    },
+                    SubscriptionUpdate::DeltaBuckets(buckets) => Response::DeltaBuckets {
+                        subscription_id: id,
+                        buckets,
                     },
                     SubscriptionUpdate::Unsubscribed => Response::Unsubscribed {
                         subscription_id: id,
@@ -174,11 +182,11 @@ where
                 send_resp(&resp_tx, resp);
                 ctx.request_repaint();
             }
-            Ok(StreamFrame::RunFinalised { run_id }) => {
+            Ok(StreamMessage::RunFinalised { run_id }) => {
                 send_resp(&resp_tx, Response::Finalised { run_id });
                 ctx.request_repaint();
             }
-            Ok(StreamFrame::RunsChanged) => {
+            Ok(StreamMessage::RunsChanged) => {
                 send_resp(&resp_tx, Response::RunsChanged);
                 ctx.request_repaint();
             }

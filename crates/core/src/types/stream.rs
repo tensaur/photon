@@ -8,30 +8,26 @@ use crate::types::query::{DataPoint, MetricQuery, MetricSeries};
 /// Updates that the server pushes for a ubscription.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SubscriptionUpdate {
-    /// Full series snapshot. 
+    /// Full series snapshot.
     Snapshot { series: MetricSeries },
-    /// Incremental update appended to the existing series.
-    Delta(DeltaData),
+    /// Incremental raw data points appended to the existing series.
+    DeltaPoints(Vec<DataPoint>),
+    /// Incremental aggregated buckets appended to the existing series.
+    DeltaBuckets(Vec<Bucket>),
     /// Server has dropped the subscription.
     Unsubscribed,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum DeltaData {
-    RawPoints(Vec<DataPoint>),
-    Buckets(Vec<Bucket>),
-}
-
 /// Commands a client sends over the WS to manage subscriptions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum SubscriptionCommand {
+pub enum SubscriptionMessage {
     Subscribe(MetricQuery),
     Unsubscribe(SubscriptionId),
 }
 
 /// One frame in the live stream of messages the server pushes to a client.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum StreamFrame {
+pub enum StreamMessage {
     Subscription {
         id: SubscriptionId,
         update: SubscriptionUpdate,

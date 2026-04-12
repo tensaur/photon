@@ -9,7 +9,6 @@ use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, Step};
 use photon_core::types::id::SubscriptionId;
 use photon_core::types::query::{MetricQuery, MetricSeries, SeriesData};
-use photon_core::types::stream::DeltaData;
 
 use crate::inbound::channel::{self, Command, CommandSender, Response, ResponseReceiver};
 
@@ -42,7 +41,7 @@ pub struct DataCache {
     /// only carry the id.
     pub subscriptions: HashMap<SubscriptionId, (RunId, Metric)>,
     /// Runs the server has marked as finalised — fully persisted and indexed.
-    /// Populated from `StreamFrame::RunFinalised`; drives the sidebar status
+    /// Populated from `StreamMessage::RunFinalised`; drives the sidebar status
     /// dot for `RunStatus::Finished` runs.
     pub finalised: HashSet<RunId>,
 }
@@ -182,26 +181,24 @@ impl DashboardApp {
                     .insert(subscription_id, key.clone());
                 self.cache.series.insert(key, series);
             }
-            Response::Delta {
+            Response::DeltaPoints {
                 subscription_id,
-                data,
+                points: new_points,
             } => {
-                let Some(key) = self.cache.subscriptions.get(&subscription_id).cloned() else {
-                    return;
-                };
-                let Some(series) = self.cache.series.get_mut(&key) else {
-                    return;
-                };
-                match (&mut series.data, data) {
-                    (SeriesData::Raw { points }, DeltaData::RawPoints(new_points)) => {
+                if let Some(series) = self.series_for_sub(&subscription_id) {
+                    if let SeriesData::Raw { points } = &mut series.data {
                         points.extend(new_points);
                     }
-                    (SeriesData::Bucketed { buckets }, DeltaData::Buckets(new_buckets)) => {
+                }
+            }
+            Response::DeltaBuckets {
+                subscription_id,
+                buckets: new_buckets,
+            } => {
+                if let Some(series) = self.series_for_sub(&subscription_id) {
+                    if let SeriesData::Bucketed { buckets } = &mut series.data {
                         buckets.extend(new_buckets);
                     }
-                    // Variant mismatch means the subscription was resnapshotted between
-                    // the delta being sent and arriving here. Drop it.
-                    _ => {}
                 }
             }
             Response::Unsubscribed { subscription_id } => {
@@ -271,6 +268,11 @@ impl DashboardApp {
             e.insert(RequestState::Pending);
             channel::send_cmd(&self.commands, Command::ListMetrics { run_id });
         }
+    }
+
+    fn series_for_sub(&mut self, subscription_id: &SubscriptionId) -> Option<&mut MetricSeries> {
+        let key = self.cache.subscriptions.get(subscription_id)?;
+        self.cache.series.get_mut(key)
     }
 
     fn rebuild_viewport(&mut self) {
