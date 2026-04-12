@@ -64,14 +64,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (wal_appender, wal_manager) =
         open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
-    // Ingest service (WAL-backed)
-    let ingest_service = IngestService::new(wal_appender, notify.clone());
+    // Ingest hexagon
+    let ingest_service = IngestService::new(
+        wal_appender,
+        notify.clone(),
+        run_store,
+        experiment_store,
+        project_store,
+        event_tx.clone(),
+        finished_runs_tx,
+    );
 
     // Seed dedup cache from persisted watermarks + unconsumed WAL tail
     ingest_service.seed(&watermark_store, &wal_manager).await;
 
     // Persist consumer
-    let ingest_event_tx = event_tx.clone();
     let persist_service = PersistService::new(
         ZstdCompressor::default(),
         codec,
@@ -98,25 +105,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (stream, _) = listener.accept().await.expect("accept failed");
             let bt = TcpTransport::accept(stream);
             let transport = CodecTransport::new(codec, bt);
-            let service = ingest_service.clone();
-            let run_store = run_store.clone();
-            let experiment_store = experiment_store.clone();
-            let project_store = project_store.clone();
-            let finished_runs_tx = finished_runs_tx.clone();
-            let event_tx = ingest_event_tx.clone();
-
-            tokio::spawn(async move {
-                handler::handle_envelope(
-                    &service,
-                    &run_store,
-                    &experiment_store,
-                    &project_store,
-                    &finished_runs_tx,
-                    &event_tx,
-                    &transport,
-                )
-                .await;
-            });
+            let svc = ingest_service.clone();
+            tokio::spawn(async move { handler::handle_envelope(&svc, &transport).await });
         }
     });
 

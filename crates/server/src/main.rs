@@ -76,8 +76,16 @@ async fn main() -> anyhow::Result<()> {
     let (wal_appender, wal_manager) =
         open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
-    // Ingest hexagon (WAL-backed)
-    let ingest_service = IngestService::new(wal_appender, notify.clone());
+    // Ingest hexagon
+    let ingest_service = IngestService::new(
+        wal_appender,
+        notify.clone(),
+        run_store.clone(),
+        experiment_store.clone(),
+        project_store.clone(),
+        event_tx.clone(),
+        finished_runs_tx,
+    );
 
     // Seed dedup cache from persisted watermarks + unconsumed WAL tail
     ingest_service.seed(&watermark_store, &wal_manager).await;
@@ -116,31 +124,13 @@ async fn main() -> anyhow::Result<()> {
     let ingest_listener = TcpListener::bind(&ingest_addr).await?;
     tracing::info!("ingest listening on {ingest_addr}");
 
-    let ingest_event_tx = event_tx.clone();
     let ingest_handle = tokio::spawn(photon_transport::serve(
         ingest_listener,
         codec,
         cancel.clone(),
         move |t| {
             let svc = ingest_service.clone();
-            let run_store = run_store.clone();
-            let experiment_store = experiment_store.clone();
-            let project_store = project_store.clone();
-            let finished_runs_tx = finished_runs_tx.clone();
-            let event_tx = ingest_event_tx.clone();
-
-            async move {
-                ingest_handler::handle_envelope(
-                    &svc,
-                    &run_store,
-                    &experiment_store,
-                    &project_store,
-                    &finished_runs_tx,
-                    &event_tx,
-                    &t,
-                )
-                .await;
-            }
+            async move { ingest_handler::handle_envelope(&svc, &t).await }
         },
     ));
 

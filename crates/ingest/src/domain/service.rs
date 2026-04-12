@@ -1,13 +1,19 @@
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
+use photon_core::domain::experiment::Experiment;
+use photon_core::domain::project::Project;
+use photon_core::domain::run::{Run, RunStatus};
 use photon_core::types::ack::AckStatus;
 use photon_core::types::batch::WireBatch;
+use photon_core::types::event::PhotonEvent;
 use photon_core::types::id::RunId;
 use photon_core::types::sequence::SequenceNumber;
 use photon_core::types::wal::WalOffset;
 use photon_store::ports::watermark::WatermarkReader;
+use photon_store::ports::{ReadRepository, WriteRepository};
 use photon_wal::{Wal, WalAppender};
+use tokio::sync::{broadcast, mpsc};
 
 use crate::domain::dedup::{DeduplicationCache, Verdict};
 
@@ -24,6 +30,18 @@ pub enum IngestError {
 
     #[error("sequence gap: expected contiguous stream but got seq {got} (session broken)")]
     SequenceGap { got: SequenceNumber },
+
+    #[error("store operation failed")]
+    Store(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("run {0} not found")]
+    RunNotFound(RunId),
+
+    #[error("invalid run state transition: {0}")]
+    InvalidTransition(String),
+
+    #[error("internal channel closed")]
+    ChannelClosed,
 }
 
 pub trait IngestService: Clone + Send + Sync + 'static {
@@ -38,31 +56,92 @@ pub trait IngestService: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<SequenceNumber, IngestError>> + Send;
 
     fn evict_run(&self, run_id: &RunId);
+
+    fn register_run(
+        &self,
+        run: &Run,
+    ) -> impl Future<Output = Result<(), IngestError>> + Send;
+
+    fn finish_run(
+        &self,
+        run_id: RunId,
+    ) -> impl Future<Output = Result<(), IngestError>> + Send;
+
+    fn register_experiment(
+        &self,
+        experiment: &Experiment,
+    ) -> impl Future<Output = Result<(), IngestError>> + Send;
+
+    fn register_project(
+        &self,
+        project: &Project,
+    ) -> impl Future<Output = Result<(), IngestError>> + Send;
 }
 
 /// WAL-backed ingest service.
-pub struct Service<A: WalAppender> {
+pub struct Service<A, R, E, P>
+where
+    A: WalAppender,
+    R: ReadRepository<Run> + WriteRepository<Run>,
+    E: WriteRepository<Experiment>,
+    P: WriteRepository<Project>,
+{
     dedup: DeduplicationCache,
     wal: Arc<Mutex<A>>,
     notify: Arc<tokio::sync::Notify>,
+    run_store: R,
+    experiment_store: E,
+    project_store: P,
+    event_tx: broadcast::Sender<PhotonEvent>,
+    finished_runs_tx: mpsc::UnboundedSender<RunId>,
 }
 
-impl<A: WalAppender> Clone for Service<A> {
+impl<A, R, E, P> Clone for Service<A, R, E, P>
+where
+    A: WalAppender,
+    R: ReadRepository<Run> + WriteRepository<Run>,
+    E: WriteRepository<Experiment>,
+    P: WriteRepository<Project>,
+{
     fn clone(&self) -> Self {
         Self {
             dedup: self.dedup.clone(),
             wal: Arc::clone(&self.wal),
             notify: Arc::clone(&self.notify),
+            run_store: self.run_store.clone(),
+            experiment_store: self.experiment_store.clone(),
+            project_store: self.project_store.clone(),
+            event_tx: self.event_tx.clone(),
+            finished_runs_tx: self.finished_runs_tx.clone(),
         }
     }
 }
 
-impl<A: WalAppender> Service<A> {
-    pub fn new(wal: A, notify: Arc<tokio::sync::Notify>) -> Self {
+impl<A, R, E, P> Service<A, R, E, P>
+where
+    A: WalAppender,
+    R: ReadRepository<Run> + WriteRepository<Run>,
+    E: WriteRepository<Experiment>,
+    P: WriteRepository<Project>,
+{
+    pub fn new(
+        wal: A,
+        notify: Arc<tokio::sync::Notify>,
+        run_store: R,
+        experiment_store: E,
+        project_store: P,
+        event_tx: broadcast::Sender<PhotonEvent>,
+        finished_runs_tx: mpsc::UnboundedSender<RunId>,
+    ) -> Self {
         Self {
             dedup: DeduplicationCache::new(),
             wal: Arc::new(Mutex::new(wal)),
             notify,
+            run_store,
+            experiment_store,
+            project_store,
+            event_tx,
+            finished_runs_tx,
         }
     }
 
@@ -75,7 +154,13 @@ impl<A: WalAppender> Service<A> {
     }
 }
 
-impl<A: WalAppender> IngestService for Service<A> {
+impl<A, R, E, P> IngestService for Service<A, R, E, P>
+where
+    A: WalAppender,
+    R: ReadRepository<Run> + WriteRepository<Run>,
+    E: WriteRepository<Experiment>,
+    P: WriteRepository<Project>,
+{
     async fn ingest(&self, batch: &WireBatch) -> Result<IngestResult, IngestError> {
         let seq = batch.sequence_number;
 
@@ -124,6 +209,68 @@ impl<A: WalAppender> IngestService for Service<A> {
     fn evict_run(&self, run_id: &RunId) {
         self.dedup.evict(run_id);
     }
+
+    async fn register_run(&self, run: &Run) -> Result<(), IngestError> {
+        self.run_store
+            .upsert(run)
+            .await
+            .map_err(|e| IngestError::Store(Box::new(e)))?;
+
+        let _ = self.event_tx.send(PhotonEvent::RunStatusChanged {
+            run_id: run.id(),
+            old: run.status().clone(),
+            new: run.status().clone(),
+        });
+
+        Ok(())
+    }
+
+    async fn finish_run(&self, run_id: RunId) -> Result<(), IngestError> {
+        let mut run = self
+            .run_store
+            .get(&run_id)
+            .await
+            .map_err(|e| IngestError::Store(Box::new(e)))?
+            .ok_or(IngestError::RunNotFound(run_id))?;
+
+        if matches!(run.status(), RunStatus::Running) {
+            run.finish()
+                .map_err(|e| IngestError::InvalidTransition(e.to_string()))?;
+
+            self.run_store
+                .upsert(&run)
+                .await
+                .map_err(|e| IngestError::Store(Box::new(e)))?;
+
+            let _ = self.event_tx.send(PhotonEvent::RunStatusChanged {
+                run_id,
+                old: RunStatus::Running,
+                new: RunStatus::Finished,
+            });
+        }
+
+        self.finished_runs_tx
+            .send(run_id)
+            .map_err(|_| IngestError::ChannelClosed)?;
+
+        Ok(())
+    }
+
+    async fn register_experiment(&self, experiment: &Experiment) -> Result<(), IngestError> {
+        self.experiment_store
+            .upsert(experiment)
+            .await
+            .map_err(|e| IngestError::Store(Box::new(e)))?;
+        Ok(())
+    }
+
+    async fn register_project(&self, project: &Project) -> Result<(), IngestError> {
+        self.project_store
+            .upsert(project)
+            .await
+            .map_err(|e| IngestError::Store(Box::new(e)))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -131,13 +278,18 @@ mod tests {
     use std::sync::Arc;
     use std::time::SystemTime;
 
+    use photon_store::memory::experiment::InMemoryExperimentStore;
+    use photon_store::memory::project::InMemoryProjectStore;
+    use photon_store::memory::run::InMemoryRunStore;
     use photon_store::memory::watermark::InMemoryWatermarkStore;
     use photon_store::ports::watermark::WatermarkWriter;
     use photon_wal::WalAppender;
+    use tokio::sync::{broadcast, mpsc};
 
     use bytes::Bytes;
 
     use photon_core::types::ack::AckStatus;
+    use photon_core::types::event::PhotonEvent;
     use photon_core::types::batch::WireBatch;
     use photon_core::types::id::RunId;
     use photon_core::types::sequence::SequenceNumber;
@@ -173,10 +325,25 @@ mod tests {
         }
     }
 
-    fn new_service() -> Service<photon_wal::InMemoryWalAppender> {
+    fn new_service() -> Service<
+        photon_wal::InMemoryWalAppender,
+        InMemoryRunStore,
+        InMemoryExperimentStore,
+        InMemoryProjectStore,
+    > {
         let (appender, _mgr) = open_in_memory_wal();
         let notify = Arc::new(tokio::sync::Notify::new());
-        Service::new(appender, notify)
+        let (event_tx, _) = broadcast::channel::<PhotonEvent>(16);
+        let (finished_runs_tx, _) = mpsc::unbounded_channel();
+        Service::new(
+            appender,
+            notify,
+            InMemoryRunStore::new(),
+            InMemoryExperimentStore::new(),
+            InMemoryProjectStore::new(),
+            event_tx,
+            finished_runs_tx,
+        )
     }
 
     #[tokio::test]
@@ -282,7 +449,17 @@ mod tests {
 
         // Simulate restart: new service, seed from the WAL that has batches 1-3
         let (appender, wal_mgr) = open_in_memory_wal();
-        let new_svc = Service::new(appender, Arc::new(tokio::sync::Notify::new()));
+        let (etx, _) = broadcast::channel::<PhotonEvent>(16);
+        let (ftx, _) = mpsc::unbounded_channel();
+        let new_svc = Service::new(
+            appender,
+            Arc::new(tokio::sync::Notify::new()),
+            InMemoryRunStore::new(),
+            InMemoryExperimentStore::new(),
+            InMemoryProjectStore::new(),
+            etx,
+            ftx,
+        );
 
         // Write the old batches into the new WAL to simulate unconsumed tail
         {
