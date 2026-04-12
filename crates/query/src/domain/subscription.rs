@@ -17,14 +17,14 @@ pub type SubscriptionSender = mpsc::UnboundedSender<(SubscriptionId, Subscriptio
 use photon_store::ports::bucket::BucketReader;
 use photon_store::ports::metric::MetricReader;
 
-use super::tier::{Lod, TierSelector};
+use super::tier::{Resolution, TierSelector};
 
 struct SubscriptionState {
     run_id: RunId,
     metric: Metric,
     range_start: Step,
     target_points: usize,
-    current_lod: Lod,
+    current_lod: Resolution,
     emitted_through: Step,
     sample_count: usize,
     response_tx: SubscriptionSender,
@@ -127,7 +127,7 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
         let lod = self.tier_selector.pick(point_count, query.target_points);
 
         let snapshot = match &lod {
-            Lod::Raw => {
+            Resolution::Raw => {
                 match self
                     .metric_reader
                     .read_points(&query.run_id, &query.key, query.step_range.clone())
@@ -145,7 +145,7 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
                     }
                 }
             }
-            Lod::Bucketed(tier) => {
+            Resolution::Bucketed(tier) => {
                 match self
                     .bucket_reader
                     .read_buckets(&query.run_id, &query.key, *tier, query.step_range.clone())
@@ -184,13 +184,13 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
 
         // Insert into the appropriate index
         match &lod {
-            Lod::Raw => {
+            Resolution::Raw => {
                 self.raw_index
                     .entry((query.run_id, query.key))
                     .or_default()
                     .push(id);
             }
-            Lod::Bucketed(tier) => {
+            Resolution::Bucketed(tier) => {
                 self.bucket_index
                     .entry((query.run_id, query.key, *tier))
                     .or_default()
@@ -214,14 +214,14 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
     fn remove_subscription(&mut self, id: SubscriptionId) -> Option<SubscriptionState> {
         let state = self.subscriptions.remove(&id)?;
         match &state.current_lod {
-            Lod::Raw => {
+            Resolution::Raw => {
                 remove_from_index(
                     &mut self.raw_index,
                     (state.run_id, state.metric.clone()),
                     id,
                 );
             }
-            Lod::Bucketed(tier) => {
+            Resolution::Bucketed(tier) => {
                 remove_from_index(
                     &mut self.bucket_index,
                     (state.run_id, state.metric.clone(), *tier),
@@ -361,7 +361,7 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
         }
 
         // Read fresh snapshot at coarser tier
-        let Lod::Bucketed(tier) = &new_lod else {
+        let Resolution::Bucketed(tier) = &new_lod else {
             return; // Can't coarsen to Raw
         };
 
@@ -405,10 +405,10 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
 
         // Remove from old index, add to new
         match &old_lod {
-            Lod::Raw => {
+            Resolution::Raw => {
                 remove_from_index(&mut self.raw_index, (run_id, metric.clone()), sub_id);
             }
-            Lod::Bucketed(old_tier) => {
+            Resolution::Bucketed(old_tier) => {
                 remove_from_index(
                     &mut self.bucket_index,
                     (run_id, metric.clone(), *old_tier),
@@ -417,13 +417,13 @@ impl<B: BucketReader, M: MetricReader> SubscriptionManager<B, M> {
             }
         }
         match &new_lod {
-            Lod::Raw => {
+            Resolution::Raw => {
                 self.raw_index
                     .entry((run_id, metric))
                     .or_default()
                     .push(sub_id);
             }
-            Lod::Bucketed(new_tier) => {
+            Resolution::Bucketed(new_tier) => {
                 self.bucket_index
                     .entry((run_id, metric, *new_tier))
                     .or_default()
@@ -628,7 +628,8 @@ mod tests {
                 bucket: Bucket {
                     step_start: Step::new(i * 5),
                     step_end: Step::new(i * 5 + 4),
-                    value: (i * 5) as f64,
+                    sum: (i * 5) as f64 * 5.0,
+                    mean: (i * 5) as f64,
                     count: 5,
                     min: (i * 5) as f64,
                     max: (i * 5 + 4) as f64,
@@ -665,7 +666,8 @@ mod tests {
         let new_bucket = Bucket {
             step_start: Step::new(5000),
             step_end: Step::new(5004),
-            value: 5002.0,
+            sum: 25010.0,
+            mean: 5002.0,
             count: 5,
             min: 5000.0,
             max: 5004.0,
@@ -863,7 +865,8 @@ mod tests {
                 bucket: Bucket {
                     step_start: Step::new(i * 2),
                     step_end: Step::new(i * 2 + 1),
-                    value: i as f64,
+                    sum: i as f64 * 2.0,
+                    mean: i as f64,
                     count: 2,
                     min: i as f64,
                     max: (i + 1) as f64,

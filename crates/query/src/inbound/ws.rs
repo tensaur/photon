@@ -16,16 +16,11 @@ pub async fn handle<T>(
 ) where
     T: Transport<StreamMessage, SubscriptionMessage>,
 {
-    // Per-connection channel: the manager pushes (id, update) pairs for any
-    // subscription opened on this connection; we wrap each as a
-    // StreamMessage::Subscription for transmission.
+    // Per-connection channel.
     let (stream_tx, mut stream_rx) =
         mpsc::unbounded_channel::<(SubscriptionId, SubscriptionUpdate)>();
 
-    // Subscriptions opened by *this* connection. Tracked here so we can tell
-    // the manager to clean them up when the connection closes — otherwise the
-    // manager would leak `SubscriptionState` entries (and continue trying to
-    // route events to a dead `response_tx`) for the lifetime of the process.
+    // Subscriptions opened by this connection.
     let mut owned_ids: HashSet<SubscriptionId> = HashSet::new();
 
     loop {

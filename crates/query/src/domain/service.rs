@@ -17,7 +17,7 @@ use photon_store::ports::bucket::BucketReader;
 use photon_store::ports::finalised::FinalisedStore;
 use photon_store::ports::metric::MetricReader;
 
-use crate::domain::tier::{Lod, TierSelector};
+use crate::domain::tier::{Resolution, TierSelector};
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
@@ -197,7 +197,7 @@ where
         let lod = self.tier_selector.pick(point_count, q.target_points);
 
         let data = match lod {
-            Lod::Raw => {
+            Resolution::Raw => {
                 let points = self
                     .metric_reader
                     .read_points(&q.run_id, &q.key, q.step_range.clone())
@@ -216,7 +216,7 @@ where
                         .collect(),
                 }
             }
-            Lod::Bucketed(tier_index) => {
+            Resolution::Bucketed(tier_index) => {
                 let buckets = self
                     .bucket_reader
                     .read_buckets(&q.run_id, &q.key, tier_index, q.step_range.clone())

@@ -7,7 +7,8 @@ use crate::types::metric::{Metric, Step};
 pub struct Bucket {
     pub step_start: Step,
     pub step_end: Step,
-    pub value: f64,
+    pub sum: f64,
+    pub mean: f64,
     pub count: u64,
     pub min: f64,
     pub max: f64,

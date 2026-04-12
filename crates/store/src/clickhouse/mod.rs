@@ -116,7 +116,8 @@ pub async fn migrate(client: &clickhouse::Client) -> Result<(), clickhouse::erro
                 tier UInt32,
                 step_start UInt64,
                 step_end UInt64,
-                value Float64,
+                sum Float64,
+                mean Float64,
                 count UInt64,
                 min Float64,
                 max Float64

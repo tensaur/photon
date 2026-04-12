@@ -41,7 +41,7 @@ impl OpenBucket {
     fn observe_bucket(&mut self, bucket: &Bucket) -> Option<Bucket> {
         let closed = self.advance_window(self.window_start(bucket.step_start));
         self.step_end = bucket.step_end;
-        self.sum += bucket.value * bucket.count as f64;
+        self.sum += bucket.sum;
         self.count += bucket.count;
         self.min = self.min.min(bucket.min);
         self.max = self.max.max(bucket.max);
@@ -49,14 +49,16 @@ impl OpenBucket {
     }
 
     fn flush(&mut self) -> Bucket {
+        let mean = if self.count > 0 {
+            self.sum / self.count as f64
+        } else {
+            0.0
+        };
         Bucket {
             step_start: self.step_start,
             step_end: self.step_end,
-            value: if self.count > 0 {
-                self.sum / self.count as f64
-            } else {
-                0.0
-            },
+            sum: self.sum,
+            mean,
             count: self.count,
             min: self.min,
             max: self.max,
@@ -169,7 +171,7 @@ impl Reducer {
                 width,
                 step_start: window,
                 step_end: bucket.step_end,
-                sum: bucket.value * bucket.count as f64,
+                sum: bucket.sum,
                 count: bucket.count,
                 min: bucket.min,
                 max: bucket.max,

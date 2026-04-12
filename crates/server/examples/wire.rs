@@ -128,10 +128,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let t0 = Instant::now();
 
-        // Simulate a training loop with realistic noise
+        // Simulate a training loop
         let mut rng_state: u64 = 42;
         let mut noise = || -> f64 {
-            // xorshift64 → uniform [0,1)
             rng_state ^= rng_state << 13;
             rng_state ^= rng_state >> 7;
             rng_state ^= rng_state << 17;

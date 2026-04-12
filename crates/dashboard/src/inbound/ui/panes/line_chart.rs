@@ -28,7 +28,7 @@ pub fn show(
         Some(SeriesData::Bucketed { buckets }) => (
             buckets
                 .iter()
-                .map(|b| [b.step_start.as_u64() as f64, b.value])
+                .map(|b| [b.step_start.as_u64() as f64, b.mean])
                 .collect(),
             Some(
                 buckets
