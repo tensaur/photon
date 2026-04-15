@@ -13,11 +13,11 @@ use photon_persist::domain::service::Service as PersistService;
 use photon_persist::inbound::{PersistConfig, thread as persist_thread};
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::ZstdCompressor;
+use photon_core::types::resolution::TierSelector;
 use photon_query::domain::service::Service as QueryService;
-use photon_query::domain::subscription::SubscriptionManager;
-use photon_query::domain::tier::TierSelector;
 use photon_query::inbound::handler as query_handler;
-use photon_query::inbound::ws as query_ws;
+use photon_subscription::domain::service::Service as SubscriptionService;
+use photon_subscription::inbound::{events as subscription_events, ws as subscription_ws};
 use photon_store::clickhouse::bucket::ClickHouseBucketStore;
 use photon_store::clickhouse::experiment::ClickHouseExperimentStore;
 use photon_store::clickhouse::metric::ClickHouseMetricStore;
@@ -60,17 +60,21 @@ async fn main() -> anyhow::Result<()> {
     let finalised_store =
         photon_store::clickhouse::finalised::ClickHouseFinalisedStore::new(client);
 
-    // Pipeline event channel
-    let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(256);
+    // Pipeline event channel. Capacity is generous to absorb bursts while the
+    // subscription service is briefly blocked on a subscribe's async snapshot
+    // read — events fall behind during that window and need room to queue.
+    let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(4096);
 
-    // Subscription manager
-    let (manager_cmd_tx, manager_cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-    let manager = SubscriptionManager::new(
+    // Subscription hexagon: service + its two inbound adapters (events, ws).
+    let subscription_service = SubscriptionService::new(
         bucket_store.clone(),
         metric_store.clone(),
         TierSelector::default(),
     );
-    tokio::spawn(manager.run(event_tx.subscribe(), manager_cmd_rx));
+    tokio::spawn(subscription_events::run(
+        subscription_service.clone(),
+        event_tx.subscribe(),
+    ));
 
     // Server WAL
     let (wal_appender, wal_manager) =
@@ -140,9 +144,9 @@ async fn main() -> anyhow::Result<()> {
             async move { query_handler::handle(&svc, &t).await }
         })
         .websocket("/api/ws", move |t| {
-            let cmd_tx = manager_cmd_tx.clone();
+            let svc = subscription_service.clone();
             let events = event_tx.subscribe();
-            async move { query_ws::handle(&t, cmd_tx, events).await }
+            async move { subscription_ws::handle(&svc, &t, events).await }
         });
 
     #[cfg(feature = "dashboard")]

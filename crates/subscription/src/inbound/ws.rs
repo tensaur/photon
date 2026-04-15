@@ -6,41 +6,39 @@ use photon_core::types::stream::{StreamMessage, SubscriptionMessage, Subscriptio
 use photon_transport::ports::Transport;
 use tokio::sync::{broadcast, mpsc};
 
-use crate::domain::subscription::ManagerCommand;
+use crate::domain::service::{SubscriptionReceiver, SubscriptionSender, SubscriptionService};
 
 /// WebSocket handler for live subscriptions.
-pub async fn handle<T>(
+pub async fn handle<S, T>(
+    service: &S,
     transport: &T,
-    cmd_tx: mpsc::UnboundedSender<ManagerCommand>,
     mut event_rx: broadcast::Receiver<PhotonEvent>,
 ) where
+    S: SubscriptionService,
     T: Transport<StreamMessage, SubscriptionMessage>,
 {
-    // Per-connection channel.
-    let (stream_tx, mut stream_rx) =
-        mpsc::unbounded_channel::<(SubscriptionId, SubscriptionUpdate)>();
+    let (updates_tx, mut updates_rx): (SubscriptionSender, SubscriptionReceiver) =
+        mpsc::unbounded_channel();
 
-    // Subscriptions opened by this connection.
     let mut owned_ids: HashSet<SubscriptionId> = HashSet::new();
 
     loop {
         tokio::select! {
             msg = transport.recv() => {
                 match msg {
-                    Ok(SubscriptionMessage::Subscribe(ref q)) => {
-                        let _ = cmd_tx.send(ManagerCommand::Subscribe {
-                            query: q.clone(),
-                            response_tx: stream_tx.clone(),
-                        });
+                    Ok(SubscriptionMessage::Subscribe(q)) => {
+                        if let Err(e) = service.subscribe(q, updates_tx.clone()).await {
+                            tracing::error!("subscribe failed: {e}");
+                        }
                     }
                     Ok(SubscriptionMessage::Unsubscribe(id)) => {
-                        let _ = cmd_tx.send(ManagerCommand::Unsubscribe(id));
+                        service.unsubscribe(id).await;
                     }
                     Err(_) => break,
                 }
             }
-            stream_msg = stream_rx.recv() => {
-                match stream_msg {
+            update = updates_rx.recv() => {
+                match update {
                     Some((id, update)) => {
                         match &update {
                             SubscriptionUpdate::Snapshot { .. } => {
@@ -81,9 +79,8 @@ pub async fn handle<T>(
         }
     }
 
-    // Connection closed. Tell the manager to drop every subscription that was
-    // opened on this connection so its indexes don't accumulate dead entries.
+    // Connection closed.
     if !owned_ids.is_empty() {
-        let _ = cmd_tx.send(ManagerCommand::Disconnect(owned_ids.into_iter().collect()));
+        service.disconnect(owned_ids.into_iter().collect()).await;
     }
 }

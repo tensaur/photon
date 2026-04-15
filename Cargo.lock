@@ -2892,6 +2892,7 @@ dependencies = [
  "photon-protocol",
  "photon-query",
  "photon-store",
+ "photon-subscription",
  "photon-transport",
  "photon-wal",
  "rust-embed",
@@ -2914,6 +2915,18 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "photon-subscription"
+version = "0.2.0"
+dependencies = [
+ "photon-core",
+ "photon-store",
+ "photon-transport",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

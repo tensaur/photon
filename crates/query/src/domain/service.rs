@@ -17,7 +17,7 @@ use photon_store::ports::bucket::BucketReader;
 use photon_store::ports::finalised::FinalisedStore;
 use photon_store::ports::metric::MetricReader;
 
-use crate::domain::tier::{Resolution, TierSelector};
+use photon_core::types::resolution::{Resolution, TierSelector};
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {

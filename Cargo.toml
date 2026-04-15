@@ -14,6 +14,7 @@ members = [
     "crates/downsample",
     "crates/query",
     "crates/persist",
+    "crates/subscription",
     "crates/server",
     "crates/dashboard",
     "crates/ui",
@@ -106,3 +107,4 @@ photon-ingest = { path = "crates/ingest" }
 photon-downsample = { path = "crates/downsample" }
 photon-query = { path = "crates/query" }
 photon-persist = { path = "crates/persist" }
+photon-subscription = { path = "crates/subscription" }
