@@ -2921,6 +2921,7 @@ dependencies = [
 name = "photon-subscription"
 version = "0.2.0"
 dependencies = [
+ "dashmap",
  "photon-core",
  "photon-store",
  "photon-transport",

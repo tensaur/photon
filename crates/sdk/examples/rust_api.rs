@@ -1,18 +1,21 @@
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn main() {
     let mut run = photon::Run::builder()
         .endpoint("[::1]:50051")
-        .max_points_per_batch(50)
+        .max_points_per_batch(10_000)
+        .channel_capacity(10_000_000)
         .start()
         .expect("failed to start run");
 
     println!("Run: {}", run.id());
 
-    // Simulate a training loop
-    let total_steps: u64 = 50_000;
-    let mut rng_state: u64 = 42;
+    let mut rng_state: u64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x9E37_79B9_7F4A_7C15)
+        | 1;
     let mut noise = || -> f64 {
         rng_state ^= rng_state << 13;
         rng_state ^= rng_state >> 7;
@@ -20,25 +23,34 @@ fn main() {
         (rng_state as f64) / (u64::MAX as f64)
     };
 
-    for step in 0..total_steps {
+    let n: u64 = 10_000_000;
+    let decay_tau = (n as f64) * (0.05 + 0.25 * noise());
+    let loss_floor = 0.02 + 0.15 * noise();
+    let loss_scale = 0.5 + 0.6 * noise();
+    let loss_noise = 0.005 + 0.05 * noise();
+    let acc_noise = 0.005 + 0.03 * noise();
+    let lr_peak = 1e-4 + 5e-3 * noise();
+    let lr_period = (n as f64) * (0.02 + 0.12 * noise());
+
+    for step in 0..n {
         let t = step as f64;
 
-        // Exponential decay with noise
-        let loss = 0.9 * (-t / 20_000.0).exp() + 0.05 + 0.02 * (noise() - 0.5);
-        let accuracy = (1.0 - loss + 0.015 * (noise() - 0.5)).clamp(0.0, 1.0);
-
+        let loss = loss_scale * (-t / decay_tau).exp()
+            + loss_floor
+            + loss_noise * (noise() - 0.5);
         run.log("train/loss", loss, step).unwrap();
-        run.log("train/accuracy", accuracy, step).unwrap();
 
         if step % 10 == 0 {
-            let cycle = (t % 10_000.0) / 10_000.0;
-            let lr =
-                1e-4 + 0.5 * (1e-3 - 1e-4) * (1.0 + (std::f64::consts::PI * cycle).cos());
-            run.log("train/lr", lr, step).unwrap();
+            let accuracy = (1.0 - loss + acc_noise * (noise() - 0.5)).clamp(0.0, 1.0);
+            run.log("train/accuracy", accuracy, step).unwrap();
         }
 
         if step % 100 == 0 {
-            thread::sleep(Duration::from_millis(60));
+            let cycle = (t % lr_period) / lr_period;
+            let lr = 1e-4 + 0.5 * (lr_peak - 1e-4) * (1.0 + (std::f64::consts::PI * cycle).cos());
+            run.log("train/lr", lr, step).unwrap();
+
+            thread::sleep(Duration::from_millis(1));
         }
     }
 

@@ -54,7 +54,14 @@ where
     let mut finish_sent = false;
 
     loop {
-        let batch = batch_rx.try_recv().ok();
+        // Only pull a batch when we're ready to send it. `try_recv` is
+        // destructive; pulling while the in-flight window is full would drop
+        // the batch silently at end of scope.
+        let batch = if conn.can_send() {
+            batch_rx.try_recv().ok()
+        } else {
+            None
+        };
 
         if !shutdown_signaled {
             shutdown_signaled = !matches!(
@@ -63,7 +70,7 @@ where
             );
         }
 
-        let had_work = batch.is_some() || shutdown_signaled;
+        let mut had_work = batch.is_some() || shutdown_signaled;
 
         if conn.is_shutdown() {
             return Ok(service.stats());
@@ -78,9 +85,7 @@ where
             continue;
         }
 
-        if let Some(batch) = batch
-            && conn.can_send()
-        {
+        if let Some(batch) = batch {
             match service.send(&batch).await {
                 Ok(()) => conn.record_sent(batch.sequence_number),
                 Err(UplinkError::Transport(UplinkTransportError::ConnectionLost { .. })) => {
@@ -95,6 +100,9 @@ where
             Ok(Ok(IngestResult::Ack(ack))) => {
                 conn.record_acked(ack.sequence_number);
                 service.handle_ack(ack)?;
+                // Ack frees an in-flight slot — don't sleep this iteration;
+                // the next loop should pull the next queued batch immediately.
+                had_work = true;
             }
             Ok(Ok(IngestResult::Error(e))) => {
                 tracing::warn!("ingest error from server: {e:?}");
@@ -114,7 +122,13 @@ where
         }
 
         if shutdown_signaled {
-            if conn.in_flight_empty() {
+            // Only send FinishRun once every batch produced by the batch
+            // thread has been sent AND acked. Checking `in_flight_empty`
+            // alone is not enough: between pulling batches from `batch_rx`
+            // we can momentarily see zero in-flight, which would let
+            // FinishRun race ahead of remaining queued batches and cause
+            // the server to finalise against a still-draining stream.
+            if batch_rx.is_empty() && conn.in_flight_empty() {
                 if !finish_sent {
                     match connection
                         .send_message(IngestMessage::FinishRun(run_id))

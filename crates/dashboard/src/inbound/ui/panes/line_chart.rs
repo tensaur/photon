@@ -28,12 +28,12 @@ pub fn show(
         Some(SeriesData::Bucketed { buckets }) => (
             buckets
                 .iter()
-                .map(|b| [b.step_start.as_u64() as f64, b.mean])
+                .map(|b| [b.step_end.as_u64() as f64, b.mean])
                 .collect(),
             Some(
                 buckets
                     .iter()
-                    .map(|b| (b.step_start.as_u64() as f64, b.min, b.max))
+                    .map(|b| (b.step_end.as_u64() as f64, b.min, b.max))
                     .collect(),
             ),
         ),

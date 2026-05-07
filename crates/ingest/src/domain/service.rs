@@ -93,7 +93,7 @@ where
     experiment_store: E,
     project_store: P,
     event_tx: broadcast::Sender<PhotonEvent>,
-    finished_runs_tx: mpsc::UnboundedSender<RunId>,
+    finished_runs_tx: mpsc::UnboundedSender<(RunId, SequenceNumber)>,
 }
 
 impl<A, R, E, P> Clone for Service<A, R, E, P>
@@ -131,7 +131,7 @@ where
         experiment_store: E,
         project_store: P,
         event_tx: broadcast::Sender<PhotonEvent>,
-        finished_runs_tx: mpsc::UnboundedSender<RunId>,
+        finished_runs_tx: mpsc::UnboundedSender<(RunId, SequenceNumber)>,
     ) -> Self {
         Self {
             dedup: DeduplicationCache::new(),
@@ -249,8 +249,9 @@ where
             });
         }
 
+        let last_seq = self.dedup.watermark(&run_id);
         self.finished_runs_tx
-            .send(run_id)
+            .send((run_id, last_seq))
             .map_err(|_| IngestError::ChannelClosed)?;
 
         Ok(())

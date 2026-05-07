@@ -268,10 +268,12 @@ impl DiskWalManager {
         }
         drop(sealed);
 
-        // Read the active segment by opening the latest segment file read-only.
+        // Read the active segment using the read-only, non-mutating path.
+        // `open_for_recovery` would call `scan_valid_extent` and truncate the
+        // file — racing a concurrent appender and corrupting the tail.
         let active_segments = segment::list_segments(&self.dir)?;
         if let Some((idx, _)) = active_segments.last() {
-            let active = Segment::open_for_recovery(&self.dir, *idx, self.config.wal.segment_size)?;
+            let active = Segment::open_for_live_read(&self.dir, *idx, self.config.wal.segment_size)?;
             for batch in active.read_records()? {
                 if skipped < skip {
                     skipped += 1;

@@ -277,10 +277,10 @@ impl DashboardApp {
 
     fn rebuild_viewport(&mut self) {
         self.expanded_tile = None;
+        self.tile_tree = None;
 
         let selected = &self.sidebar.visible_runs;
         if selected.is_empty() {
-            self.tile_tree = None;
             return;
         }
 
@@ -292,7 +292,7 @@ impl DashboardApp {
         }
 
         if per_run_metrics.is_empty() {
-            return; // nothing loaded yet
+            return;
         }
 
         for (run_id, metrics) in &per_run_metrics {
@@ -332,7 +332,7 @@ impl DashboardApp {
                 })
                 .collect();
             if tab_ids.is_empty() {
-                return; // no metrics yet — keep existing viewport
+                return;
             }
             let root = tiles.insert_grid_tile(tab_ids);
             self.tile_tree = Some(egui_tiles::Tree::new("viewport", root, tiles));
@@ -350,7 +350,7 @@ impl DashboardApp {
                 })
                 .collect();
             if tab_ids.is_empty() {
-                return; // no shared metrics — keep existing viewport
+                return;
             }
             let root = tiles.insert_grid_tile(tab_ids);
             self.tile_tree = Some(egui_tiles::Tree::new("viewport", root, tiles));
