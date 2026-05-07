@@ -1,5 +1,6 @@
-use photon_core::types::id::RunId;
-use photon_core::types::subscription::{SubscriptionEvent, SubscriptionMessage};
+use photon_core::types::id::SubscriptionId;
+use photon_core::types::query::MetricQuery;
+use photon_core::types::stream::{StreamMessage, SubscriptionMessage};
 use photon_transport::Transport;
 
 use crate::domain::error::{SubscribeError, UnsubscribeError};
@@ -18,18 +19,18 @@ impl<T> WsSubscriber<T> {
 
 impl<T> MetricSubscriber for WsSubscriber<T>
 where
-    T: Transport<SubscriptionMessage, SubscriptionEvent>,
+    T: Transport<SubscriptionMessage, StreamMessage>,
 {
-    async fn subscribe(&self, run_id: &RunId) -> Result<(), SubscribeError> {
+    async fn subscribe(&self, query: &MetricQuery) -> Result<(), SubscribeError> {
         self.transport
-            .send(&SubscriptionMessage::Subscribe(*run_id))
+            .send(&SubscriptionMessage::Subscribe(query.clone()))
             .await
             .map_err(|e| SubscribeError::Unknown(Box::new(e)))
     }
 
-    async fn unsubscribe(&self, run_id: &RunId) -> Result<(), UnsubscribeError> {
+    async fn unsubscribe(&self, sub_id: SubscriptionId) -> Result<(), UnsubscribeError> {
         self.transport
-            .send(&SubscriptionMessage::Unsubscribe(*run_id))
+            .send(&SubscriptionMessage::Unsubscribe(sub_id))
             .await
             .map_err(|e| UnsubscribeError::Unknown(Box::new(e)))
     }

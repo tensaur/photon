@@ -9,11 +9,15 @@ use photon_core::types::batch::WireBatch;
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, MetricBatch, MetricPoint, Step};
 use photon_core::types::sequence::SequenceNumber;
+use photon_core::types::event::PhotonEvent;
 use photon_ingest::domain::service::{IngestService, Service};
 use photon_protocol::codec::CodecKind;
 use photon_protocol::compressor::CompressorKind;
 use photon_protocol::ports::codec::Codec;
 use photon_protocol::ports::compress::Compressor;
+use photon_store::memory::experiment::InMemoryExperimentStore;
+use photon_store::memory::project::InMemoryProjectStore;
+use photon_store::memory::run::InMemoryRunStore;
 use photon_wal::open_in_memory_wal;
 
 const BATCH_SIZES: &[usize] = &[100, 1_000, 10_000, 100_000];
@@ -84,8 +88,18 @@ fn bench_service(c: &mut Criterion) {
 
         let (wal_appender, _wal) = open_in_memory_wal();
         let notify = Arc::new(tokio::sync::Notify::new());
+        let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(16);
+        let (finished_runs_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
-        let service = Service::new(wal_appender, notify);
+        let service = Service::new(
+            wal_appender,
+            notify,
+            InMemoryRunStore::new(),
+            InMemoryExperimentStore::new(),
+            InMemoryProjectStore::new(),
+            event_tx,
+            finished_runs_tx,
+        );
 
         group.bench_function(id, |b| {
             b.iter_batched(

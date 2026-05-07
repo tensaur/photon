@@ -55,15 +55,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let watermark_store = ClickHouseWatermarkStore::new(client.clone());
     let run_store = ClickHouseRunStore::new(client.clone());
     let experiment_store = ClickHouseExperimentStore::new(client.clone());
-    let project_store = ClickHouseProjectStore::new(client);
+    let project_store = ClickHouseProjectStore::new(client.clone());
+    let finalised_store =
+        photon_store::clickhouse::finalised::ClickHouseFinalisedStore::new(client);
     let (event_tx, _) = tokio::sync::broadcast::channel::<PhotonEvent>(256);
 
     // Server WAL
     let (wal_appender, wal_manager) =
         open_disk_wal(".photon/server-wal", DiskWalConfig::default())?;
 
-    // Ingest service (WAL-backed)
-    let ingest_service = IngestService::new(wal_appender, notify.clone());
+    // Ingest hexagon
+    let ingest_service = IngestService::new(
+        wal_appender,
+        notify.clone(),
+        run_store,
+        experiment_store,
+        project_store,
+        event_tx.clone(),
+        finished_runs_tx,
+    );
 
     // Seed dedup cache from persisted watermarks + unconsumed WAL tail
     ingest_service.seed(&watermark_store, &wal_manager).await;
@@ -75,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metric_store,
         watermark_store,
         bucket_store,
+        finalised_store,
         event_tx,
         DownsampleConfig::default(),
     );
@@ -94,23 +105,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (stream, _) = listener.accept().await.expect("accept failed");
             let bt = TcpTransport::accept(stream);
             let transport = CodecTransport::new(codec, bt);
-            let service = ingest_service.clone();
-            let run_store = run_store.clone();
-            let experiment_store = experiment_store.clone();
-            let project_store = project_store.clone();
-            let finished_runs_tx = finished_runs_tx.clone();
-
-            tokio::spawn(async move {
-                handler::handle_envelope(
-                    &service,
-                    &run_store,
-                    &experiment_store,
-                    &project_store,
-                    &finished_runs_tx,
-                    &transport,
-                )
-                .await;
-            });
+            let svc = ingest_service.clone();
+            tokio::spawn(async move { handler::handle_envelope(&svc, &transport).await });
         }
     });
 
@@ -133,20 +129,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t0 = Instant::now();
 
         // Simulate a training loop
-        for step in 0..10_000_000u64 {
-            let loss = 1.0 / (1.0 + step as f64 * 0.05);
-            let accuracy = 1.0 - loss;
+        let mut rng_state: u64 = 42;
+        let mut noise = || -> f64 {
+            rng_state ^= rng_state << 13;
+            rng_state ^= rng_state >> 7;
+            rng_state ^= rng_state << 17;
+            (rng_state as f64) / (u64::MAX as f64)
+        };
+
+        for step in 0..1_000_000u64 {
+            let t = step as f64;
+
+            // Exponential decay with noisy plateaus and a spike around step 400k
+            let base_loss = 0.8 * (-t / 150_000.0).exp() + 0.1;
+            let spike = 0.3 * (-(((t - 400_000.0) / 20_000.0).powi(2))).exp();
+            let loss = base_loss + spike + 0.02 * (noise() - 0.5);
+
+            let accuracy = (1.0 - base_loss + 0.015 * (noise() - 0.5)).clamp(0.0, 1.0);
 
             run.log("train/loss", loss, step).unwrap();
             run.log("train/accuracy", accuracy, step).unwrap();
 
             if step % 10 == 0 {
-                let lr = 0.001 * 0.95_f64.powi(step as i32 / 10);
+                // Cosine-annealed learning rate with warm restarts every 200k steps
+                let cycle = (t % 200_000.0) / 200_000.0;
+                let lr = 1e-4 + 0.5 * (1e-3 - 1e-4) * (1.0 + (std::f64::consts::PI * cycle).cos());
                 run.log("train/lr", lr, step).unwrap();
             }
 
             if step % 50 == 0 {
-                let val_loss = loss * 1.1;
+                let val_loss = base_loss * 1.15 + spike * 1.3 + 0.03 * (noise() - 0.5);
                 run.log("val/loss", val_loss, step).unwrap();
             }
         }

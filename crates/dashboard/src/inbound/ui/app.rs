@@ -1,12 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use egui_tiles::Tiles;
 
 use photon_core::domain::experiment::Experiment;
 use photon_core::domain::project::Project;
-use photon_core::domain::run::Run;
+use photon_core::domain::run::{Run, RunStatus};
 use photon_core::types::id::RunId;
 use photon_core::types::metric::{Metric, Step};
+use photon_core::types::id::SubscriptionId;
 use photon_core::types::query::{MetricQuery, MetricSeries, SeriesData};
 
 use crate::inbound::channel::{self, Command, CommandSender, Response, ResponseReceiver};
@@ -30,6 +31,19 @@ pub struct DataCache {
     pub projects: RequestState<Vec<Project>>,
     pub metrics: HashMap<RunId, RequestState<Vec<Metric>>>,
     pub series: HashMap<(RunId, Metric), MetricSeries>,
+    /// Subscriptions we've already sent commands for. Keyed by `(run_id, metric)`
+    /// to avoid double-subscribing on repeated `rebuild_viewport` calls; populated
+    /// when the command is issued and resolved to a `SubscriptionId` when the
+    /// first `Snapshot` arrives.
+    pub subscribed_keys: HashSet<(RunId, Metric)>,
+    /// Reverse map: `SubscriptionId → (run_id, metric)`, populated from `Snapshot`.
+    /// Used to route `Delta` / `Unsubscribed` messages, which
+    /// only carry the id.
+    pub subscriptions: HashMap<SubscriptionId, (RunId, Metric)>,
+    /// Runs the server has marked as finalised — fully persisted and indexed.
+    /// Populated from `StreamMessage::RunFinalised`; drives the sidebar status
+    /// dot for `RunStatus::Finished` runs.
+    pub finalised: HashSet<RunId>,
 }
 
 impl Default for DataCache {
@@ -40,6 +54,9 @@ impl Default for DataCache {
             projects: RequestState::Idle,
             metrics: HashMap::new(),
             series: HashMap::new(),
+            subscribed_keys: HashSet::new(),
+            subscriptions: HashMap::new(),
+            finalised: HashSet::new(),
         }
     }
 }
@@ -111,7 +128,19 @@ impl DashboardApp {
     fn handle_response(&mut self, resp: Response) {
         match resp {
             Response::Runs(result) => match result {
-                Ok(runs) => self.cache.runs = RequestState::Loaded(runs),
+                Ok(runs) => {
+                    for run in &runs {
+                        if matches!(run.status(), RunStatus::Finished)
+                            && !self.cache.finalised.contains(&run.id())
+                        {
+                            channel::send_cmd(
+                                &self.commands,
+                                Command::CheckFinalised { run_id: run.id() },
+                            );
+                        }
+                    }
+                    self.cache.runs = RequestState::Loaded(runs);
+                }
                 Err(e) => self.cache.runs = RequestState::Failed(e.to_string()),
             },
             Response::Experiments(result) => match result {
@@ -141,19 +170,44 @@ impl DashboardApp {
                     self.cache.series.insert(key, series);
                 }
             }
-            Response::BatchSeries { .. } | Response::SubscriptionEnded { .. } => {}
-            Response::LivePoints {
-                run_id,
-                metric,
-                points,
+            Response::BatchSeries { .. } => {}
+            Response::Snapshot {
+                subscription_id,
+                series,
             } => {
-                if let Some(series) = self.cache.series.get_mut(&(run_id, metric))
-                    && let SeriesData::Raw {
-                        points: ref mut existing,
-                    } = series.data
-                {
-                    existing.extend(points);
+                let key = (series.run_id, series.key.clone());
+                self.cache
+                    .subscriptions
+                    .insert(subscription_id, key.clone());
+                self.cache.series.insert(key, series);
+            }
+            Response::DeltaPoints {
+                subscription_id,
+                points: new_points,
+            } => {
+                if let Some(series) = self.series_for_sub(&subscription_id) {
+                    if let SeriesData::Raw { points } = &mut series.data {
+                        points.extend(new_points);
+                    }
                 }
+            }
+            Response::DeltaBuckets {
+                subscription_id,
+                buckets: new_buckets,
+            } => {
+                if let Some(series) = self.series_for_sub(&subscription_id) {
+                    if let SeriesData::Bucketed { buckets } = &mut series.data {
+                        buckets.extend(new_buckets);
+                    }
+                }
+            }
+            Response::Unsubscribed { subscription_id } => {
+                if let Some(key) = self.cache.subscriptions.remove(&subscription_id) {
+                    self.cache.subscribed_keys.remove(&key);
+                }
+            }
+            Response::Finalised { run_id } => {
+                self.cache.finalised.insert(run_id);
             }
             Response::RunsChanged => {
                 self.cache.runs = RequestState::Pending;
@@ -166,9 +220,11 @@ impl DashboardApp {
 
     #[allow(clippy::needless_pass_by_value)]
     fn handle_sidebar_action(&mut self, action: SidebarAction) {
+        // Subscriptions are driven by `rebuild_viewport`: any (run, metric) pair
+        // that gets rendered is subscribed once and held for the process lifetime.
+        // Visibility toggles only affect what's rendered, not what's subscribed.
         match action {
             SidebarAction::SelectRun(run_id) => {
-                self.unsubscribe_all();
                 self.sidebar.visible_runs.clear();
                 self.sidebar.run_colors.clear();
 
@@ -176,20 +232,22 @@ impl DashboardApp {
                 self.sidebar.visible_runs.push(run_id);
                 self.sidebar.assign_color(run_id);
                 self.ensure_metrics_loaded(run_id);
-                self.subscribe_if_active(run_id);
                 self.rebuild_viewport();
             }
             SidebarAction::ToggleVisibility(run_id) => {
-                if let Some(pos) = self.sidebar.visible_runs.iter().position(|&id| id == run_id) {
+                if let Some(pos) = self
+                    .sidebar
+                    .visible_runs
+                    .iter()
+                    .position(|&id| id == run_id)
+                {
                     self.sidebar.visible_runs.remove(pos);
                     self.sidebar.release_color(&run_id);
                     self.sidebar.selected_runs.retain(|&id| id != run_id);
-                    channel::send_cmd(&self.commands, Command::Unsubscribe { run_id });
                 } else {
                     self.sidebar.visible_runs.push(run_id);
                     self.sidebar.assign_color(run_id);
                     self.ensure_metrics_loaded(run_id);
-                    self.subscribe_if_active(run_id);
                 }
                 self.sidebar.selected_runs = vec![run_id];
                 self.rebuild_viewport();
@@ -199,25 +257,9 @@ impl DashboardApp {
                     self.sidebar.visible_runs.push(run_id);
                     self.sidebar.assign_color(run_id);
                     self.ensure_metrics_loaded(run_id);
-                    self.subscribe_if_active(run_id);
                     self.rebuild_viewport();
                 }
             }
-        }
-    }
-
-    fn subscribe_if_active(&self, run_id: RunId) {
-        if let RequestState::Loaded(runs) = &self.cache.runs
-            && let Some(run) = runs.iter().find(|r| r.id() == run_id)
-            && run.is_active()
-        {
-            channel::send_cmd(&self.commands, Command::Subscribe { run_id });
-        }
-    }
-
-    fn unsubscribe_all(&self) {
-        for &run_id in &self.sidebar.visible_runs {
-            channel::send_cmd(&self.commands, Command::Unsubscribe { run_id });
         }
     }
 
@@ -228,12 +270,17 @@ impl DashboardApp {
         }
     }
 
+    fn series_for_sub(&mut self, subscription_id: &SubscriptionId) -> Option<&mut MetricSeries> {
+        let key = self.cache.subscriptions.get(subscription_id)?;
+        self.cache.series.get_mut(key)
+    }
+
     fn rebuild_viewport(&mut self) {
         self.expanded_tile = None;
+        self.tile_tree = None;
 
         let selected = &self.sidebar.visible_runs;
         if selected.is_empty() {
-            self.tile_tree = None;
             return;
         }
 
@@ -245,24 +292,27 @@ impl DashboardApp {
         }
 
         if per_run_metrics.is_empty() {
-            return; // nothing loaded yet
+            return;
         }
 
         for (run_id, metrics) in &per_run_metrics {
             for m in metrics {
-                if self.cache.get_series(run_id, m).is_none() {
-                    channel::send_cmd(
-                        &self.commands,
-                        Command::Query {
-                            query: MetricQuery {
-                                run_id: *run_id,
-                                key: m.clone(),
-                                step_range: Step::ZERO..Step::MAX,
-                                target_points: 1000,
-                            },
-                        },
-                    );
+                let key = (*run_id, m.clone());
+                if self.cache.subscribed_keys.contains(&key) {
+                    continue;
                 }
+                self.cache.subscribed_keys.insert(key);
+                channel::send_cmd(
+                    &self.commands,
+                    Command::Subscribe {
+                        query: MetricQuery {
+                            run_id: *run_id,
+                            key: m.clone(),
+                            step_range: Step::ZERO..Step::MAX,
+                            target_points: 100,
+                        },
+                    },
+                );
             }
         }
 
@@ -282,7 +332,7 @@ impl DashboardApp {
                 })
                 .collect();
             if tab_ids.is_empty() {
-                return; // no metrics yet — keep existing viewport
+                return;
             }
             let root = tiles.insert_grid_tile(tab_ids);
             self.tile_tree = Some(egui_tiles::Tree::new("viewport", root, tiles));
@@ -300,7 +350,7 @@ impl DashboardApp {
                 })
                 .collect();
             if tab_ids.is_empty() {
-                return; // no shared metrics — keep existing viewport
+                return;
             }
             let root = tiles.insert_grid_tile(tab_ids);
             self.tile_tree = Some(egui_tiles::Tree::new("viewport", root, tiles));
@@ -317,15 +367,21 @@ impl eframe::App for DashboardApp {
         let is_live = matches!(&self.cache.runs, RequestState::Loaded(runs) if runs.iter().any(Run::is_active));
 
         let project_name = match &self.cache.projects {
-            RequestState::Loaded(projects) => projects.first().map_or("Photon", |p| p.name.as_str()),
+            RequestState::Loaded(projects) => {
+                projects.first().map_or("Photon", |p| p.name.as_str())
+            }
             _ => "Photon",
         };
         let experiment_name = match &self.cache.experiments {
             RequestState::Loaded(experiments) => {
                 if let Some(&sel) = self.sidebar.selected_runs.first() {
                     if let RequestState::Loaded(runs) = &self.cache.runs {
-                        let exp_id = runs.iter().find(|r| r.id() == sel).and_then(Run::experiment_id);
-                        exp_id.and_then(|eid| experiments.iter().find(|e| e.id == eid))
+                        let exp_id = runs
+                            .iter()
+                            .find(|r| r.id() == sel)
+                            .and_then(Run::experiment_id);
+                        exp_id
+                            .and_then(|eid| experiments.iter().find(|e| e.id == eid))
                             .map_or("Dashboard", |e| e.name.as_str())
                     } else {
                         "Dashboard"
@@ -341,13 +397,23 @@ impl eframe::App for DashboardApp {
             .exact_height(photon_ui::theme::TOP_BAR_HEIGHT)
             .frame(egui::Frame::NONE.fill(theme.bg))
             .show(ctx, |ui| {
-                photon_ui::top_bar::show(ui, is_live, project_name, experiment_name, &mut self.sidebar.search_query);
+                photon_ui::top_bar::show(
+                    ui,
+                    is_live,
+                    project_name,
+                    experiment_name,
+                    &mut self.sidebar.search_query,
+                );
             });
 
         egui::SidePanel::left("icon_rail")
             .exact_width(photon_ui::theme::ICON_RAIL_WIDTH)
             .resizable(false)
-            .frame(egui::Frame::NONE.fill(theme.bg).stroke(egui::Stroke::new(1.0, theme.border)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.bg)
+                    .stroke(egui::Stroke::new(1.0, theme.border)),
+            )
             .show(ctx, |ui| {
                 if photon_ui::icon_rail::show(ui, &mut self.icon_rail_state) {
                     self.sidebar_visible = !self.sidebar_visible;
@@ -365,32 +431,42 @@ impl eframe::App for DashboardApp {
                         .inner_margin(egui::Margin::symmetric(12, 10)),
                 )
                 .show(ctx, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        let runs_slice: &[Run] = match &self.cache.runs {
-                            RequestState::Loaded(runs) => runs.as_slice(),
-                            _ => &[],
-                        };
-                        let experiments_slice: &[Experiment] = match &self.cache.experiments {
-                            RequestState::Loaded(experiments) => experiments.as_slice(),
-                            _ => &[],
-                        };
+                    egui::ScrollArea::vertical()
+                        .show(ui, |ui| {
+                            let runs_slice: &[Run] = match &self.cache.runs {
+                                RequestState::Loaded(runs) => runs.as_slice(),
+                                _ => &[],
+                            };
+                            let experiments_slice: &[Experiment] = match &self.cache.experiments {
+                                RequestState::Loaded(experiments) => experiments.as_slice(),
+                                _ => &[],
+                            };
 
-                        let action = sidebar::show(ui, &mut self.sidebar, runs_slice, experiments_slice);
+                            let action = sidebar::show(
+                                ui,
+                                &mut self.sidebar,
+                                runs_slice,
+                                experiments_slice,
+                                &self.cache.finalised,
+                            );
 
-                        match &self.cache.runs {
-                            RequestState::Pending => { ui.spinner(); }
-                            RequestState::Failed(msg) => {
-                                ui.colored_label(theme.status_failed, format!("Error: {msg}"));
-                                if ui.button("Retry").clicked() {
-                                    channel::send_cmd(&self.commands, Command::ListRuns);
-                                    self.cache.runs = RequestState::Pending;
+                            match &self.cache.runs {
+                                RequestState::Pending => {
+                                    ui.spinner();
                                 }
+                                RequestState::Failed(msg) => {
+                                    ui.colored_label(theme.status_failed, format!("Error: {msg}"));
+                                    if ui.button("Retry").clicked() {
+                                        channel::send_cmd(&self.commands, Command::ListRuns);
+                                        self.cache.runs = RequestState::Pending;
+                                    }
+                                }
+                                _ => {}
                             }
-                            _ => {}
-                        }
 
-                        action
-                    }).inner
+                            action
+                        })
+                        .inner
                 })
                 .inner
         } else {
@@ -420,10 +496,22 @@ impl eframe::App for DashboardApp {
                                 }
                                 match pane {
                                     super::panes::Pane::LineChart(state) => {
-                                        super::panes::line_chart::show(ui, state, &self.cache, &self.sidebar, &mut crosshair_x);
+                                        super::panes::line_chart::show(
+                                            ui,
+                                            state,
+                                            &self.cache,
+                                            &self.sidebar,
+                                            &mut crosshair_x,
+                                        );
                                     }
                                     super::panes::Pane::Comparison(state) => {
-                                        super::panes::comparison::show(ui, state, &self.cache, &self.sidebar, &mut crosshair_x);
+                                        super::panes::comparison::show(
+                                            ui,
+                                            state,
+                                            &self.cache,
+                                            &self.sidebar,
+                                            &mut crosshair_x,
+                                        );
                                     }
                                 }
                             });

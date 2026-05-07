@@ -2,7 +2,13 @@ use egui::{Color32, FontFamily, RichText, Stroke, Vec2, vec2};
 
 use crate::theme::DARK;
 
-pub fn show(ui: &mut egui::Ui, is_live: bool, project_name: &str, context_name: &str, search_query: &mut String) {
+pub fn show(
+    ui: &mut egui::Ui,
+    is_live: bool,
+    project_name: &str,
+    context_name: &str,
+    search_query: &mut String,
+) {
     let total_width = ui.available_width();
 
     ui.horizontal(|ui| {
@@ -10,7 +16,11 @@ pub fn show(ui: &mut egui::Ui, is_live: bool, project_name: &str, context_name: 
 
         ui.add_space(12.0);
         ui.label(RichText::new("★").size(14.0).color(DARK.text_primary));
-        ui.label(RichText::new(egui_phosphor::regular::CARET_DOWN).font(crate::theme::icon_font_id(10.0)).color(Color32::from_rgb(0x66, 0x66, 0x66)));
+        ui.label(
+            RichText::new(egui_phosphor::regular::CARET_DOWN)
+                .font(crate::theme::icon_font_id(10.0))
+                .color(Color32::from_rgb(0x66, 0x66, 0x66)),
+        );
         ui.add_space(8.0);
 
         ui.label(
@@ -18,9 +28,21 @@ pub fn show(ui: &mut egui::Ui, is_live: bool, project_name: &str, context_name: 
                 .font(crate::theme::icon_font_id(13.0))
                 .color(DARK.text_primary),
         );
-        ui.label(RichText::new(project_name).size(13.0).color(DARK.text_primary));
-        ui.label(RichText::new(egui_phosphor::regular::STAR).font(crate::theme::icon_font_id(12.0)).color(Color32::from_rgb(0x66, 0x66, 0x66)));
-        ui.label(RichText::new("/").size(12.0).color(Color32::from_rgb(0x55, 0x55, 0x55)));
+        ui.label(
+            RichText::new(project_name)
+                .size(13.0)
+                .color(DARK.text_primary),
+        );
+        ui.label(
+            RichText::new(egui_phosphor::regular::STAR)
+                .font(crate::theme::icon_font_id(12.0))
+                .color(Color32::from_rgb(0x66, 0x66, 0x66)),
+        );
+        ui.label(
+            RichText::new("/")
+                .size(12.0)
+                .color(Color32::from_rgb(0x55, 0x55, 0x55)),
+        );
         ui.label(
             RichText::new(egui_phosphor::regular::CHECK_SQUARE)
                 .font(crate::theme::icon_font_id(13.0))
@@ -49,12 +71,10 @@ pub fn show(ui: &mut egui::Ui, is_live: bool, project_name: &str, context_name: 
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
-                        let (rect, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
-                        ui.painter().circle_filled(
-                            rect.center(),
-                            3.5,
-                            DARK.status_done,
-                        );
+                        let (rect, _) =
+                            ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
+                        ui.painter()
+                            .circle_filled(rect.center(), 3.5, DARK.status_done);
                         ui.label(
                             RichText::new("LIVE")
                                 .size(12.0)
@@ -136,9 +156,6 @@ pub fn show(ui: &mut egui::Ui, is_live: bool, project_name: &str, context_name: 
     });
 
     let rect = ui.min_rect();
-    ui.painter().hline(
-        rect.x_range(),
-        rect.bottom(),
-        Stroke::new(1.0, DARK.border),
-    );
+    ui.painter()
+        .hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, DARK.border));
 }

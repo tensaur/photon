@@ -20,10 +20,8 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> PanelHeaderResponse {
             ui.horizontal_centered(|ui| {
                 ui.spacing_mut().item_spacing = vec2(4.0, 0.0);
 
-                let (drag_rect, drag_response) = ui.allocate_exact_size(
-                    Vec2::new(14.0, header_height),
-                    Sense::click_and_drag(),
-                );
+                let (drag_rect, drag_response) =
+                    ui.allocate_exact_size(Vec2::new(14.0, header_height), Sense::click_and_drag());
                 ui.painter().text(
                     drag_rect.center(),
                     egui::Align2::CENTER_CENTER,
@@ -41,10 +39,8 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> PanelHeaderResponse {
 
                 ui.add_space(4.0);
                 ui.add(
-                    egui::Label::new(
-                        RichText::new(title).size(12.0).color(DARK.text_primary),
-                    )
-                    .truncate(),
+                    egui::Label::new(RichText::new(title).size(12.0).color(DARK.text_primary))
+                        .truncate(),
                 );
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -57,10 +53,8 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> PanelHeaderResponse {
                     ];
 
                     for &(icon, is_expand) in icons {
-                        let (rect, response) = ui.allocate_exact_size(
-                            Vec2::splat(icon_size + 4.0),
-                            Sense::click(),
-                        );
+                        let (rect, response) =
+                            ui.allocate_exact_size(Vec2::splat(icon_size + 4.0), Sense::click());
                         let color = if response.hovered() {
                             DARK.text_primary
                         } else {
@@ -85,11 +79,8 @@ pub fn show(ui: &mut egui::Ui, title: &str) -> PanelHeaderResponse {
         });
 
     let rect = frame_resp.response.rect;
-    ui.painter().hline(
-        rect.x_range(),
-        rect.bottom(),
-        Stroke::new(1.0, DARK.border),
-    );
+    ui.painter()
+        .hline(rect.x_range(), rect.bottom(), Stroke::new(1.0, DARK.border));
 
     PanelHeaderResponse {
         dragged: frame_resp.inner,

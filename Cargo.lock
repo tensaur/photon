@@ -2887,7 +2887,6 @@ dependencies = [
  "photon",
  "photon-core",
  "photon-downsample",
- "photon-hook",
  "photon-ingest",
  "photon-persist",
  "photon-protocol",
@@ -2922,9 +2921,11 @@ dependencies = [
 name = "photon-subscription"
 version = "0.2.0"
 dependencies = [
+ "dashmap",
  "photon-core",
- "photon-hook",
+ "photon-store",
  "photon-transport",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -2955,6 +2956,7 @@ version = "0.2.0"
 dependencies = [
  "egui",
  "egui-phosphor",
+ "egui_plot",
 ]
 
 [[package]]

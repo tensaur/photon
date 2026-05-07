@@ -24,7 +24,6 @@ photon-persist.workspace = true
 photon-query.workspace = true
 photon-subscription.workspace = true
 photon-transport.workspace = true
-photon-hook.workspace = true
 photon-wal.workspace = true
 
 anyhow.workspace = true

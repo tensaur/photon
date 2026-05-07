@@ -8,6 +8,7 @@ pub mod id;
 pub mod ingest;
 pub mod metric;
 pub mod query;
+pub mod resolution;
 pub mod sequence;
-pub mod subscription;
+pub mod stream;
 pub mod wal;

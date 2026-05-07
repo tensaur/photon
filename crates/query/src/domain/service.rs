@@ -5,19 +5,19 @@ use photon_core::domain::project::Project;
 use photon_core::domain::run::Run;
 use photon_core::types::error::ApiError;
 use photon_core::types::id::RunId;
-use photon_core::types::metric::{Metric, Step};
+use photon_core::types::metric::Metric;
 use photon_core::types::query::{
     DataPoint, MetricQuery, MetricSeries, QueryMessage, QueryRequest, QueryResponse, QueryResult,
-    RangePoint, SeriesData,
+    SeriesData,
 };
 use photon_downsample::ports::selector::Selector;
 use photon_store::ports::ReadError;
 use photon_store::ports::ReadRepository;
 use photon_store::ports::bucket::BucketReader;
-use photon_store::ports::compaction::CompactionCursor;
+use photon_store::ports::finalised::FinalisedStore;
 use photon_store::ports::metric::MetricReader;
 
-use crate::domain::tier::{Resolution, TierSelector};
+use photon_core::types::resolution::{Resolution, TierSelector};
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
@@ -46,6 +46,11 @@ pub trait QueryService: Clone + Send + Sync + 'static {
         &self,
         request: &QueryRequest,
     ) -> impl Future<Output = Result<QueryResponse, QueryError>> + Send;
+
+    fn is_finalised(
+        &self,
+        run_id: &RunId,
+    ) -> impl Future<Output = Result<bool, QueryError>> + Send;
 }
 
 /// Map a query message to a result using the given service.
@@ -93,72 +98,79 @@ pub async fn dispatch<S: QueryService>(service: &S, msg: QueryMessage) -> QueryR
                 QueryResult::Error(ApiError::Internal)
             }
         },
+        QueryMessage::IsFinalised(run_id) => match service.is_finalised(&run_id).await {
+            Ok(finalised) => QueryResult::Finalised { run_id, finalised },
+            Err(e) => {
+                tracing::error!("query failed: {e}");
+                QueryResult::Error(ApiError::Internal)
+            }
+        },
     }
 }
 
 #[derive(Clone)]
-pub struct Service<S, B, M, C, R, E, P>
+pub struct Service<S, B, M, R, E, P, F>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
-    C: CompactionCursor,
     R: ReadRepository<Run>,
     E: ReadRepository<Experiment>,
     P: ReadRepository<Project>,
+    F: FinalisedStore,
 {
     selector: S,
     bucket_reader: B,
     metric_reader: M,
-    compaction_cursor: C,
     run_reader: R,
     experiment_reader: E,
     project_reader: P,
+    finalised_store: F,
     tier_selector: TierSelector,
 }
 
-impl<S, B, M, C, R, E, P> Service<S, B, M, C, R, E, P>
+impl<S, B, M, R, E, P, F> Service<S, B, M, R, E, P, F>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
-    C: CompactionCursor,
     R: ReadRepository<Run>,
     E: ReadRepository<Experiment>,
     P: ReadRepository<Project>,
+    F: FinalisedStore,
 {
     pub fn new(
         selector: S,
         bucket_reader: B,
         metric_reader: M,
-        compaction_cursor: C,
         run_reader: R,
         experiment_reader: E,
         project_reader: P,
+        finalised_store: F,
         tier_selector: TierSelector,
     ) -> Self {
         Self {
             selector,
             bucket_reader,
             metric_reader,
-            compaction_cursor,
             run_reader,
             experiment_reader,
             project_reader,
+            finalised_store,
             tier_selector,
         }
     }
 }
 
-impl<S, B, M, C, R, E, P> QueryService for Service<S, B, M, C, R, E, P>
+impl<S, B, M, R, E, P, F> QueryService for Service<S, B, M, R, E, P, F>
 where
     S: Selector,
     B: BucketReader,
     M: MetricReader,
-    C: CompactionCursor,
     R: ReadRepository<Run>,
     E: ReadRepository<Experiment>,
     P: ReadRepository<Project>,
+    F: FinalisedStore,
 {
     async fn list_runs(&self) -> Result<Vec<Run>, QueryError> {
         Ok(self.run_reader.list().await?)
@@ -182,9 +194,9 @@ where
             .count_points(&q.run_id, &q.key, q.step_range.clone())
             .await?;
 
-        let plan = self.tier_selector.pick(point_count, q.target_points);
+        let lod = self.tier_selector.pick(point_count, q.target_points);
 
-        let data = match plan.line {
+        let data = match lod {
             Resolution::Raw => {
                 let points = self
                     .metric_reader
@@ -205,91 +217,12 @@ where
                 }
             }
             Resolution::Bucketed(tier_index) => {
-                let compacted_through = self
-                    .compaction_cursor
-                    .get(&q.run_id, &q.key, tier_index)
-                    .await?
-                    .unwrap_or(Step::ZERO);
+                let buckets = self
+                    .bucket_reader
+                    .read_buckets(&q.run_id, &q.key, tier_index, q.step_range.clone())
+                    .await?;
 
-                let bucket_end = compacted_through.min(q.step_range.end);
-                let raw_start = compacted_through.max(q.step_range.start);
-
-                // Bucketed history
-                let buckets = if q.step_range.start < bucket_end {
-                    self.bucket_reader
-                        .read_buckets(
-                            &q.run_id,
-                            &q.key,
-                            tier_index,
-                            q.step_range.start..bucket_end,
-                        )
-                        .await?
-                } else {
-                    Vec::new()
-                };
-
-                // Raw tail
-                let raw_tail = if raw_start < q.step_range.end {
-                    self.metric_reader
-                        .read_points(&q.run_id, &q.key, raw_start..q.step_range.end)
-                        .await?
-                } else {
-                    Vec::new()
-                };
-
-                // Envelope
-                let envelope: Vec<RangePoint> = match plan.envelope {
-                    Resolution::Bucketed(env_tier) if env_tier != tier_index => {
-                        let env_buckets = self
-                            .bucket_reader
-                            .read_buckets(
-                                &q.run_id,
-                                &q.key,
-                                env_tier,
-                                q.step_range.start..bucket_end,
-                            )
-                            .await?;
-                        env_buckets
-                            .iter()
-                            .map(|b| RangePoint {
-                                step_start: b.step_start,
-                                step_end: b.step_end,
-                                min: b.min,
-                                max: b.max,
-                            })
-                            .collect()
-                    }
-                    _ => buckets
-                        .iter()
-                        .map(|b| RangePoint {
-                            step_start: b.step_start,
-                            step_end: b.step_end,
-                            min: b.min,
-                            max: b.max,
-                        })
-                        .collect(),
-                };
-
-                // Combine bucket values with raw tail
-                let combined: Vec<(Step, f64)> = buckets
-                    .iter()
-                    .map(|b| (b.step_start, b.value))
-                    .chain(raw_tail.into_iter())
-                    .collect();
-
-                let selected = if combined.len() <= q.target_points {
-                    combined
-                } else {
-                    self.selector.select(&combined, q.target_points)
-                };
-
-                SeriesData::Aggregated {
-                    points: selected
-                        .into_iter()
-                        .map(|(step, value)| DataPoint { step, value })
-                        .collect(),
-                    envelope,
-                }
+                SeriesData::Bucketed { buckets }
             }
         };
 
@@ -304,5 +237,9 @@ where
         let futures: Vec<_> = request.queries.iter().map(|q| self.query(q)).collect();
         let series = futures_util::future::try_join_all(futures).await?;
         Ok(QueryResponse { series })
+    }
+
+    async fn is_finalised(&self, run_id: &RunId) -> Result<bool, QueryError> {
+        Ok(self.finalised_store.is_finalised(run_id).await?)
     }
 }

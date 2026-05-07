@@ -67,7 +67,9 @@ impl Segment<Active> {
         })
     }
 
-    /// Reopen an existing segment for crash recovery.
+    /// Reopen an existing segment for crash recovery. Truncates the file to
+    /// the last fully-valid record boundary — appropriate only at startup,
+    /// when no writer is active.
     pub(crate) fn open_for_recovery(
         dir: &Path,
         index: SegmentIndex,
@@ -87,6 +89,34 @@ impl Segment<Active> {
         };
 
         seg.scan_valid_extent()?;
+        Ok(seg)
+    }
+
+    /// Open an existing segment read-only for live reads while a writer may
+    /// be concurrently appending. Scans to find the valid prefix but does
+    /// **not** truncate — a partial trailing record is simply excluded from
+    /// the returned `write_offset`, leaving the file untouched for the
+    /// writer to finish. Without this separation, scan-and-truncate during
+    /// a live read can race an in-progress append and corrupt the segment.
+    pub(crate) fn open_for_live_read(
+        dir: &Path,
+        index: SegmentIndex,
+        capacity: u64,
+    ) -> Result<Self, WalError> {
+        let path = segment_path(dir, index);
+        let file = OpenOptions::new().read(true).open(&path)?;
+
+        let mut seg = Self {
+            path,
+            index,
+            file,
+            last_sequence: None,
+            write_offset: 0,
+            capacity,
+            _phase: PhantomData,
+        };
+
+        seg.write_offset = seg.scan_extent()?;
         Ok(seg)
     }
 
@@ -153,9 +183,10 @@ impl Segment<Active> {
         self.transition()
     }
 
-    /// Walk from offset 0, validate each record's CRC, set `write_offset`
-    /// after the last valid one. Truncate any trailing partial record.
-    fn scan_valid_extent(&mut self) -> Result<(), WalError> {
+    /// Walk from offset 0, validate each record's CRC, and return the end
+    /// offset of the last fully-valid record. Side effects limited to
+    /// updating `self.last_sequence`; the file is never mutated.
+    fn scan_extent(&mut self) -> Result<u64, WalError> {
         self.file.seek(SeekFrom::Start(0))?;
         let mut reader = BufReader::new(&self.file);
         let mut offset = 0u64;
@@ -194,7 +225,7 @@ impl Segment<Active> {
             hasher.update(&payload);
 
             if hasher.finalize() != stored_crc {
-                tracing::warn!(segment = %self.index, offset, "CRC mismatch - truncating");
+                tracing::warn!(segment = %self.index, offset, "CRC mismatch - stopping scan");
                 break;
             }
 
@@ -202,7 +233,13 @@ impl Segment<Active> {
             offset += total;
         }
 
-        // Truncate file at the last valid record boundary
+        Ok(offset)
+    }
+
+    /// Recovery wrapper: scan and truncate the file to the last fully-valid
+    /// record. Must never run while a writer has the segment open.
+    fn scan_valid_extent(&mut self) -> Result<(), WalError> {
+        let offset = self.scan_extent()?;
         self.file.set_len(offset)?;
         self.write_offset = offset;
         Ok(())

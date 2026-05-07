@@ -31,8 +31,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut IconRailState) -> bool {
                 Color32::from_rgb(0x77, 0x77, 0x77)
             };
 
-            let (rect, response) =
-                ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
+            let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
 
             if response.hovered() {
                 ui.painter().rect_filled(
