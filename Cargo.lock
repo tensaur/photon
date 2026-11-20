@@ -1216,6 +1216,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fearless_simd"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "629c9d6b6f30b5604089e0980f4d924a013aacb1654a6cdf5d3d852224f68651"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2857,10 +2863,9 @@ dependencies = [
  "lz4_flex 0.13.0",
  "photon-core",
  "postcard",
- "ruzstd",
  "serde",
  "thiserror 2.0.18",
- "zstd",
+ "zrip",
 ]
 
 [[package]]
@@ -3611,15 +3616,6 @@ name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
-
-[[package]]
-name = "ruzstd"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5ff0cc5e135c8870a775d3320910cd9b564ec036b4dc0b8741629020be63f01"
-dependencies = [
- "twox-hash",
-]
 
 [[package]]
 name = "ryu"
@@ -5461,31 +5457,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 
 [[package]]
-name = "zstd"
-version = "0.13.3"
+name = "zrip"
+version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+checksum = "304e9e995447808b8ba1f681ea74baca5e191bf0dfd9dbaea5b43c9a63f20331"
 dependencies = [
- "zstd-safe",
+ "zrip-core",
+ "zrip-decode",
+ "zrip-encode",
 ]
 
 [[package]]
-name = "zstd-safe"
-version = "7.2.4"
+name = "zrip-core"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
+checksum = "91abe38151a3a01d1349a323dc8b2b3107f5d8feb76f42341e56894ac6b048c9"
+
+[[package]]
+name = "zrip-decode"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02f1076df4ee16f9b2539b553256507698c5fcb9bec5ea6806df080bb86679bb"
 dependencies = [
- "zstd-sys",
+ "fearless_simd",
+ "zrip-core",
 ]
 
 [[package]]
-name = "zstd-sys"
-version = "2.0.16+zstd.1.5.7"
+name = "zrip-encode"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
+checksum = "8653e2439daa6495e9a38b97d11c3930508ba1e045f9311100fe1dea26446d66"
 dependencies = [
- "cc",
- "pkg-config",
+ "fearless_simd",
+ "zrip-core",
 ]
 
 [[package]]

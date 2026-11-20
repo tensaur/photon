@@ -44,7 +44,7 @@ impl CompressorKind {
 impl Compressor for CompressorKind {
     fn compress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
         match self {
-            Self::Zstd { level } => ZstdCompressor::new(*level).compress(input, output),
+            Self::Zstd { level } => ZstdCompressor::compress_cached(*level, input, output),
             Self::Lz4 => Lz4Compressor.compress(input, output),
             Self::Brotli { quality } => BrotliCompressor::new(*quality).compress(input, output),
             Self::Noop => NoopCompressor.compress(input, output),
@@ -53,7 +53,7 @@ impl Compressor for CompressorKind {
 
     fn decompress(&self, input: &[u8], output: &mut BytesMut) -> Result<(), CompressionError> {
         match self {
-            Self::Zstd { level } => ZstdCompressor::new(*level).decompress(input, output),
+            Self::Zstd { .. } => ZstdCompressor::decompress_cached(input, output),
             Self::Lz4 => Lz4Compressor.decompress(input, output),
             Self::Brotli { quality } => BrotliCompressor::new(*quality).decompress(input, output),
             Self::Noop => NoopCompressor.decompress(input, output),
